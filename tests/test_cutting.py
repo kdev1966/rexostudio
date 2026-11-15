@@ -88,6 +88,16 @@ class RulesTest(unittest.TestCase):
         self.assertNotIn("étape", digression[0])
         self.assertTrue(any(t.startswith("deuxième étape") for t in texts))
 
+    def test_continuous_story_is_not_cut_by_rules(self):
+        # Recit sans defaut (bande-annonce) : les regles ne touchent qu'au
+        # connecteur isole "Alors," ; tout le reste est laisse a l'IA.
+        with open(os.path.join(HERE, "fixtures", "recit_words.json"), encoding="utf-8") as fh:
+            words = json.load(fh)["words"]
+        cands = cutting.speech_candidates(words)
+        ruled = [c["text"] for c in cands if c["rule"]]
+        self.assertEqual(ruled, ["Alors,"])
+        self.assertTrue(any(c["text"].startswith("Un homme fut jeté") for c in cands))
+
     def test_retake_keeps_last_take(self):
         words = [w("On", 0, .2), w("commence", .2, .6), w("par", .6, .8), w("le", .8, .9),
                  w("café.", .9, 1.4), w("On", 2.5, 2.7), w("commence", 2.7, 3.1),

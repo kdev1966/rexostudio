@@ -1,0 +1,361 @@
+{
+"source": "bande-annonce 'Le Clan des Fairbank' (25.mp4), recit continu sans defaut ; whisper.cpp base + VAD, -ml 1 -sow, mots nettoyes, 15/11/2026",
+"duration": 60.093243,
+"words": [
+{
+"start": 2.3,
+"end": 2.4,
+"text": "Je"
+},
+{
+"start": 2.4,
+"end": 2.67,
+"text": "vais"
+},
+{
+"start": 2.67,
+"end": 2.94,
+"text": "vous"
+},
+{
+"start": 2.94,
+"end": 3.48,
+"text": "raconter"
+},
+{
+"start": 3.48,
+"end": 3.68,
+"text": "une"
+},
+{
+"start": 3.68,
+"end": 4.27,
+"text": "histoire."
+},
+{
+"start": 4.27,
+"end": 4.6,
+"text": "Un"
+},
+{
+"start": 4.6,
+"end": 5.47,
+"text": "jour,"
+},
+{
+"start": 5.47,
+"end": 5.68,
+"text": "il"
+},
+{
+"start": 5.68,
+"end": 5.78,
+"text": "y"
+},
+{
+"start": 5.78,
+"end": 5.88,
+"text": "a"
+},
+{
+"start": 5.88,
+"end": 7.06,
+"text": "très"
+},
+{
+"start": 7.06,
+"end": 8.03,
+"text": "longtemps."
+},
+{
+"start": 8.03,
+"end": 8.41,
+"text": "Un"
+},
+{
+"start": 8.41,
+"end": 9.3,
+"text": "homme"
+},
+{
+"start": 9.3,
+"end": 9.52,
+"text": "fut"
+},
+{
+"start": 9.52,
+"end": 9.88,
+"text": "jeté"
+},
+{
+"start": 9.88,
+"end": 10.1,
+"text": "dans"
+},
+{
+"start": 10.1,
+"end": 10.32,
+"text": "une"
+},
+{
+"start": 10.32,
+"end": 10.79,
+"text": "fausse"
+},
+{
+"start": 10.79,
+"end": 11.13,
+"text": "très"
+},
+{
+"start": 11.13,
+"end": 12.93,
+"text": "profonde."
+},
+{
+"start": 12.93,
+"end": 13.11,
+"text": "Il"
+},
+{
+"start": 13.11,
+"end": 14.2,
+"text": "compris"
+},
+{
+"start": 14.2,
+"end": 14.53,
+"text": "qu'il"
+},
+{
+"start": 14.53,
+"end": 14.75,
+"text": "lui"
+},
+{
+"start": 14.75,
+"end": 15.04,
+"text": "serait"
+},
+{
+"start": 15.04,
+"end": 15.66,
+"text": "impossible"
+},
+{
+"start": 15.66,
+"end": 15.79,
+"text": "de"
+},
+{
+"start": 15.79,
+"end": 16.16,
+"text": "grimper"
+},
+{
+"start": 16.16,
+"end": 16.45,
+"text": "pour"
+},
+{
+"start": 16.45,
+"end": 17.17,
+"text": "s'extraire"
+},
+{
+"start": 17.17,
+"end": 17.31,
+"text": "de"
+},
+{
+"start": 17.31,
+"end": 17.68,
+"text": "cette"
+},
+{
+"start": 17.68,
+"end": 18.16,
+"text": "fausse."
+},
+{
+"start": 18.16,
+"end": 23.86,
+"text": "Alors,"
+},
+{
+"start": 23.86,
+"end": 24.06,
+"text": "au"
+},
+{
+"start": 24.06,
+"end": 25.45,
+"text": "lieu"
+},
+{
+"start": 25.45,
+"end": 25.66,
+"text": "de"
+},
+{
+"start": 25.66,
+"end": 25.86,
+"text": "se"
+},
+{
+"start": 25.86,
+"end": 26.26,
+"text": "icer"
+},
+{
+"start": 26.26,
+"end": 26.67,
+"text": "vers"
+},
+{
+"start": 26.67,
+"end": 26.87,
+"text": "le"
+},
+{
+"start": 26.87,
+"end": 27.49,
+"text": "haut,"
+},
+{
+"start": 27.49,
+"end": 28.74,
+"text": "il"
+},
+{
+"start": 28.74,
+"end": 29.15,
+"text": "creusa"
+},
+{
+"start": 29.15,
+"end": 29.46,
+"text": "vers"
+},
+{
+"start": 29.46,
+"end": 29.61,
+"text": "le"
+},
+{
+"start": 29.61,
+"end": 29.9,
+"text": "bas."
+},
+{
+"start": 29.9,
+"end": 31.9,
+"text": "Creusa"
+},
+{
+"start": 31.9,
+"end": 33.07,
+"text": "et"
+},
+{
+"start": 33.07,
+"end": 33.73,
+"text": "creusa"
+},
+{
+"start": 33.73,
+"end": 34.18,
+"text": "sans"
+},
+{
+"start": 34.18,
+"end": 35.65,
+"text": "s'arrêter."
+},
+{
+"start": 35.65,
+"end": 36.19,
+"text": "Et"
+},
+{
+"start": 36.19,
+"end": 37.12,
+"text": "finalement,"
+},
+{
+"start": 37.12,
+"end": 39.67,
+"text": "il"
+},
+{
+"start": 39.67,
+"end": 39.82,
+"text": "se"
+},
+{
+"start": 39.82,
+"end": 40.49,
+"text": "retrouve"
+},
+{
+"start": 40.49,
+"end": 40.71,
+"text": "en"
+},
+{
+"start": 40.71,
+"end": 41.36,
+"text": "enfer."
+},
+{
+"start": 41.36,
+"end": 41.46,
+"text": "Et"
+},
+{
+"start": 41.46,
+"end": 45.63,
+"text": "qu'a-t-il"
+},
+{
+"start": 45.63,
+"end": 46.06,
+"text": "trouvé"
+},
+{
+"start": 46.06,
+"end": 46.16,
+"text": "en"
+},
+{
+"start": 46.16,
+"end": 46.53,
+"text": "enfer,"
+},
+{
+"start": 46.53,
+"end": 46.97,
+"text": "papa?"
+},
+{
+"start": 46.97,
+"end": 47.44,
+"text": "Il"
+},
+{
+"start": 47.44,
+"end": 51.74,
+"text": "m'a"
+},
+{
+"start": 51.74,
+"end": 52.09,
+"text": "trouvé"
+},
+{
+"start": 52.09,
+"end": 52.48,
+"text": "moi."
+}
+]
+}
