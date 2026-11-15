@@ -79,8 +79,10 @@ if ! up; then
     exit 1
   fi
   mkdir -p "\$(dirname "\$LOG")"
+  cd "\$PROJECT" || exit 1
   # Serveur detache du lanceur : il continue apres la fin de ce script.
-  ( cd "\$PROJECT" && MONTAGIA_NO_BROWSER=1 nohup ./start.sh > "\$LOG" 2>&1 & )
+  # (Commande simple en arriere-plan : pas de sous-shell qui resterait en vie.)
+  MONTAGIA_NO_BROWSER=1 nohup ./start.sh > "\$LOG" 2>&1 &
   for _ in \$(seq 1 90); do
     sleep 1
     up && break
