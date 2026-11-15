@@ -1,0 +1,21 @@
+{
+  // Extensions recommandees pour MontageIA.
+  //
+  // A NE PAS INSTALLER : Pylance (ms-python.vscode-pylance).
+  //   C'est l'extension Microsoft d'analyse de code, ~1 Go de RAM d'indexation.
+  //   Le projet n'a aucun type hint et le code est du stdlib pur :
+  //   elle n'apporterait rien et ralentirait la machine pendant les rendus.
+  //
+  // A NE PAS INSTALLER : Python Debugger / autocompletion lourde,
+  //   meme raison (le serveur de debug lance un processus Python de plus).
+  "recommendations": [
+    "ms-python.python",
+    "charliermarsh.ruff",
+    "dbaeumer.vscode-eslint"
+  ],
+  "unwantedRecommendations": [
+    "ms-python.vscode-pylance",
+    "ms-python.black-formatter",
+    "ms-python.isort"
+  ]
+}

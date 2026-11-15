@@ -1,0 +1,90 @@
+{
+  // ─────────────────────────────────────────────────────────────
+  // MontageIA — configuration VS Code
+  //
+  // Objectif : que VS Code reste LEGER sur ce Mac (i5-5575R, 4 coeurs,
+  // 16 Go) pendant qu'Ollama tient qwen2.5:3b en memoire.
+  //
+  // Regle principale : on n'indexe JAMAIS les gros binaires.
+  // models/ggml-base.bin fait 150 Mo, workspace/ contient les exports.
+  // Un indexeur qui les scanne fait saccader la machine.
+  // ─────────────────────────────────────────────────────────────
+
+  // Fichiers exclus de l'explorateur ET de la recherche (weight: 1 = ignoré)
+  "files.exclude": {
+    "**/__pycache__": true,
+    "**/.venv": true,
+    "**/*.pyc": true,
+    "models": true,
+    "bin": true,
+    "workspace": true
+  },
+
+  // Dossiers ignorés par le watcher de fichiers (économise du CPU)
+  "files.watcherExclude": {
+    "**/.venv/**": true,
+    "**/workspace/**": true,
+    "**/models/**": true,
+    "**/bin/**": true,
+    "**/__pycache__/**": true
+  },
+
+  // Dossiers ignorés par la recherche dans le contenu
+  "search.exclude": {
+    "**/.venv": true,
+    "**/workspace": true,
+    "**/models": true,
+    "**/bin": true,
+    "**/__pycache__": true,
+    "**/*.min.js": true
+  },
+
+  // Taille max indexée (Go) — évite qu'un export vidéo parte dans l'index
+  "files.maxMemoryForLargeFilesMB": 64,
+
+  // Sauvegarde automatique (le projet est versionné)
+  "files.autoSave": "afterDelay",
+  "files.autoSaveDelay": 1000,
+  "files.insertFinalNewline": true,
+  "files.trimTrailingWhitespace": true,
+  "files.encoding": "utf8",
+
+  // Terminal intégré dans le dossier du projet
+  "terminal.integrated.cwd": "${workspaceFolder}",
+  "terminal.integrated.defaultProfile.osx": "bash",
+  "terminal.integrated.env.osx": {
+    "PATH": "/Applications/kdenlive.app/Contents/MacOS:${env:PATH}"
+  },
+
+  // Python : NE PAS installer Pylance (extension Microsoft separee,
+  // ~1 Go de RAM d'indexation pour un projet sans aucun type hint).
+  // L'extension "Python" de base suffit (coloration + terminal + lint Ruff).
+  "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
+  "python.terminal.activateEnvironment": true,
+
+  // Terminal : le PATH doit inclure les binaires de Kdenlive (ffmpeg/melt)
+  "terminal.integrated.env.osx.PATH": "/Applications/kdenlive.app/Contents/MacOS:${env:PATH}",
+
+  // Pas de mise a jour automatique en arriere-plan (CPU + RAM)
+  "update.mode": "manual",
+  "telemetry.telemetryLevel": "off",
+  "extensions.autoCheckUpdates": false,
+  "extensions.autoUpdate": false,
+
+  // Rendu plus fluide sur un vieux GPU Intel
+  "window.titleBarStyle": "native",
+  "editor.minimap.enabled": false,
+  "editor.renderWhitespace": "none",
+  "editor.fontSize": 13,
+  "editor.lineNumbers": "on",
+  "editor.tabSize": 4,
+  "editor.insertSpaces": true,
+  "editor.codeActionsOnSave": {
+    "source.fixAll.ruff": "explicit",
+    "source.organizeImports.ruff": "explicit"
+  },
+
+  // .gitignore est deja dans le projet : VS Code respecte les fichiers ignores
+  "explorer.excludeGitIgnore": true,
+  "search.useIgnoreFiles": true
+}

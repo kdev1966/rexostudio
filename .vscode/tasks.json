@@ -1,0 +1,49 @@
+{
+  // Taches de developpement MontageIA (affichees dans le menu Run Task).
+  //
+  // Le PATH est cale sur les binaires de Kdenlive (ffmpeg, ffprobe, melt)
+  // car Homebrew n'est pas installe sur cette machine.
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Lint (ruff)",
+      "type": "shell",
+      "command": ".venv/bin/ruff check .",
+      "problemMatcher": [],
+      "group": { "kind": "test", "isDefault": true }
+    },
+    {
+      "label": "Lint + correction auto (ruff --fix)",
+      "type": "shell",
+      "command": ".venv/bin/ruff check --fix .",
+      "problemMatcher": []
+    },
+    {
+      "label": "Verifier les imports",
+      "type": "shell",
+      "command": "python3 -c \"import sys;sys.path.insert(0,'.');import montagia.cli,montagia.pipeline,server.app;print('OK')\"",
+      "problemMatcher": []
+    },
+    {
+      "label": "Serveur web (MontageIA)",
+      "type": "shell",
+      "command": "./start.sh",
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated" }
+    },
+    {
+      "label": "Mode terminal (CLI)",
+      "type": "shell",
+      "command": "./start.sh --cli",
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated" }
+    },
+    {
+      "label": "Test de bout en bout (vlog)",
+      "type": "shell",
+      "command": "python3 -m montagia.cli ~/Desktop/Studio_IA/tests/vlog_valentijn.webm plan",
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated" }
+    }
+  ]
+}

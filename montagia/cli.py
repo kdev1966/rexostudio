@@ -7,6 +7,7 @@ Usage :
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
 import time
 
@@ -45,7 +46,10 @@ class Assistant(object):
         self.segments = []
         self.transcript = ""
         self.candidates = []
-        self.plan = []
+        # ATTENTION : l'attribut ne doit pas s'appeler "plan" -> il masquerait
+        # la methode plan() et l'appel assistant.plan(...) echouait avec
+        # "TypeError: 'list' object is not callable".
+        self.cut_plan = []
         self.duration = 0.0
 
     # -- etapes ------------------------------------------------------------
@@ -58,6 +62,14 @@ class Assistant(object):
         t0 = time.time()
         silences = media.detect_silence(self.path)
         ok("%d silences detectes en %.2f s" % (len(silences), time.time() - t0))
+
+    def ensure_analyzed(self):
+        if not self.duration:
+            self.analyze()
+
+    def ensure_transcribed(self):
+        if not self.candidates:
+            self.transcribe()
 
     def transcribe(self, model=None, language="auto"):
         step("Transcription (whisper.cpp + VAD)")
@@ -73,18 +85,19 @@ class Assistant(object):
 
     def plan(self, instruction="", style="standard"):
         step("Plan de coupe par l'IA (%s)" % config.LLM_MODEL)
-        if not self.candidates:
-            self.transcribe()
+        self.ensure_analyzed()
+        self.ensure_transcribed()
         t0 = time.time()
         result = pipeline.ai_cut_plan(
             _FakeJob(), self.candidates, self.duration, self.transcript,
             instruction, style)
-        self.plan = result["segments"]
+        self.cut_plan = result["segments"]
         kept = result["kept_duration"]
         ok("%d segments retenus - %.1f s sur %.1f s (%.0f%%) en %.1f s" % (
-            len(self.plan), kept, self.duration, kept / max(self.duration, 1) * 100,
+            len(self.cut_plan), kept, self.duration,
+            kept / max(self.duration, 1) * 100,
             time.time() - t0))
-        for seg in self.plan:
+        for seg in self.cut_plan:
             say("    %6.1f -> %6.1f  %s" % (seg["start"], seg["end"],
                                            seg.get("reason", "")[:60]))
         if result.get("rationale"):
@@ -93,14 +106,14 @@ class Assistant(object):
 
     def render(self, fmt="16:9", encoder=None, quality="standard", subtitles=""):
         step("Rendu %s" % fmt)
-        if not self.plan:
+        if not self.cut_plan:
             self.plan()
         base = tools.safe_component(self.name.rsplit(".", 1)[0], "montage")
         out = os.path.join(config.EXPORTS_DIR,
                            time.strftime("%Y%m%d-%H%M%S") + "_" + base + "_" +
                            fmt.replace(":", "x") + ".mp4")
         t0 = time.time()
-        result = edit.export(self.path, self.plan, out, fmt=fmt, encoder=encoder,
+        result = edit.export(self.path, self.cut_plan, out, fmt=fmt, encoder=encoder,
                              quality=quality, subtitles=subtitles,
                              on_log=lambda m: print("   " + DIM + m + RESET))
         ok("%s (%.1f s de calcul)" % (result["path"], time.time() - t0))
@@ -108,11 +121,11 @@ class Assistant(object):
 
     def kdenlive(self, profile="16:9"):
         step("Projet Kdenlive")
-        if not self.plan:
+        if not self.cut_plan:
             self.plan()
         base = tools.safe_component(self.name.rsplit(".", 1)[0], "projet")
         out = os.path.join(config.EXPORTS_DIR, base + ".kdenlive")
-        kdenlive.build_project(self.path, self.plan, out, profile=profile,
+        kdenlive.build_project(self.path, self.cut_plan, out, profile=profile,
                                title=self.name)
         check = kdenlive.validate(out)
         ok("%s - %s" % (out, check.get("message", "")))
@@ -120,12 +133,50 @@ class Assistant(object):
 
     def chat(self, question):
         step("Question : %s" % question)
+        self.ensure_analyzed()
+        self.ensure_transcribed()
         system = prompts.system_message(self.transcript, prompts.SYS_ANALYST)
         user = prompts.build_chat_prompt(question, self.duration)
         for piece in ai.chat_stream(system, user):
             sys.stdout.write(piece)
             sys.stdout.flush()
         print("")
+
+    def subs(self):
+        """Ecrit le .srt de la transcription (sur la timeline de la source)."""
+        step("Generation du fichier .srt")
+        self.ensure_transcribed()
+        path = os.path.join(config.EXPORTS_DIR,
+                            tools.safe_component(self.name.rsplit(".", 1)[0], "srt") + ".srt")
+        transcribe.write_srt(self.segments, path)
+        ok("%s (%d lignes)" % (path, len(self.segments)))
+        return path
+
+    def pack(self, tone="", extra=""):
+        step("Pack de publication")
+        self.ensure_analyzed()
+        self.ensure_transcribed()
+        result = pipeline.ai_pack(_FakeJob(), self.transcript,
+                                  self.candidates, self.duration, tone, extra)
+        for t in result.get("titles", []):
+            say("    - " + t)
+        if result.get("description"):
+            say("    " + result["description"][:300])
+        if result.get("short_description"):
+            say("    (court) " + result["short_description"][:200])
+        if result.get("hashtags"):
+            say("    " + " ".join("#" + h for h in result["hashtags"]))
+        return result
+
+    def summary(self):
+        step("Resume de la video")
+        self.ensure_analyzed()
+        self.ensure_transcribed()
+        result = pipeline.ai_summary(_FakeJob(), self.transcript, self.duration)
+        say("    " + (result.get("summary") or ""))
+        for k in result.get("key_points", []):
+            say("    * " + k)
+        return result
 
 
 class _FakeJob(object):
@@ -135,6 +186,33 @@ class _FakeJob(object):
 
     def add_log(self, *a, **k):
         pass
+
+
+def run_command(assistant, cmd: str, parts: list):
+    """Execute une commande sur l'assistant courant. Commun au mode
+    interactif et au mode « une commande » du script."""
+    if cmd in ("analyse", "analyze"):
+        assistant.analyze()
+    elif cmd == "transcribe":
+        assistant.transcribe()
+    elif cmd == "plan":
+        assistant.plan(" ".join(parts[1:]))
+    elif cmd == "render":
+        assistant.render(parts[1] if len(parts) > 1 else "16:9")
+    elif cmd == "subs":
+        assistant.subs()
+    elif cmd == "kdenlive":
+        assistant.kdenlive()
+    elif cmd == "pack":
+        assistant.pack()
+    elif cmd in ("resume", "summary"):
+        assistant.summary()
+    elif cmd == "chat":
+        if len(parts) < 2:
+            raise ValueError("chat attend une question.")
+        assistant.chat(" ".join(parts[1:]))
+    else:
+        warn("Commande inconnue : %s (tapez 'help')" % cmd)
 
 
 def interactive():
@@ -170,46 +248,24 @@ def interactive():
 """)
             continue
         if cmd == "open" and len(parts) > 1:
-            os.system('open "%s"' % parts[1])
-            continue
-        if not assistant:
-            assistant = Assistant(parts[0])
-            assistant.analyze()
-            assistant.transcribe()
+            # subprocess avec liste : pas d'interpreteur shell, donc pas
+            # d'injection possible via le chemin saisi.
+            try:
+                subprocess.run(["open", parts[1]], check=False)
+                ok("Ouvert : %s" % parts[1])
+            except OSError as exc:
+                warn("Ouverture impossible : %s" % exc)
             continue
         try:
-            if cmd == "analyse":
+            if not assistant:
+                if not os.path.isfile(parts[0]):
+                    warn("Fichier introuvable : %s" % parts[0])
+                    continue
+                assistant = Assistant(parts[0])
                 assistant.analyze()
-            elif cmd == "transcribe":
                 assistant.transcribe()
-            elif cmd == "plan":
-                assistant.plan(" ".join(parts[1:]))
-            elif cmd == "render":
-                fmt = parts[1] if len(parts) > 1 else "16:9"
-                assistant.render(fmt)
-            elif cmd == "subs":
-                path = os.path.join(config.EXPORTS_DIR,
-                                    tools.safe_component(assistant.name.rsplit(".", 1)[0], "srt") + ".srt")
-                transcribe.write_srt(assistant.segments, path)
-                ok(path)
-            elif cmd == "kdenlive":
-                assistant.kdenlive()
-            elif cmd == "pack":
-                result = pipeline.ai_pack(_FakeJob(), assistant.transcript,
-                                          assistant.candidates, assistant.duration)
-                for t in result.get("titles", []):
-                    say("    - " + t)
-                say("    " + (result.get("description") or "")[:200])
-            elif cmd == "resume":
-                result = pipeline.ai_summary(_FakeJob(), assistant.transcript,
-                                             assistant.duration)
-                say("    " + result.get("summary", ""))
-                for k in result.get("key_points", []):
-                    say("    * " + k)
-            elif cmd == "chat" and len(parts) > 1:
-                assistant.chat(" ".join(parts[1:]))
-            else:
-                warn("Commande inconnue : %s (tapez 'help')" % cmd)
+                continue
+            run_command(assistant, cmd, parts)
         except Exception as exc:            # noqa: BLE001
             warn("%s" % exc)
 
@@ -225,19 +281,13 @@ def main():
         warn("Fichier introuvable : %s" % path)
         sys.exit(1)
     assistant = Assistant(path)
-    assistant.analyze()
-    assistant.transcribe()
     command = args[1] if len(args) > 1 else "plan"
-    if command == "plan":
-        assistant.plan(" ".join(args[2:]))
-    elif command == "render":
-        assistant.render(args[2] if len(args) > 2 else "16:9")
-    elif command == "kdenlive":
-        assistant.kdenlive()
-    elif command == "chat":
-        assistant.chat(" ".join(args[2:]))
-    else:
-        interactive()
+    parts = args[1:]
+    try:
+        run_command(assistant, command.lower(), parts)
+    except Exception as exc:                # noqa: BLE001
+        warn("%s" % exc)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

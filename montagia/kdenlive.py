@@ -7,6 +7,7 @@ sous-titres. L'utilisateur ouvre le projet et peut continuer a monter.
 from __future__ import annotations
 
 import os
+import re
 import time
 import uuid
 from xml.sax.saxutils import escape
@@ -165,8 +166,6 @@ def validate(path: str) -> dict:
         return {"ok": False, "message": (exc.stderr or exc.stdout or "")[-500:]}
     ok = "<mlt" in out
     duration = 0.0
-    m = None
-    import re
     matches = re.findall(r'out="(\d+):(\d+):(\d+)[.,](\d+)"', out)
     if matches:
         h, mnt, s, ms = matches[-1]

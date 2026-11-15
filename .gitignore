@@ -5,3 +5,7 @@ bin/whisper-cli
 .DS_Store
 __pycache__/
 *.pyc
+
+# Outillage de developpement (venv ruff) - jamais versionne
+.venv/
+.ruff_cache/

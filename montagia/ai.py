@@ -106,9 +106,9 @@ def chat_json(system: str, user: str, schema: dict, model: str = None,
             detail = exc.read().decode("utf-8")[:500]
         except Exception:
             pass
-        raise OllamaError("Ollama HTTP %s : %s" % (exc.code, detail))
+        raise OllamaError("Ollama HTTP %s : %s" % (exc.code, detail)) from exc
     except urllib.error.URLError as exc:
-        raise OllamaError("Ollama injoignable (%s). Lancez 'ollama serve'." % exc.reason)
+        raise OllamaError("Ollama injoignable (%s). Lancez 'ollama serve'." % exc.reason) from exc
 
     content = (resp.get("message") or {}).get("content", "")
     if not content.strip():
@@ -136,7 +136,7 @@ def chat_text(system: str, user: str, model: str = None,
     try:
         resp = _post("/api/chat", payload)
     except urllib.error.URLError as exc:
-        raise OllamaError("Ollama injoignable (%s)" % exc.reason)
+        raise OllamaError("Ollama injoignable (%s)" % exc.reason) from exc
     return (resp.get("message") or {}).get("content", "").strip()
 
 

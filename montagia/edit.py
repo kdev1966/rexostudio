@@ -6,8 +6,6 @@ l'export, de maniere deterministe et verifiable.
 """
 from __future__ import annotations
 
-import json
-import math
 import os
 import re
 
@@ -96,7 +94,7 @@ def export(source: str, segments: list, out_path: str,
 
     fmt : "16:9" (horizontal) ou "9:16" (vertical Shorts/Reels).
     """
-    log = on_log or (lambda m: None)
+    log = on_log or (lambda _m: None)
     encoder = encoder or config.DEFAULT_ENCODER
     if encoder not in config.ENCODERS:
         encoder = "videotoolbox"

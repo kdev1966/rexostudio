@@ -19,7 +19,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from montagia import ai, config, edit, kdenlive, media, pipeline, project, tools, transcribe  # noqa: E402
+from montagia import ai, config, media, pipeline, project, tools, transcribe  # noqa: E402
 from montagia.jobs import MANAGER  # noqa: E402
 
 MAX_BODY = 8 * 1024 ** 3
@@ -97,7 +97,7 @@ class StudioHandler(BaseHTTPRequestHandler):
                 return self._serve_file(query)
             return self._error("Route inconnue : %s" % route, 404)
         except BrokenPipeError:
-            return
+            return None
         except Exception as exc:           # noqa: BLE001
             self._error("%s" % exc, 500)
 
@@ -134,7 +134,7 @@ class StudioHandler(BaseHTTPRequestHandler):
                 return self._api_open()
             return self._error("Route inconnue : %s" % route, 404)
         except BrokenPipeError:
-            return
+            return None
         except Exception as exc:           # noqa: BLE001
             self._error("%s" % exc, 500)
 
@@ -150,6 +150,7 @@ class StudioHandler(BaseHTTPRequestHandler):
         with open(path, "rb") as fh:
             data = fh.read()
         self._send(200, data, ctype, {"Cache-Control": "no-cache"})
+        return None
 
     def _serve_file(self, query):
         target = (query.get("path") or [""])[0]

@@ -4,9 +4,8 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import time
 
-from . import ai, config, edit, kdenlive, media, prompts, tools, transcribe
+from . import ai, config, edit, kdenlive, media, prompts, transcribe
 
 AI_CACHE_DIR = os.path.join(config.CACHE_DIR, "ai")
 
@@ -259,7 +258,9 @@ def ai_fix_subtitles(job, segments: list, chunk_size: int = 25) -> dict:
         user = prompts.build_subtitle_chunk_prompt(chunk)
         payload = {"lines": [[ln["index"], ln["text"]] for ln in chunk]}
 
-        def compute():
+        # system/user sont lies par defaut : sans cela la closure capturerait
+        # la variable de boucle (reluee au tour suivant) et non sa valeur.
+        def compute(system=system, user=user):
             return ai.chat_json(system, user, prompts.SCHEMA_SUBTITLES, temperature=0.2)
 
         result = cached_ai("subs", payload, compute)
