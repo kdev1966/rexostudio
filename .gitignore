@@ -1,0 +1,7 @@
+# Donnees de travail (regenerees)
+workspace/
+models/*.bin
+bin/whisper-cli
+.DS_Store
+__pycache__/
+*.pyc

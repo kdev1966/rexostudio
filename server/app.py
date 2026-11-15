@@ -1,0 +1,574 @@
+"""Serveur web local de MontageIA.
+
+Stdlib uniquement (http.server + urllib) : aucune dependance a installer,
+un demarrage instantane, et un fonctionnement stable sur Python 3.9 / macOS 12.
+"""
+from __future__ import annotations
+
+import json
+import mimetypes
+import os
+import posixpath
+import queue
+import subprocess
+import sys
+import time
+import urllib.parse
+import webbrowser
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from montagia import ai, config, edit, kdenlive, media, pipeline, project, tools, transcribe  # noqa: E402
+from montagia.jobs import MANAGER  # noqa: E402
+
+MAX_BODY = 8 * 1024 ** 3
+
+
+class StudioHandler(BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"       # necessaire pour le streaming SSE
+    disable_nagle_algorithm = True       # reponse plus reactive
+
+    server_version = "MontageIA/1.0"
+
+    # -- utilitaires --------------------------------------------------------
+    def log_message(self, fmt, *args):  # noqa: A003
+        if os.environ.get("MONTAGIA_VERBOSE"):
+            sys.stderr.write("[server] " + (fmt % args) + "\n")
+
+    def _send(self, code, body=b"", content_type="application/json; charset=utf-8",
+              extra=None):
+        if isinstance(body, str):
+            body = body.encode("utf-8")
+        self.send_response(code)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        for key, value in (extra or {}).items():
+            self.send_header(key, value)
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(body)
+
+    def _json(self, data, code=200):
+        self._send(code, json.dumps(data, ensure_ascii=False))
+
+    def _error(self, message, code=400):
+        self._json({"error": str(message)}, code)
+
+    def _body_json(self):
+        length = int(self.headers.get("Content-Length") or 0)
+        if length <= 0:
+            return {}
+        raw = self.rfile.read(length)
+        try:
+            return json.loads(raw.decode("utf-8"))
+        except ValueError:
+            return {}
+
+    # -- routing -----------------------------------------------------------
+    def do_GET(self):  # noqa: N802
+        parsed = urllib.parse.urlparse(self.path)
+        route = parsed.path
+        query = urllib.parse.parse_qs(parsed.query)
+        try:
+            if route == "/":
+                return self._serve_static("index.html")
+            if route.startswith("/static/"):
+                return self._serve_static(route[len("/static/"):])
+            if route == "/api/status":
+                return self._api_status()
+            if route == "/api/projects":
+                return self._json({"projects": project.STORE.list()})
+            if route == "/api/project":
+                pid = (query.get("id") or [""])[0]
+                proj = project.STORE.get(pid)
+                if not proj:
+                    return self._error("Projet introuvable", 404)
+                return self._json({"project": proj.to_dict()})
+            if route.startswith("/api/jobs/"):
+                rest = route[len("/api/jobs/"):]
+                if rest.endswith("/events"):
+                    return self._job_events(rest[:-len("/events")])
+                return self._job_status(rest)
+            if route == "/api/jobs":
+                return self._json({"jobs": MANAGER.list()})
+            if route == "/api/file":
+                return self._serve_file(query)
+            return self._error("Route inconnue : %s" % route, 404)
+        except BrokenPipeError:
+            return
+        except Exception as exc:           # noqa: BLE001
+            self._error("%s" % exc, 500)
+
+    def do_POST(self):  # noqa: N802
+        parsed = urllib.parse.urlparse(self.path)
+        route = parsed.path
+        query = urllib.parse.parse_qs(parsed.query)
+        try:
+            if route == "/api/upload":
+                return self._api_upload(query)
+            if route == "/api/analyze":
+                return self._api_analyze()
+            if route == "/api/transcribe":
+                return self._api_transcribe()
+            if route == "/api/plan":
+                return self._api_plan()
+            if route == "/api/pack":
+                return self._api_pack()
+            if route == "/api/summary":
+                return self._api_summary()
+            if route == "/api/trailer":
+                return self._api_trailer()
+            if route == "/api/fixsubs":
+                return self._api_fixsubs()
+            if route == "/api/chat":
+                return self._api_chat()
+            if route == "/api/render":
+                return self._api_render()
+            if route == "/api/kdenlive":
+                return self._api_kdenlive()
+            if route == "/api/subs":
+                return self._api_subs()
+            if route == "/api/open":
+                return self._api_open()
+            return self._error("Route inconnue : %s" % route, 404)
+        except BrokenPipeError:
+            return
+        except Exception as exc:           # noqa: BLE001
+            self._error("%s" % exc, 500)
+
+    # -- statique ----------------------------------------------------------
+    def _serve_static(self, name: str):
+        name = posixpath.normpath(name).lstrip("/")
+        if name in ("", "."):
+            name = "index.html"
+        path = os.path.join(config.STATIC_DIR, name)
+        if not tools.is_within(config.STATIC_DIR, path) or not os.path.isfile(path):
+            return self._error("Fichier introuvable", 404)
+        ctype = mimetypes.guess_type(path)[0] or "application/octet-stream"
+        with open(path, "rb") as fh:
+            data = fh.read()
+        self._send(200, data, ctype, {"Cache-Control": "no-cache"})
+
+    def _serve_file(self, query):
+        target = (query.get("path") or [""])[0]
+        if not target:
+            return self._error("Chemin manquant")
+        target = os.path.abspath(target)
+        if not tools.is_within(config.WORKSPACE, target):
+            return self._error("Acces refuse (hors espace de travail)", 403)
+        if not os.path.isfile(target):
+            return self._error("Fichier introuvable", 404)
+        ctype = mimetypes.guess_type(target)[0] or "application/octet-stream"
+        size = os.path.getsize(target)
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(size))
+        self.send_header("Content-Disposition",
+                         'inline; filename="%s"' % os.path.basename(target))
+        self.end_headers()
+        with open(target, "rb") as fh:
+            while True:
+                chunk = fh.read(512 * 1024)
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
+
+    # -- API ---------------------------------------------------------------
+    def _api_status(self):
+        whisper_models = []
+        for name in ("tiny", "base", "small", "medium"):
+            path = config.whisper_model_path(name)
+            if path:
+                whisper_models.append({"name": name, "size": os.path.getsize(path)})
+        info = {
+            "ollama": ai.stats(),
+            "ffmpeg": config.ffmpeg_bin(),
+            "ffprobe": config.ffprobe_bin(),
+            "whisper": config.whisper_bin(),
+            "whisper_models": whisper_models,
+            "vad_model": config.whisper_vad_model(),
+            "kdenlive": os.path.isdir(config.KDENLIVE_APP),
+            "melt": config.melt_bin(),
+            "model": config.LLM_MODEL,
+            "num_ctx": config.LLM_NUM_CTX,
+            "workspace": config.WORKSPACE,
+            "python": sys.version.split()[0],
+            "cpu_count": os.cpu_count(),
+            "encoders": list(config.ENCODERS),
+        }
+        return self._json(info)
+
+    def _api_upload(self, query):
+        name = (query.get("name") or ["video.mp4"])[0]
+        name = os.path.basename(name)
+        stem, ext = os.path.splitext(name)
+        if ext.lower() not in config.VIDEO_EXTENSIONS:
+            return self._error("Format non supporte : %s" % ext)
+        safe = tools.safe_component(stem, "media") + ext.lower()
+        target_dir = os.path.join(config.MEDIA_DIR, time.strftime("%Y%m%d"))
+        os.makedirs(target_dir, exist_ok=True)
+        target = os.path.join(target_dir, safe)
+
+        length = int(self.headers.get("Content-Length") or 0)
+        if length <= 0:
+            return self._error("Aucun recu")
+        if length > MAX_BODY:
+            return self._error("Fichier trop volumineux")
+
+        written = 0
+        with open(target, "wb") as fh:
+            while written < length:
+                chunk = self.rfile.read(min(1024 * 1024, length - written))
+                if not chunk:
+                    break
+                fh.write(chunk)
+                written += len(chunk)
+        if written < length:
+            os.remove(target)
+            return self._error("Transfert interrompu")
+
+        try:
+            info = media.probe(target)
+        except Exception as exc:           # noqa: BLE001
+            os.remove(target)
+            return self._error("Fichier illisible : %s" % exc)
+
+        proj = project.STORE.create(target, name)
+        proj.info = info
+        return self._json({"project": proj.to_dict(),
+                           "size": written,
+                           "size_human": tools.human_size(written)})
+
+    def _get_project(self, data):
+        pid = data.get("project_id") or ""
+        proj = project.STORE.get(pid)
+        if not proj:
+            raise ValueError("Projet introuvable (reexploitez le fichier)")
+        return proj
+
+    def _api_analyze(self):
+        data = self._body_json()
+        proj = self._get_project(data)
+        job = MANAGER.create("analyze", "Analyse de %s" % proj.name)
+
+        def run(j):
+            result = pipeline.analyze_media(j, proj.path,
+                                            data.get("noise_db"),
+                                            data.get("min_dur"))
+            proj.info = result["info"]
+            proj.silences = result["silences"]
+            proj.speech_segments = result["speech_segments"]
+            return result
+
+        MANAGER.run_async(job, run)
+        return self._json({"job_id": job.id})
+
+    def _api_transcribe(self):
+        data = self._body_json()
+        proj = self._get_project(data)
+        job = MANAGER.create("transcribe", "Transcription de %s" % proj.name)
+
+        def run(j):
+            result = pipeline.transcribe_media(
+                j, proj.path, data.get("model") or None,
+                data.get("language") or "auto")
+            proj.transcript_segments = result["segments"]
+            proj.transcript = transcribe.transcript_text(result["segments"])
+            proj.language = result.get("language", "")
+            proj.model = result.get("model", "")
+            proj.candidates = pipeline.build_candidates(result["segments"])
+            srt_path = os.path.join(
+                config.EXPORTS_DIR,
+                "%s.srt" % tools.safe_component(proj.name.rsplit(".", 1)[0], "sous-titres"))
+            transcribe.write_srt(result["segments"], srt_path)
+            proj.srt_path = srt_path
+            j.add_log("Sous-titres : %s" % srt_path)
+            return result
+
+        MANAGER.run_async(job, run)
+        return self._json({"job_id": job.id})
+
+    def _api_plan(self):
+        data = self._body_json()
+        proj = self._get_project(data)
+        candidates = data.get("candidates") or proj.candidates
+        if not candidates:
+            candidates = pipeline.build_candidates(proj.transcript_segments)
+        transcript = data.get("transcript") or proj.transcript
+        duration = (proj.info or {}).get("duration") or 0.0
+        job = MANAGER.create("plan", "Plan de coupe IA")
+
+        def run(j):
+            result = pipeline.ai_cut_plan(
+                j, candidates, duration, transcript,
+                data.get("instruction", ""), data.get("style", ""))
+            proj.plan = result["segments"]
+            proj.results["plan_rationale"] = result.get("rationale", "")
+            proj.results["plan_style"] = result.get("style", "")
+            return result
+
+        MANAGER.run_async(job, run)
+        return self._json({"job_id": job.id})
+
+    def _api_pack(self):
+        data = self._body_json()
+        proj = self._get_project(data)
+        job = MANAGER.create("pack", "Pack de publication")
+
+        def run(j):
+            result = pipeline.ai_pack(
+                j, proj.transcript, proj.candidates,
+                (proj.info or {}).get("duration", 0),
+                data.get("tone", ""), data.get("extra", ""))
+            proj.results["pack"] = result
+            return result
+
+        MANAGER.run_async(job, run)
+        return self._json({"job_id": job.id})
+
+    def _api_summary(self):
+        data = self._body_json()
+        proj = self._get_project(data)
+        job = MANAGER.create("summary", "Resume de la video")
+
+        def run(j):
+            result = pipeline.ai_summary(
+                j, proj.transcript, (proj.info or {}).get("duration", 0))
+            proj.results["summary"] = result
+            return result
+
+        MANAGER.run_async(job, run)
+        return self._json({"job_id": job.id})
+
+    def _api_trailer(self):
+        data = self._body_json()
+        proj = self._get_project(data)
+        candidates = data.get("candidates") or proj.candidates
+        if not candidates:
+            candidates = pipeline.build_candidates(proj.transcript_segments)
+        job = MANAGER.create("trailer", "Recherche des meilleurs moments")
+
+        def run(j):
+            result = pipeline.ai_trailer(
+                j, candidates, (proj.info or {}).get("duration", 0),
+                proj.transcript, float(data.get("target_seconds", 30)),
+                data.get("instruction", ""))
+            proj.results["trailer"] = result
+            return result
+
+        MANAGER.run_async(job, run)
+        return self._json({"job_id": job.id})
+
+    def _api_fixsubs(self):
+        data = self._body_json()
+        proj = self._get_project(data)
+        job = MANAGER.create("fixsubs", "Correction des sous-titres")
+
+        def run(j):
+            result = pipeline.ai_fix_subtitles(j, proj.transcript_segments)
+            proj.results["corrected_segments"] = result["segments"]
+            srt_path = os.path.join(
+                config.EXPORTS_DIR,
+                "%s.srt" % tools.safe_component(proj.name.rsplit(".", 1)[0], "sous-titres"))
+            transcribe.write_srt(result["segments"], srt_path)
+            proj.srt_path = srt_path
+            j.add_log("Sous-titres corriges : %s" % srt_path)
+            return result
+
+        MANAGER.run_async(job, run)
+        return self._json({"job_id": job.id})
+
+    def _api_chat(self):
+        """Chat en flux (SSE)."""
+        data = self._body_json()
+        proj = self._get_project(data)
+        question = (data.get("question") or "").strip()
+        if not question:
+            return self._error("Question vide")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "keep-alive")
+        self.end_headers()
+        try:
+            for piece in pipeline.ai_chat(None, question, proj.transcript,
+                                         (proj.info or {}).get("duration", 0)):
+                self.wfile.write(("data: %s\n\n" % json.dumps(
+                    {"token": piece}, ensure_ascii=False)).encode("utf-8"))
+                self.wfile.flush()
+            self.wfile.write(b"data: {\"done\": true}\n\n")
+            self.wfile.flush()
+        except Exception as exc:           # noqa: BLE001
+            self.wfile.write(("data: %s\n\n" % json.dumps(
+                {"error": str(exc)}, ensure_ascii=False)).encode("utf-8"))
+            self.wfile.flush()
+
+    def _api_render(self):
+        data = self._body_json()
+        proj = self._get_project(data)
+        segments = data.get("segments") or proj.plan
+        if not segments:
+            return self._error("Aucun segment a rendre")
+        fmt = data.get("format", "16:9")
+        base = tools.safe_component(proj.name.rsplit(".", 1)[0], "montage")
+        suffix = {"16:9": "16x9", "9:16": "9x16"}.get(fmt, fmt)
+        out_name = "%s_%s.mp4" % (base, suffix)
+        out_path = os.path.join(config.EXPORTS_DIR,
+                                time.strftime("%Y%m%d-%H%M%S") + "_" + out_name)
+        job = MANAGER.create("render", "Rendu %s" % fmt)
+        subs = proj.results.get("corrected_segments") or proj.transcript_segments
+
+        def run(j):
+            result = pipeline.render_video(
+                j, proj.path, segments, out_path, fmt=fmt,
+                encoder=data.get("encoder"), quality=data.get("quality", "standard"),
+                subtitles=data.get("srt") or proj.srt_path,
+                burn_subtitles=bool(data.get("burn_subtitles")),
+                focus_x=float(data.get("focus_x", 0.5)),
+                normalize_audio=bool(data.get("normalize_audio")),
+                subtitle_segments=subs)
+            proj.add_export(out_path)
+            return result
+
+        MANAGER.run_async(job, run)
+        return self._json({"job_id": job.id, "output": out_path})
+
+    def _api_kdenlive(self):
+        data = self._body_json()
+        proj = self._get_project(data)
+        segments = data.get("segments") or proj.plan
+        if not segments:
+            return self._error("Aucun segment : rien a mettre dans le projet")
+        base = tools.safe_component(proj.name.rsplit(".", 1)[0], "projet")
+        out_path = os.path.join(config.EXPORTS_DIR, base + ".kdenlive")
+        job = MANAGER.create("kdenlive", "Projet Kdenlive")
+        subs = proj.results.get("corrected_segments") or proj.transcript_segments
+
+        def run(j):
+            result = pipeline.build_kdenlive_job(
+                j, proj.path, segments, out_path,
+                profile=data.get("profile", "16:9"),
+                srt_path=data.get("srt") or proj.srt_path,
+                title=data.get("title") or ("%s - MontageIA" % proj.name),
+                subtitle_segments=subs)
+            proj.add_export(out_path)
+            return result
+
+        MANAGER.run_async(job, run)
+        return self._json({"job_id": job.id, "output": out_path})
+
+    def _api_subs(self):
+        """Enregistre le plan de coupe courant et regenere le SRT."""
+        data = self._body_json()
+        proj = self._get_project(data)
+        if data.get("segments") is not None:
+            proj.plan = data["segments"]
+        if data.get("candidates") is not None:
+            proj.candidates = data["candidates"]
+        srt_source = proj.results.get("corrected_segments") or proj.transcript_segments
+        if not srt_source:
+            return self._error("Aucune transcription disponible")
+        srt_path = os.path.join(config.EXPORTS_DIR,
+                                "%s.srt" % tools.safe_component(proj.name.rsplit(".", 1)[0], "sous-titres"))
+        transcribe.write_srt(srt_source, srt_path)
+        proj.srt_path = srt_path
+        return self._json({"srt_path": srt_path})
+
+    def _api_open(self):
+        data = self._body_json()
+        target = data.get("target") or "finder"
+        path = os.path.abspath(data.get("path") or "")
+        if not path:
+            return self._error("Chemin manquant")
+        if not (tools.is_within(config.WORKSPACE, path) or path.startswith("/Applications")):
+            return self._error("Acces refuse", 403)
+        if target == "kdenlive":
+            if not os.path.isdir(config.KDENLIVE_APP):
+                return self._error("Kdenlive n'est pas installe")
+            if path.endswith(".kdenlive"):
+                subprocess.Popen(["open", "-a", config.KDENLIVE_APP, path])
+            else:
+                subprocess.Popen(["open", "-a", config.KDENLIVE_APP])
+            return self._json({"ok": True})
+        if target == "reveal":
+            subprocess.Popen(["open", "-R", path])
+            return self._json({"ok": True})
+        subprocess.Popen(["open", path])
+        return self._json({"ok": True})
+
+    # -- jobs --------------------------------------------------------------
+    def _job_status(self, job_id):
+        job = MANAGER.get(job_id)
+        if not job:
+            return self._error("Job introuvable", 404)
+        return self._json(job.summary())
+
+    def _job_events(self, job_id):
+        job = MANAGER.get(job_id)
+        if not job:
+            return self._error("Job introuvable", 404)
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "keep-alive")
+        self.end_headers()
+        q = job.subscribe()
+        try:
+            snapshot = job.summary()
+            self.wfile.write(("data: %s\n\n" % json.dumps(
+                {"type": "snapshot", "job": snapshot}, ensure_ascii=False)).encode("utf-8"))
+            self.wfile.flush()
+            deadline = time.time() + 3600
+            while time.time() < deadline:
+                try:
+                    event = q.get(timeout=15)
+                except queue.Empty:
+                    self.wfile.write(b": ping\n\n")     # garde la connexion ouverte
+                    self.wfile.flush()
+                    continue
+                self.wfile.write(("data: %s\n\n" % json.dumps(
+                    event, ensure_ascii=False)).encode("utf-8"))
+                self.wfile.flush()
+                if event.get("type") in ("done", "error", "status"):
+                    break
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        finally:
+            job.unsubscribe(q)
+
+
+def main():
+    config.ensure_dirs()
+    status = ai.stats()
+    print("")
+    print("  \033[1m\033[38;5;208mMontageIA\033[0m  -  assistant de montage video IA (100% local)")
+    print("  " + "-" * 62)
+    print("  Interface   : http://%s:%d" % (config.HOST, config.PORT))
+    print("  Modele IA   : %s %s" % (config.LLM_MODEL, "(pret)" if status.get("up") else "(HORS LIGNE)"))
+    print("  ffmpeg      : %s" % (config.ffmpeg_bin() or "INTROUVABLE"))
+    print("  whisper.cpp : %s" % (config.whisper_bin() or "INTROUVABLE"))
+    print("  Kdenlive    : %s" % ("installe" if os.path.isdir(config.KDENLIVE_APP) else "absent"))
+    print("  Espace      : %s" % config.WORKSPACE)
+    print("  " + "-" * 62)
+    print("  Ctrl+C pour arreter.")
+    print("")
+    if not status.get("up"):
+        print("  [!] Ollama ne repond pas. Lancez 'ollama serve' dans un autre terminal.")
+        print("")
+    httpd = ThreadingHTTPServer((config.HOST, config.PORT), StudioHandler)
+    httpd.daemon_threads = True
+    try:
+        webbrowser.open("http://%s:%d" % (config.HOST, config.PORT))
+    except Exception:
+        pass
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        print("\n  Arret.")
+        httpd.shutdown()
+
+
+if __name__ == "__main__":
+    main()

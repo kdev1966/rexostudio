@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MontageIA — Assistant de montage vidéo IA (local)</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <span class="logo">🎬</span>
+    <div>
+      <h1>MontageIA</h1>
+      <p>Assistant de montage vidéo IA — 100% local</p>
+    </div>
+  </div>
+  <div id="status-bar" class="status-bar"></div>
+</header>
+
+<main>
+  <!-- ============ COLONNE GAUCHE ============ -->
+  <section class="col">
+
+    <div class="card">
+      <h2>1 · Média</h2>
+      <div id="dropzone" class="dropzone">
+        <input type="file" id="fileInput" accept="video/*,.mp4,.mov,.mkv,.m4v,.webm" hidden>
+        <div class="dz-inner">
+          <div class="dz-icon">📼</div>
+          <p><strong>Glissez votre rush ici</strong></p>
+          <p class="muted">ou <button class="link" id="browseBtn">parcourir</button></p>
+          <p class="tiny muted">MP4, MOV, MKV, M4V, WebM</p>
+        </div>
+      </div>
+      <div id="upload-progress" class="hidden">
+        <div class="bar"><div id="upload-bar-fill"></div></div>
+        <p id="upload-label" class="tiny muted"></p>
+      </div>
+      <div id="media-info" class="hidden"></div>
+    </div>
+
+    <div class="card">
+      <h2>2 · Traitement</h2>
+      <div class="steps">
+        <button class="step" id="btn-analyze" disabled>
+          <span class="step-num">A</span>
+          <span class="step-txt"><strong>Analyser les silences</strong>
+          <em>Détection rapide, 0,2 s pour 3 min</em></span>
+        </button>
+        <button class="step" id="btn-transcribe" disabled>
+          <span class="step-num">T</span>
+          <span class="step-txt"><strong>Transcrire (Whisper + VAD)</strong>
+          <em>Segments de parole horodatés</em></span>
+        </button>
+        <button class="step" id="btn-plan" disabled>
+          <span class="step-num">IA</span>
+          <span class="step-txt"><strong>Plan de coupe par l'IA</strong>
+          <em>Sélection des segments à garder</em></span>
+        </button>
+      </div>
+
+      <div class="row">
+        <label class="field">
+          <span>Modèle Whisper</span>
+          <select id="whisper-model"></select>
+        </label>
+        <label class="field">
+          <span>Langue</span>
+          <select id="whisper-lang">
+            <option value="auto">Détection auto</option>
+            <option value="fr">Français</option>
+            <option value="en">Anglais</option>
+            <option value="ar">Arabe</option>
+            <option value="es">Espagnol</option>
+            <option value="de">Allemand</option>
+          </select>
+        </label>
+      </div>
+
+      <div id="job-box" class="hidden">
+        <div class="bar"><div id="job-bar-fill"></div></div>
+        <p id="job-label" class="tiny"></p>
+        <pre id="job-log" class="log"></pre>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>3 · Rendu</h2>
+      <div class="row">
+        <label class="field">
+          <span>Encodeur</span>
+          <select id="enc">
+            <option value="videotoolbox">VideoToolbox (rapide · 12×)</option>
+            <option value="libx264">libx264 (qualité · 5×)</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Qualité</span>
+          <select id="qual">
+            <option value="rapide">Rapide</option>
+            <option value="standard" selected>Standard</option>
+            <option value="haute">Haute</option>
+          </select>
+        </label>
+      </div>
+      <label class="field">
+        <span>Position du sujet pour le format vertical : <b id="focus-val">centre</b></span>
+        <input type="range" id="focus" min="0" max="1" step="0.05" value="0.5">
+      </label>
+      <label class="check">
+        <input type="checkbox" id="normalize"> Normaliser le son (‑16 LUFS)
+      </label>
+      <label class="check">
+        <input type="checkbox" id="burn"> Incruster les sous-titres dans l'image
+      </label>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="btn-render169" disabled>Rendre 16:9</button>
+        <button class="btn btn-primary" id="btn-render916" disabled>Rendre 9:16</button>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-sec" id="btn-kdenlive" disabled>Générer le projet Kdenlive</button>
+        <button class="btn btn-sec" id="btn-subs" disabled>Enregistrer les sous-titres</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ COLONNE DROITE ============ -->
+  <section class="col">
+    <div class="card card-grow">
+      <div class="tabs">
+        <button class="tab active" data-tab="plan">Plan de coupe</button>
+        <button class="tab" data-tab="ia">Rédaction IA</button>
+        <button class="tab" data-tab="exports">Exports</button>
+        <button class="tab" data-tab="chat">Chat</button>
+      </div>
+
+      <!-- ---- Plan de coupe ---- -->
+      <div class="tabpane active" id="tab-plan">
+        <div class="pane-head">
+          <div>
+            <h3>Segments retenus</h3>
+            <p id="plan-summary" class="tiny muted">Aucun plan pour l'instant.</p>
+          </div>
+          <div class="btn-row">
+            <button class="btn btn-mini" id="btn-reset-plan" disabled>Réinitialiser</button>
+          </div>
+        </div>
+        <div id="plan-reason" class="reason hidden"></div>
+        <div class="table-wrap">
+          <table id="plan-table">
+            <thead><tr><th>#</th><th>Début</th><th>Fin</th><th>Durée</th><th>Motif</th><th></th></tr></thead>
+            <tbody></tbody>
+          </table>
+          <p id="plan-empty" class="empty">Transcrivez la vidéo puis demandez un plan de coupe à l'IA.</p>
+        </div>
+        <div id="candidates-box" class="hidden">
+          <details>
+            <summary>Voir les <span id="cand-count">0</span> segments détectés</summary>
+            <div class="table-wrap short">
+              <table id="cand-table">
+                <thead><tr><th>ID</th><th>Début</th><th>Fin</th><th>Texte</th></tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </details>
+        </div>
+        <div class="inline-form">
+          <input type="text" id="plan-instruction" placeholder="Consigne optionnelle pour l'IA (ex: « garde les anecdotes, coupe le technique »)">
+          <select id="plan-style">
+            <option value="standard">Montage standard</option>
+            <option value="storytelling">Storytelling</option>
+            <option value="tuto">Tutoriel</option>
+            <option value="viral">Dynamique / viral</option>
+            <option value="podcast">Podcast</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- ---- IA ---- -->
+      <div class="tabpane" id="tab-ia">
+        <div class="btn-row">
+          <button class="btn btn-sec" id="btn-pack">Pack de publication</button>
+          <button class="btn btn-sec" id="btn-summary">Résumé &amp; analyse</button>
+          <button class="btn btn-sec" id="btn-trailer">Meilleurs moments</button>
+          <button class="btn btn-sec" id="btn-fixsubs">Corriger les sous-titres</button>
+        </div>
+        <div class="inline-form">
+          <input type="text" id="trailer-target" placeholder="Durée cible du trailer (s)" value="30" style="max-width:120px">
+          <input type="text" id="trailer-instruction" placeholder="Consigne (ex: « moments les plus drôles »)">
+        </div>
+        <div id="ia-out" class="ia-out">
+          <p class="empty">Les résultats de l'IA s'afficheront ici.</p>
+        </div>
+      </div>
+
+      <!-- ---- Exports ---- -->
+      <div class="tabpane" id="tab-exports">
+        <div id="exports-list" class="exports">
+          <p class="empty">Aucun export pour l'instant.</p>
+        </div>
+        <div id="preview-box" class="hidden">
+          <h3>Prévisualisation</h3>
+          <video id="preview" controls></video>
+        </div>
+      </div>
+
+      <!-- ---- Chat ---- -->
+      <div class="tabpane" id="tab-chat">
+        <div id="chat-log" class="chat-log">
+          <p class="empty">Posez une question sur la vidéo (résumé, traduction, posts…).</p>
+        </div>
+        <div class="inline-form">
+          <input type="text" id="chat-input" placeholder="Votre question…">
+          <button class="btn btn-primary" id="btn-chat">Envoyer</button>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div id="toast" class="toast"></div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
