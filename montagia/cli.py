@@ -141,7 +141,8 @@ class Assistant(object):
         out = os.path.join(config.EXPORTS_DIR, base + ".fcproj")
         result = pipeline.build_filmcraft_job(
             _FakeJob(), self.path, self.cut_plan, out, profile=profile,
-            title="%s - MontageIA" % self.name, subtitle_segments=self.segments)
+            title="%s - MontageIA" % self.name, subtitle_segments=self.segments,
+            subtitle_words=self.words)
         (ok if result["valid"] else warn)("%s - %s" % (result["path"], result["message"]))
         return result
 

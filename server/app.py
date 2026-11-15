@@ -562,6 +562,8 @@ class StudioHandler(BaseHTTPRequestHandler):
                                 time.strftime("%Y%m%d-%H%M%S") + "_" + out_name)
         job = MANAGER.create("render", "Rendu %s" % fmt)
         subs = proj.results.get("corrected_segments") or proj.transcript_segments
+        # Sous-titres corriges par l'IA : par ligne ; sinon mot par mot (exact).
+        sub_words = None if proj.results.get("corrected_segments") else proj.transcript_words
 
         def run(j):
             result = pipeline.render_video(
@@ -571,7 +573,7 @@ class StudioHandler(BaseHTTPRequestHandler):
                 burn_subtitles=bool(data.get("burn_subtitles")),
                 focus_x=float(data.get("focus_x", 0.5)),
                 normalize_audio=bool(data.get("normalize_audio")),
-                subtitle_segments=subs)
+                subtitle_segments=subs, subtitle_words=sub_words)
             proj.add_export(out_path)
             return result
 
@@ -588,6 +590,8 @@ class StudioHandler(BaseHTTPRequestHandler):
         out_path = os.path.join(config.EXPORTS_DIR, base + ".fcproj")
         job = MANAGER.create("filmcraft", "Projet FilmCraft")
         subs = proj.results.get("corrected_segments") or proj.transcript_segments
+        # Sous-titres corriges par l'IA : par ligne ; sinon mot par mot (exact).
+        sub_words = None if proj.results.get("corrected_segments") else proj.transcript_words
         notes = proj.results.get("plan_rationale", "")
 
         def run(j):
@@ -595,7 +599,7 @@ class StudioHandler(BaseHTTPRequestHandler):
                 j, proj.path, segments, out_path,
                 profile=data.get("profile", "16:9"),
                 title=data.get("title") or ("%s - MontageIA" % proj.name),
-                notes=notes, subtitle_segments=subs)
+                notes=notes, subtitle_segments=subs, subtitle_words=sub_words)
             proj.add_export(out_path)
             return result
 

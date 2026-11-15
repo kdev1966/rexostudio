@@ -444,7 +444,7 @@ def render_video(job, source: str, segments: list, out_path: str, fmt: str = "16
                  encoder: str = None, quality: str = "standard",
                  subtitles: str = "", burn_subtitles: bool = False,
                  focus_x: float = 0.5, normalize_audio: bool = False,
-                 subtitle_segments: list = None) -> dict:
+                 subtitle_segments: list = None, subtitle_words: list = None) -> dict:
     job.set_progress(0.02, "Preparation du rendu")
     # Plan normalise UNE fois : le rendu et les sous-titres recales doivent
     # utiliser exactement la meme timeline (sinon decalage des sous-titres
@@ -455,8 +455,8 @@ def render_video(job, source: str, segments: list, out_path: str, fmt: str = "16
     # source : on les regenere sur les timecodes re-calcules, dans un fichier
     # propre a ce rendu (deux rendus simultanes ne s'ecrasent plus).
     temp_srt = ""
-    if burn_subtitles and subtitle_segments:
-        remapped = transcribe.remap_segments(subtitle_segments, segments)
+    if burn_subtitles and (subtitle_words or subtitle_segments):
+        remapped = _remap_subtitles(subtitle_segments, subtitle_words, segments)
         temp_srt = subtitles = _temp_srt(remapped, "rendu")
         job.add_log("Sous-titres recalcules sur la timeline du montage (%d lignes)"
                     % len(remapped))
@@ -475,7 +475,8 @@ def render_video(job, source: str, segments: list, out_path: str, fmt: str = "16
 
 def build_filmcraft_job(job, source: str, segments: list, out_path: str,
                         profile: str = "16:9", title: str = "Montage MontageIA",
-                        notes: str = "", subtitle_segments: list = None) -> dict:
+                        notes: str = "", subtitle_segments: list = None,
+                        subtitle_words: list = None) -> dict:
     """Envoie le plan de coupe dans FilmCraft et enregistre le projet .fcproj."""
     job.set_progress(0.05, "Preparation du projet FilmCraft")
     info = media.probe(source)
@@ -488,8 +489,8 @@ def build_filmcraft_job(job, source: str, segments: list, out_path: str,
         raise RuntimeError("Plan de coupe vide : rien a envoyer a FilmCraft.")
 
     temp_srt = ""
-    if subtitle_segments:
-        remapped = transcribe.remap_segments(subtitle_segments, plan)
+    if subtitle_words or subtitle_segments:
+        remapped = _remap_subtitles(subtitle_segments, subtitle_words, plan)
         temp_srt = _temp_srt(remapped, "filmcraft")
         job.add_log("Sous-titres recales sur la timeline (%d lignes)" % len(remapped))
     try:
@@ -514,6 +515,14 @@ def build_filmcraft_job(job, source: str, segments: list, out_path: str,
     job.set_progress(1.0, "Projet FilmCraft pret")
     return {"path": result["path"], "valid": valid, "message": message,
             "clips": result["clips"], "captions": result["captions"]}
+
+
+def _remap_subtitles(lines: list, words: list, plan: list) -> list:
+    """Sous-titres sur la timeline du montage : mot par mot quand on a les
+    mots (texte exact de ce qui est garde), sinon ligne par ligne."""
+    if words:
+        return transcribe.remap_words(words, plan)
+    return transcribe.remap_segments(lines or [], plan)
 
 
 def _temp_srt(segments: list, prefix: str) -> str:

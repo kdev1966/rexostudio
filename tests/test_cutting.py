@@ -52,6 +52,23 @@ class WordsTest(unittest.TestCase):
         self.assertTrue(all(line["end"] - line["start"] <= 6.5 for line in lines))
 
 
+class SubtitleRemapTest(unittest.TestCase):
+    def test_cut_words_never_appear_in_subtitles(self):
+        words, _ = load_cafe()
+        plan = [{"start": 5.99, "end": 15.37}, {"start": 16.73, "end": 22.79},
+                {"start": 30.3, "end": 47.35}]            # plan reel de l'iMac
+        lines = transcribe.remap_words(words, plan)
+        text = " ".join(line["text"] for line in lines)
+        for cut in ("bref", "Heu", "marché", "recommence"):
+            self.assertNotIn(cut, text)
+        self.assertTrue(lines[0]["text"].startswith("Bonjour"))
+        self.assertTrue(any(line["text"].startswith("deuxième étape") for line in lines))
+        total = sum(p["end"] - p["start"] for p in plan)
+        self.assertLessEqual(lines[-1]["end"], total + 1e-6)
+        for a, b in zip(lines, lines[1:]):
+            self.assertLessEqual(a["end"], b["start"] + 1e-6)
+
+
 class RulesTest(unittest.TestCase):
     def test_cafe_rules(self):
         words, _ = load_cafe()

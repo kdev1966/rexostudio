@@ -366,6 +366,26 @@ MIN_FRAGMENT_SECONDS = 0.4
 MIN_FRAGMENT_RATIO = 0.5
 
 
+def remap_words(words: list, plan: list) -> list:
+    """Sous-titres du montage reconstruits MOT PAR MOT : seuls les mots
+    gardes a l'image apparaissent (une ligne a cheval sur une coupe ne
+    garde plus le mot coupe, ex. "bref,"). Un mot est garde si au moins la
+    moitie de sa duree est dans un segment du plan."""
+    kept, offset = [], 0.0
+    for cut in plan:
+        cut_start, cut_end = float(cut["start"]), float(cut["end"])
+        for w in words:
+            start, end = float(w["start"]), float(w["end"])
+            inside = min(end, cut_end) - max(start, cut_start)
+            if inside <= 0 or inside < (end - start) / 2.0:
+                continue
+            kept.append({"start": round(offset + max(0.0, start - cut_start), 3),
+                         "end": round(offset + min(end, cut_end) - cut_start, 3),
+                         "text": w["text"]})
+        offset += cut_end - cut_start
+    return build_lines(kept)
+
+
 def remap_segments(segments: list, plan: list) -> list:
     """Reconvertit des timecodes source vers la timeline du montage.
 
