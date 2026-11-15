@@ -293,6 +293,10 @@ def ai_cut_plan(job, candidates: list, duration: float, transcript: str = "",
                 continue
             if allowed[cid]["kind"] == "parole" and kind in ("illustration", "remplissage"):
                 kind = "contenu"            # categories reservees aux plans sans parole
+            elif allowed[cid]["kind"] == "visuel" and kind != "remplissage":
+                # L'IA ne voit pas les images : elle ne coupe un plan visuel que
+                # s'il est explicitement du remplissage (pas de "digression").
+                kind = "illustration"
             decisions[cid] = {"type": kind, "by": "ia"}
 
     # Passage que l'IA n'a pas classe : garde (on ne coupe pas a l'aveugle).

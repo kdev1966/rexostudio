@@ -103,6 +103,29 @@ class RulesTest(unittest.TestCase):
         self.assertEqual([c["text"] for c in cands],
                          ["Première étape, choisissez un bon café."])
 
+    def test_long_unpunctuated_speech_is_split(self):
+        # Parole continue sans ponctuation (cas reel : podcast en arabe, 7 min
+        # en 3 passages) : aucun passage ne depasse MAX_CLAUSE_SECONDS.
+        words, t = [], 0.0
+        for i in range(150):                       # ~60 s, une pause de 0,35 s tous les 9 mots
+            gap = 0.35 if i % 9 == 8 else 0.05
+            words.append(w("كلمة%d" % i, t, t + 0.35))
+            t += 0.35 + gap
+        cands = cutting.speech_candidates(words)
+        self.assertGreaterEqual(len(cands), 5)
+        for c in cands:
+            self.assertLessEqual(c["end"] - c["start"],
+                                 cutting.MAX_CLAUSE_SECONDS + 2 * cutting.PAD + 1e-6)
+        self.assertEqual(" ".join(c["text"] for c in cands),
+                         " ".join(x["text"] for x in words))
+
+    def test_arabic_punctuation_splits_clauses(self):
+        words = [w("مرحبا", 0, .5), w("بكم،", .5, 1.0), w("اليوم", 1.0, 1.4),
+                 w("نتحدث", 1.4, 1.9), w("عن", 1.9, 2.0), w("التطبيقات؟", 2.0, 2.8),
+                 w("أولا", 2.9, 3.3), w("نبدأ", 3.3, 3.7), w("بالتصميم.", 3.7, 4.4)]
+        clauses = cutting.merge_short(cutting.split_clauses(words))
+        self.assertEqual(clauses[-1][0]["text"], "أولا")
+
     def test_padding_never_overlaps_neighbours(self):
         words, _ = load_cafe()
         cands = cutting.speech_candidates(words)
@@ -167,6 +190,17 @@ class CutPlanTest(unittest.TestCase):
         by_ia = [d for d in result["decisions"] if d["by"] == "ia"]
         self.assertTrue(by_ia)
         self.assertTrue(all(d["keep"] and d["type"] == "contenu" for d in by_ia))
+
+    def test_ai_cannot_cut_visual_shots_as_digression(self):
+        cands = pipeline.build_candidates([], duration=12.0, scenes=[4.0, 8.0])
+        answer = {"decisions": [{"id": "S1", "type": "digression"},
+                                {"id": "S2", "type": "remplissage"},
+                                {"id": "S3", "type": "hors_sujet"}]}
+        with mock.patch.object(pipeline.ai, "chat_json", return_value=answer), \
+                mock.patch.object(pipeline, "cached_ai", lambda _t, _p, compute: compute()):
+            result = pipeline.ai_cut_plan(Job(), cands, 12.0)
+        keep = {d["id"]: d["keep"] for d in result["decisions"]}
+        self.assertEqual(keep, {"S1": True, "S2": False, "S3": True})
 
     def test_truncated_reply_is_salvaged(self):
         # Reponse coupee au plafond de tokens (cas reel sur film001.mp4).

@@ -441,9 +441,12 @@ class StudioHandler(BaseHTTPRequestHandler):
     def _api_plan(self):
         data = self._body_json()
         proj = self._get_project(data)
-        candidates = data.get("candidates") or proj.candidates
-        if not candidates:
-            candidates = _candidates(proj)
+        candidates = data.get("candidates")
+        if not candidates and proj.transcript_words:
+            # Reconstruits a chaque plan depuis les mots (deterministe, quasi
+            # instantane) : un projet ancien profite du decoupage a jour.
+            candidates = proj.candidates = _candidates(proj)
+        candidates = candidates or proj.candidates or _candidates(proj)
         transcript = data.get("transcript") or proj.transcript
         duration = (proj.info or {}).get("duration") or 0.0
         job = MANAGER.create("plan", "Plan de coupe IA")

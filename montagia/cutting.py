@@ -16,10 +16,13 @@ import difflib
 import re
 import unicodedata
 
-SENTENCE_END = (".", "!", "?", "…")
-CLAUSE_END = (",", ";", ":") + SENTENCE_END
+# Ponctuation latine et arabe (، virgule, ؛ point-virgule, ؟ point d'interrogation).
+SENTENCE_END = (".", "!", "?", "…", "؟")
+CLAUSE_END = (",", ";", ":", "،", "؛") + SENTENCE_END
 
 SPLIT_GAP = 0.7            # pause qui separe deux propositions (s)
+MAX_CLAUSE_SECONDS = 12.0  # au-dela, coupe a la plus grande pause interne
+MIN_PART_SECONDS = 3.0     # ... sans creer de morceau plus court que ca
 MIN_CLAUSE_SECONDS = 1.0   # plus court (et < 3 mots) : rattache a une voisine
 MIN_CLAUSE_WORDS = 3
 PAD = 0.12                 # marge gardee autour de la parole (s)
@@ -52,7 +55,9 @@ def _text(words: list) -> str:
 
 
 def split_clauses(words: list) -> list:
-    """Coupe la suite de mots a chaque ponctuation et a chaque pause."""
+    """Coupe la suite de mots a chaque ponctuation et a chaque pause, puis
+    redecoupe les passages trop longs (parole continue sans ponctuation,
+    frequente en arabe : 7 min de podcast donnaient 3 passages)."""
     clauses, cur = [], []
     for i, w in enumerate(words):
         cur.append(w)
@@ -60,7 +65,32 @@ def split_clauses(words: list) -> list:
         if w["text"].endswith(CLAUSE_END) or nxt is None or nxt["start"] - w["end"] > SPLIT_GAP:
             clauses.append(cur)
             cur = []
-    return clauses
+    out = []
+    for clause in clauses:
+        out.extend(split_long(clause))
+    return out
+
+
+def split_long(clause: list) -> list:
+    """Coupe un passage de plus de MAX_CLAUSE_SECONDS a sa plus grande pause
+    entre deux mots (en gardant au moins MIN_PART_SECONDS de chaque cote),
+    recursivement."""
+    if len(clause) < 2 or clause[-1]["end"] - clause[0]["start"] <= MAX_CLAUSE_SECONDS:
+        return [clause]
+    best, best_gap = None, -1.0
+    for i in range(1, len(clause)):
+        left = clause[i - 1]["end"] - clause[0]["start"]
+        right = clause[-1]["end"] - clause[i]["start"]
+        if left < MIN_PART_SECONDS or right < MIN_PART_SECONDS:
+            continue
+        gap = clause[i]["start"] - clause[i - 1]["end"]
+        # a pause egale, preferer le milieu (morceaux equilibres)
+        score = gap - 0.001 * abs(left - right)
+        if score > best_gap:
+            best, best_gap = i, score
+    if best is None:
+        return [clause]
+    return split_long(clause[:best]) + split_long(clause[best:])
 
 
 def _is_filler(words: list) -> bool:

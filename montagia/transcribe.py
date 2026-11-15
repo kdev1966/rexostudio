@@ -7,6 +7,7 @@ import os
 import re
 import shutil
 import time
+import wave
 
 from . import config, tools
 
@@ -123,6 +124,17 @@ def _cleanup_instances(workdir: str, max_age: float = 86400.0) -> None:
             shutil.rmtree(full, ignore_errors=True)
         except OSError:
             pass
+
+
+LOW_SPEECH_WPM = 40     # moins de mots par minute avec le VAD : relance sans VAD
+
+
+def _wav_seconds(path: str) -> float:
+    try:
+        with wave.open(path, "rb") as fh:
+            return fh.getnframes() / float(fh.getframerate() or 1)
+    except (OSError, wave.Error, EOFError):
+        return 0.0
 
 
 def extract_audio(source: str, dest: str) -> str:
@@ -252,13 +264,22 @@ def transcribe(source: str, model: str = None, language: str = "auto",
     # (voix masquee par la musique, niveau tres faible). Plutot que de
     # renvoyer une transcription vide - qui cripplerait le plan de coupe -
     # on relance sans VAD.
-    if not segments and vad:
-        log("Aucune parole detectee par le VAD - relance sans VAD")
+    # Meme filet quand le VAD ne laisse presque rien : voix sous une musique
+    # forte (bande-annonce, clip) -> 7 mots sur 23 s avec VAD contre 5 phrases
+    # sans, mesure sur film001.mp4. On garde la transcription la plus riche.
+    duration = _wav_seconds(audio)
+    found = len(clean_words(segments))
+    sparse = duration >= 10 and found < LOW_SPEECH_WPM * duration / 60.0
+    if vad and (not segments or sparse):
+        log("Tres peu de parole detectee par le VAD (%d mots) - relance sans VAD" % found)
         try:
             tools.run_streaming(build_cmd(False),
                                 on_line=lambda ln: log(ln) if ln.strip() else None,
                                 timeout=7200)
-            segments, detected_lang = read_segments()
+            retry, retry_lang = read_segments()
+            if len(clean_words(retry)) > found:
+                segments, detected_lang = retry, retry_lang
+                log("Transcription sans VAD retenue (%d mots)" % len(clean_words(retry)))
         except tools.CommandError as exc:
             log("Relance sans VAD impossible : %s" % exc)
 
@@ -295,8 +316,8 @@ def transcribe(source: str, model: str = None, language: str = "auto",
 # --------------------------------------------------------------------------
 
 _NOISE = re.compile(r"^[\[(].*[\])]$")          # [Musique], (rires), [BLANK_AUDIO]
-_SENTENCE_END = (".", "!", "?", "\u2026")
-_CLAUSE_END = (",", ";", ":")
+_SENTENCE_END = (".", "!", "?", "\u2026", "\u061f")     # + point d'interrogation arabe
+_CLAUSE_END = (",", ";", ":", "\u060c", "\u061b")       # + virgule et point-virgule arabes
 
 
 def clean_words(raw: list) -> list:
