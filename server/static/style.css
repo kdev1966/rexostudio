@@ -238,3 +238,18 @@ summary:hover { color: var(--accent); }
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 .toast.err { border-color: #5a2a2a; color: #ffb4b4; }
 .toast.ok { border-color: #2a5a46; color: #a8e8c8; }
+
+/* ---------- projets recents ---------- */
+.recent { margin-top: 14px; }
+.recent h3 { margin: 0 0 6px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+.recent-list { display: flex; flex-direction: column; gap: 5px; max-height: 210px; overflow: auto; }
+.recent-item {
+  display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+  background: #161b23; border: 1px solid var(--line); border-radius: 8px;
+  padding: 7px 10px; color: var(--txt); font: inherit; font-size: 12.5px; cursor: pointer;
+}
+.recent-item:hover { border-color: var(--accent); }
+.recent-item.active { border-color: var(--accent); background: #1d2330; }
+.recent-item .rn { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.recent-item .rb { font-size: 10.5px; color: var(--muted); white-space: nowrap; }
+.recent-item .warn { color: #e0a14a; }

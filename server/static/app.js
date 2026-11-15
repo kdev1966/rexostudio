@@ -147,7 +147,10 @@ function upload(file) {
       S.project = data.project;
       $('#upload-label').textContent = 'Téléversé : ' + data.size_human;
       setTimeout(() => $('#upload-progress').classList.add('hidden'), 1200);
+      rememberProject(S.project.id);
       showMedia();
+      refreshProject();
+      loadProjects();
       toast('Média prêt : ' + data.project.name);
     } else {
       $('#upload-progress').classList.add('hidden');
@@ -159,6 +162,52 @@ function upload(file) {
     toast('Erreur réseau pendant le téléversement', true);
   };
   xhr.send(file);
+}
+
+/* ------------------------------------------------------------------ */
+/* Projets recents (persistants cote serveur)                          */
+/* ------------------------------------------------------------------ */
+
+const LAST_PROJECT_KEY = 'montagia.lastProject';
+
+function rememberProject(id) {
+  try { localStorage.setItem(LAST_PROJECT_KEY, id); } catch (e) { /* stockage indisponible */ }
+}
+
+function lastProject() {
+  try { return localStorage.getItem(LAST_PROJECT_KEY); } catch (e) { return null; }
+}
+
+async function loadProjects() {
+  let list = [];
+  try { list = (await api('/api/projects')).projects || []; } catch (e) { return; }
+  $('#recent-box').classList.toggle('hidden', !list.length);
+  $('#recent-list').innerHTML = list.slice(0, 12).map((p) => {
+    const badges = [fmtTime(p.duration)];
+    if (p.transcribed) badges.push('transcrit');
+    if (p.planned) badges.push('plan');
+    if (p.exports) badges.push(p.exports + ' export' + (p.exports > 1 ? 's' : ''));
+    const active = S.project && S.project.id === p.id ? ' active' : '';
+    return '<button class="recent-item' + active + '" data-project="' + escapeHtml(p.id) + '">' +
+      '<span class="rn">' + escapeHtml(p.name) + '</span>' +
+      (p.media_missing ? '<span class="rb warn">média introuvable</span>'
+                       : '<span class="rb">' + escapeHtml(badges.join(' · ')) + '</span>') +
+      '</button>';
+  }).join('');
+  $$('#recent-list [data-project]').forEach((b) =>
+    b.addEventListener('click', () => openProject(b.dataset.project)));
+}
+
+async function openProject(id) {
+  if (S.busy) { toast('Une opération est en cours', true); return; }
+  try {
+    S.project = (await api('/api/project?id=' + encodeURIComponent(id))).project;
+  } catch (e) { toast(e.message, true); return; }
+  rememberProject(id);
+  showMedia();
+  await refreshProject();
+  loadProjects();
+  if (S.project.media_missing) toast('Le fichier vidéo de ce projet est introuvable', true);
 }
 
 function showMedia() {
@@ -216,7 +265,7 @@ function runJob(url, body, onDone) {
         setProgress(1, 'Terminé');
         es.close();
         S.busy = false;
-        refreshProject().then(() => { if (onDone) onDone(e.result); });
+        refreshProject().then(() => { loadProjects(); if (onDone) onDone(e.result); });
       } else if (e.type === 'error') {
         addLog('ERREUR : ' + e.error);
         toast(e.error, true);
@@ -621,3 +670,9 @@ async function sendChat() {
 
 loadStatus();
 setInterval(loadStatus, 15000);
+loadProjects().then(() => {
+  const id = lastProject();
+  if (id && !S.project && document.querySelector('[data-project="' + CSS.escape(id) + '"]')) {
+    openProject(id);
+  }
+});

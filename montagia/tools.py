@@ -112,6 +112,7 @@ def run_streaming(cmd, on_line, timeout=3600, cwd=None, env=None, keep_lines=Non
         if proc.poll() is None:
             proc.kill()
             proc.wait()
+        proc.stdout.close()
     out = "\n".join(lines)
     if expired.is_set():
         raise CommandTimeout(cmd, "timeout",

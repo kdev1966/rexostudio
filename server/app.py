@@ -310,9 +310,23 @@ class StudioHandler(BaseHTTPRequestHandler):
 
         proj = project.STORE.create(target, name)
         proj.info = info
+        project.STORE.save(proj)
         return self._json({"project": proj.to_dict(),
                            "size": written,
                            "size_human": tools.human_size(written)})
+
+    def _run_job(self, job, proj, func):
+        """Lance un job de projet ; le projet est enregistre a la fin, que le
+        job reussisse ou non (persistance apres redemarrage)."""
+        def wrapper(j):
+            try:
+                return func(j)
+            finally:
+                try:
+                    project.STORE.save(proj)
+                except OSError as exc:
+                    j.add_log("Enregistrement du projet impossible : %s" % exc)
+        MANAGER.run_async(job, wrapper)
 
     def _get_project(self, data):
         pid = data.get("project_id") or ""
@@ -335,7 +349,7 @@ class StudioHandler(BaseHTTPRequestHandler):
             proj.speech_segments = result["speech_segments"]
             return result
 
-        MANAGER.run_async(job, run)
+        self._run_job(job, proj, run)
         return self._json({"job_id": job.id})
 
     def _api_transcribe(self):
@@ -360,7 +374,7 @@ class StudioHandler(BaseHTTPRequestHandler):
             j.add_log("Sous-titres : %s" % srt_path)
             return result
 
-        MANAGER.run_async(job, run)
+        self._run_job(job, proj, run)
         return self._json({"job_id": job.id})
 
     def _api_plan(self):
@@ -382,7 +396,7 @@ class StudioHandler(BaseHTTPRequestHandler):
             proj.results["plan_style"] = result.get("style", "")
             return result
 
-        MANAGER.run_async(job, run)
+        self._run_job(job, proj, run)
         return self._json({"job_id": job.id})
 
     def _api_pack(self):
@@ -398,7 +412,7 @@ class StudioHandler(BaseHTTPRequestHandler):
             proj.results["pack"] = result
             return result
 
-        MANAGER.run_async(job, run)
+        self._run_job(job, proj, run)
         return self._json({"job_id": job.id})
 
     def _api_summary(self):
@@ -412,7 +426,7 @@ class StudioHandler(BaseHTTPRequestHandler):
             proj.results["summary"] = result
             return result
 
-        MANAGER.run_async(job, run)
+        self._run_job(job, proj, run)
         return self._json({"job_id": job.id})
 
     def _api_trailer(self):
@@ -431,7 +445,7 @@ class StudioHandler(BaseHTTPRequestHandler):
             proj.results["trailer"] = result
             return result
 
-        MANAGER.run_async(job, run)
+        self._run_job(job, proj, run)
         return self._json({"job_id": job.id})
 
     def _api_fixsubs(self):
@@ -450,7 +464,7 @@ class StudioHandler(BaseHTTPRequestHandler):
             j.add_log("Sous-titres corriges : %s" % srt_path)
             return result
 
-        MANAGER.run_async(job, run)
+        self._run_job(job, proj, run)
         return self._json({"job_id": job.id})
 
     def _api_chat(self):
@@ -499,7 +513,7 @@ class StudioHandler(BaseHTTPRequestHandler):
             proj.add_export(out_path)
             return result
 
-        MANAGER.run_async(job, run)
+        self._run_job(job, proj, run)
         return self._json({"job_id": job.id, "output": out_path})
 
     def _api_filmcraft(self):
@@ -523,7 +537,7 @@ class StudioHandler(BaseHTTPRequestHandler):
             proj.add_export(out_path)
             return result
 
-        MANAGER.run_async(job, run)
+        self._run_job(job, proj, run)
         return self._json({"job_id": job.id, "output": out_path})
 
     def _api_subs(self):
@@ -541,6 +555,7 @@ class StudioHandler(BaseHTTPRequestHandler):
                                 "%s.srt" % tools.safe_component(proj.name.rsplit(".", 1)[0], "sous-titres"))
         transcribe.write_srt(srt_source, srt_path)
         proj.srt_path = srt_path
+        project.STORE.save(proj)
         return self._json({"srt_path": srt_path})
 
     def _api_open(self):
@@ -608,6 +623,7 @@ class StudioHandler(BaseHTTPRequestHandler):
 
 def main():
     config.ensure_dirs()
+    restored = project.STORE.enable_persistence(config.PROJECTS_DIR)
     status = ai.stats()
     print("")
     print("  \033[1m\033[38;5;208mMontageIA\033[0m  -  assistant de montage video IA (100% local)")
@@ -618,6 +634,7 @@ def main():
     print("  whisper.cpp : %s" % (config.whisper_bin() or "INTROUVABLE"))
     print("  FilmCraft   : %s" % ("installe" if filmcraft.installed() else "absent"))
     print("  Espace      : %s" % config.WORKSPACE)
+    print("  Projets     : %d repris du disque" % restored)
     print("  " + "-" * 62)
     print("  Ctrl+C pour arreter.")
     print("")
