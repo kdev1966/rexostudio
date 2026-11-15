@@ -7,7 +7,7 @@
 
 ## 1. Où en est-on
 
-**Projet :** `~/Desktop/MontageIA/` — assistant de montage vidéo par IA, 100 % local.
+**Projet :** `~/Desktop/PythonProjects/MontageIA/` (MacBook, dev) et `~/MontageIA/` (iMac, déploiement) — assistant de montage vidéo par IA, 100 % local.
 **Ancien projet conservé :** `~/Desktop/Studio_IA/` (Python + Gradio + `ollama run` en CLI).
 **Instantané Git :** commit `57992a0` — « MontageIA v1 ».
 
@@ -186,14 +186,18 @@ Test de non-régression : `tests/fixtures/cafe_words.json` (vrais mots de cette 
 
 1. ~~Déployer sur l'iMac + parcours complet~~ ✅ fait (par l'API) : upload, analyse 1,6 s,
    transcription 6 s, plan 25 s, rendu 16:9 3,5 s, 9:16 5,2 s, FilmCraft 0,5 s.
-   Déploiement : `git push imac fix/plan-sse-origin:refs/heads/deploy-incoming` puis, sur
-   l'iMac, `git merge --ff-only deploy-incoming` et redémarrage de `start.sh`.
-2. **Tester le mode terminal** `./start.sh --cli` sur l'iMac (`plan`, `render`, `filmcraft`, `chat`).
+   Déploiement : `git push imac <branche>:refs/heads/deploy-incoming` puis, sur l'iMac
+   (`~/MontageIA`, déplacé du Bureau le 16/11/2026 : macOS interdisait à l'icône de lire
+   le Bureau), `git merge --ff-only deploy-incoming` et redémarrage du serveur.
+2. ~~Tester le mode terminal sur l'iMac~~ ✅ (16/11/2026) : `render 9:16` du café 43 s,
+   `plan` de film002 8 min ; corrigés : suggestions en arabe, arguments de `start.sh --cli`.
 3. **Test du plan de coupe sur une vidéo française parlée** (vraie vidéo, pas une voix de synthèse).
 4. **Mesurer `detect_scenes` sur l'iMac** (décode toute la vidéo) et le plan IA d'une vidéo sans voix.
 5. **Bande-annonce (trailer)** : 181 s, c'est lent — réduire le nombre de candidats.
 6. **Correction des sous-titres** : 135 s — découpage par lots de 25 lignes.
-7. Supprimer `bin/whisper-cli.bak` (ancien binaire cassé) une fois tout validé.
+7. ~~Supprimer `bin/whisper-cli.bak`~~ ✅ (et modèles medium / large-v3-turbo, 16/11/2026).
+8. Lancement : icône `~/Desktop/MontageIA.app` (scripts/install_launcher.sh), bouton Quitter
+   dans l'interface (décharge le modèle), modèle déchargé après 5 min d'inactivité.
 
 ### Éventuel (améliorations)
 
@@ -209,11 +213,11 @@ Test de non-régression : `tests/fixtures/cafe_words.json` (vrais mots de cette 
 ## 6. Commandes de reprise
 
 ```bash
-# Interface web
-cd ~/Desktop/MontageIA && ./start.sh          # http://127.0.0.1:8080
+# Interface web : icône MontageIA du Bureau, ou
+cd ~/MontageIA && ./start.sh                  # http://127.0.0.1:8080
 
 # Mode terminal
-cd ~/Desktop/MontageIA && ./start.sh --cli
+cd ~/MontageIA && ./start.sh --cli
 
 # Test rapide sans navigateur
 python3 -m montagia.cli ~/Desktop/Studio_IA/tests/vlog_valentijn.webm plan

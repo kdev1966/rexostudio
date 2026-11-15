@@ -16,10 +16,14 @@ Aucune donnée ne sort de la machine, aucune dépendance Python à installer.
 ## 1. Installation
 
 ```bash
-cd ~/Desktop/MontageIA
+cd ~/MontageIA                  # hors du Bureau : voir la note ci-dessous
 ./scripts/install_models.sh     # whisper.cpp statique + modèles + ffmpeg (tout vérifié)
-./start.sh                      # ouvre http://127.0.0.1:8080
+./scripts/install_launcher.sh   # icône MontageIA sur le Bureau
 ```
+
+Ne placez pas le dossier du projet sur le Bureau ni dans Documents : macOS interdit à
+l'icône de lancement de lire ces dossiers protégés (« Operation not permitted »).
+L'icône, elle, peut être sur le Bureau.
 
 **Prérequis** (déjà présent sur cette machine) :
 
@@ -39,28 +43,34 @@ Aucun `pip install` : le projet n'utilise que la bibliothèque standard Python 3
 
 ### Interface web (principale)
 
-```bash
-./start.sh
-```
+**Double-cliquez sur l'icône MontageIA du Bureau** : le serveur démarre en arrière-plan
+(sans fenêtre de Terminal) et l'interface s'ouvre dans le navigateur. Un nouveau clic
+rouvre simplement la page. Le bouton **Quitter** de l'interface retire le modèle IA de la
+mémoire et arrête le serveur. Journal : `~/Library/Logs/MontageIA.log`.
 
-`http://127.0.0.1:8080` — glisser-déposer, progression en direct, prévisualisation.
+Sans l'icône : `./start.sh` (ouvre `http://127.0.0.1:8080`, Ctrl+C pour arrêter).
 
 Le parcours :
 
-1. **Média** — déposez votre rush.
-2. **Analyser** — détection des silences (0,25 s pour 3 min de vidéo).
-3. **Transcrire** — Whisper + VAD → segments horodatés (9 s pour 3 min).
-4. **Plan de coupe IA** — l'IA choisit les segments à garder, avec justification.
-5. **Rendu** — 16:9 et/ou 9:16, sous-titres optionnels, son normalisé.
-6. **Envoyer vers FilmCraft** — le montage s'ouvre dans FilmCraft : clips calés à l'image,
-   piste de sous-titres, un marqueur par coupe avec la raison donnée par l'IA (`.fcproj`).
+1. **Vidéo** — déposez votre rush (une vidéo déjà importée rouvre son projet).
+2. **Préparer le montage** — un seul bouton : analyse, transcription (Whisper), puis plan de
+   coupe (règles + IA). Les étapes séparées sont dans « Réglages avancés ».
+3. **Montage** (onglet) — la liste des passages : cocher pour garder, décocher pour couper ;
+   ▶ pour écouter un passage, « Aperçu du montage » pour enchaîner les passages gardés sans
+   rendu. Le filtre « À vérifier » isole les suggestions de l'IA et les transcriptions douteuses.
+4. **Exporter** — vidéo 16:9 et/ou 9:16, sous-titres incrustés, volume égalisé ; ou
+   **Ouvrir dans FilmCraft** : clips calés à l'image, piste de sous-titres, un marqueur par
+   coupe (`.fcproj`).
+
+Le modèle IA reste en mémoire 5 min après sa dernière utilisation, puis Ollama le décharge
+(`MONTAGIA_KEEP_ALIVE` pour changer ce délai).
 
 ### Mode terminal
 
 ```bash
-./start.sh --cli
-# ou directement :
-python3 -m montagia.cli ~/Desktop/Studio_IA/tests/vlog_valentijn.webm plan "garde le plus marquant"
+./start.sh --cli                                   # mode interactif
+./start.sh --cli video.mp4 plan "garde le plus marquant"
+./start.sh --cli video.mp4 render 9:16
 ```
 
 Commandes : `analyse`, `transcribe`, `plan`, `render 16:9`, `subs`, `filmcraft [16:9|9:16]`,
@@ -162,6 +172,10 @@ vidéo → silencedetect → segments de parole
 | `POST /api/analyze` | détection des silences |
 | `POST /api/transcribe` | transcription Whisper + VAD |
 | `POST /api/plan` | plan de coupe IA |
+| `POST /api/prepare` | analyse + transcription + plan en un traitement |
+| `POST /api/plan/keep` | garder / couper un passage (plan recalculé) |
+| `POST /api/project/delete` | supprime un projet et sa vidéo importée |
+| `POST /api/quit` | décharge le modèle IA et arrête le serveur |
 | `POST /api/trailer` | meilleurs moments |
 | `POST /api/pack` | pack de publication |
 | `POST /api/summary` | résumé et analyse |
@@ -184,6 +198,7 @@ vidéo → silencedetect → segments de parole
 | Sous-titres décalés | les timecodes sont recalculés automatiquement | — |
 | « FilmCraft est déjà ouvert » | FilmCraft lancé à la main, sans pilotage | enregistrer, quitter FilmCraft ; MontageIA le relance |
 | Port 8080 occupé | un autre service | `MONTAGIA_PORT=8090 ./start.sh` |
+| L'icône ne démarre rien, « Operation not permitted » dans le journal | dossier du projet sur le Bureau ou dans Documents | déplacer le dossier (ex. `~/MontageIA`) puis relancer `./scripts/install_launcher.sh` |
 
 ---
 
