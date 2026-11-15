@@ -126,32 +126,34 @@ Tests : `python3 -m unittest discover -s tests` (stdlib, sans Ollama ni ffmpeg).
 
 ## 5. Ce qui reste à faire
 
+### Fait le 15/11/2026 (branche `fix/plan-sse-origin`)
+
+- Outillage autonome (`bin/` + `models/`), FilmCraft à la place de Kdenlive.
+- Incrustation des sous-titres testée (Helvetica via CoreText, accents OK).
+- R1 délai réel des processus (`tools.CommandTimeout`), R2 uploads sans écrasement
+  (`tools.unique_path`), R3 SRT temporaires uniques.
+- Projets persistants (`workspace/projects/project_<id>.json`) + liste « Projets récents ».
+- `/api/file` gère `Range` (aperçu vidéo, Safari) ; un seul job lourd à la fois.
+- Vidéos peu parlées : `media.detect_scenes` (scdet) ; si la parole couvre < 50 % de la
+  durée, les trous sont proposés à l'IA comme `[plan sans parole]` (PROMPT_VERSION v2).
+  Les vidéos parlées gardent le comportement précédent.
+
 ### À faire (par ordre de priorité)
 
-1. **Tester le mode terminal** `./start.sh --cli` — jamais exécuté. Vérifier `plan`,
-   `render`, `chat`, et le parsing de `montagia/cli.py` (imports `prompts` corrigés
-   après coup, à retester).
-2. **Vérification visuelle de l'interface** — la capture d'écran a montré le bureau
-   vide : Safari/Chrome ne se sont pas affichés. Relancer :
-   `open -a "Google Chrome" http://127.0.0.1:8080` puis `screencapture -x /tmp/ui.png`.
-3. **Test de l'incrustation des sous-titres** (`subtitles` filter libass + Helvetica)
-   — jamais activé sur un rendu réel. Vérifier que la police se résout bien.
-4. **Test du plan de coupe sur une vidéo française parlée** (les vidéos de test sont
-   en néerlandais/anglais/documentaire).
-5. **Bande-annonce (trailer)** : 181 s, c'est lent —songer à réduire le nombre de
-   candidats envoyés au LLM ou à demander moins de segments.
-6. **Correction des sous-titres** : 135 s — découpage par lots de 25 lignes,
-   à ajuster si les transcriptions sont longues.
-7. **Nettoyage des imports inutilisés** : `edit.py` (`math`, `json`), `tools.py` (`shlex`),
-   `kdenlive.py` (`import re` dans la fonction).
-8. ~~Pack de sous-titres vers Kdenlive~~ → remplacé par FilmCraft (`captions.import`, vérifié visuellement).
+1. **Déployer la branche sur l'iMac** et tester le parcours complet par l'interface
+   (upload → analyse → transcription → plan IA → rendu → FilmCraft), puis mesurer.
+2. **Tester le mode terminal** `./start.sh --cli` sur l'iMac (`plan`, `render`, `filmcraft`, `chat`).
+3. **Test du plan de coupe sur une vidéo française parlée** (vraie vidéo, pas une voix de synthèse).
+4. **Mesurer `detect_scenes` sur l'iMac** (décode toute la vidéo) et le plan IA d'une vidéo sans voix.
+5. **Bande-annonce (trailer)** : 181 s, c'est lent — réduire le nombre de candidats.
+6. **Correction des sous-titres** : 135 s — découpage par lots de 25 lignes.
+7. Supprimer `bin/whisper-cli.bak` (ancien binaire cassé) une fois tout validé.
 
 ### Éventuel (améliorations)
 
 - Modèle `qwen2.5:1.5b` pour les tâches mécaniques (correction de sous-titres) → 2× plus rapide.
-- Cache disque des vv-analyses déjà en place (`pipeline.cached_ai`) — vérifier qu'il
-  ne sert pas de réponses périmées après un changement de prompt (la clé ne contient
-  pas le prompt !).
+- La clé du cache IA contient `PROMPT_VERSION` mais pas le nom du modèle : penser à
+  l'ajouter si `MONTAGIA_MODEL` change.
 - Chunking parallèle de la transcription pour les vidéos > 30 min (non implémenté).
 - Réencodage intelligent : éviter le re-encode complet quand le plan ne change rien
   (déjà fait via le raccourci « copie directe »).
