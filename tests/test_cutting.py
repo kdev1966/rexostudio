@@ -168,6 +168,23 @@ class CutPlanTest(unittest.TestCase):
         self.assertTrue(by_ia)
         self.assertTrue(all(d["keep"] and d["type"] == "contenu" for d in by_ia))
 
+    def test_truncated_reply_is_salvaged(self):
+        # Reponse coupee au plafond de tokens (cas reel sur film001.mp4).
+        raw = ('{\n  "decisions" : [\n    {\n      "id" : "S3",\n      "type" : "contenu"\n'
+               '    },\n    {\n      "id" : "S10",\n      "type" : "digression"\n    },\n'
+               '    {\n      "id" : "S12",\n      "type"')
+        words, duration = load_cafe()
+        cands = pipeline.build_candidates(transcribe.build_lines(words),
+                                          duration=duration, words=words)
+        with mock.patch.object(pipeline.ai, "chat_json",
+                               side_effect=pipeline.ai.OllamaError("tronque", raw=raw)), \
+                mock.patch.object(pipeline, "cached_ai", lambda _t, _p, compute: compute()):
+            result = pipeline.ai_cut_plan(Job(), cands, duration)
+        by_id = {d["id"]: d for d in result["decisions"]}
+        self.assertEqual((by_id["S10"]["type"], by_id["S10"]["keep"]), ("digression", False))
+        self.assertEqual(by_id["S12"]["by"], "defaut")      # incomplet : garde
+        self.assertTrue(by_id["S12"]["keep"])
+
     def test_everything_cut_is_an_error(self):
         with self.assertRaises(RuntimeError):
             self.plan(lambda cands: {"decisions": [

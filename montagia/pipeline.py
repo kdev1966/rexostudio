@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import tempfile
 
 from . import ai, config, cutting, edit, filmcraft, media, prompts, transcribe
@@ -266,10 +267,24 @@ def ai_cut_plan(job, candidates: list, duration: float, transcript: str = "",
                    "model": config.LLM_MODEL}
 
         def compute(system=system, user=user, todo=todo):
-            return ai.chat_json(system, user, prompts.SCHEMA_DECISIONS, temperature=0.1,
-                                num_predict=60 + 16 * len(todo))
+            # Le modele met le JSON en forme (espaces, retours a la ligne) :
+            # ~25 tokens par passage. La limite n'est qu'un plafond, il
+            # s'arrete de lui-meme : on la prend large.
+            try:
+                return ai.chat_json(system, user, prompts.SCHEMA_DECISIONS,
+                                    temperature=0.1, num_predict=200 + 40 * len(todo))
+            except ai.OllamaError as exc:
+                salvaged = _salvage_decisions(exc.raw)
+                if not salvaged:
+                    raise
+                job.add_log("Reponse de l'IA tronquee : %d decisions recuperees sur %d"
+                            % (len(salvaged), len(todo)))
+                return {"decisions": salvaged, "partial": True}
 
         result = cached_ai("cutplan", payload, compute)
+        if result.get("partial"):
+            # Pas de cache pour une reponse incomplete : on retentera la prochaine fois.
+            _forget_cache("cutplan", payload)
         allowed = {c["id"]: c for c in batch if c["id"] in todo}
         for item in result.get("decisions") or []:
             cid = str((item or {}).get("id", "")).strip().upper()
@@ -303,6 +318,22 @@ def ai_cut_plan(job, candidates: list, duration: float, transcript: str = "",
         "kept_duration": round(sum(s["end"] - s["start"] for s in segments), 2),
         "source_duration": round(duration, 2),
     }
+
+
+_DECISION_RE = re.compile(r'"id"\s*:\s*"(S\d+)"\s*,\s*"type"\s*:\s*"([a-z_]+)"')
+
+
+def _salvage_decisions(raw: str) -> list:
+    """Decisions completes d'une reponse JSON tronquee (plafond de tokens)."""
+    return [{"id": cid, "type": kind} for cid, kind in _DECISION_RE.findall(raw or "")]
+
+
+def _forget_cache(task: str, payload: dict) -> None:
+    key = _cache_key(task, payload)
+    try:
+        os.remove(os.path.join(AI_CACHE_DIR, "%s_%s.json" % (task, key[:10])))
+    except OSError:
+        pass
 
 
 def _cut_summary(candidates, decisions, keep, segments, duration) -> str:

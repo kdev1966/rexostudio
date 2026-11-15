@@ -13,7 +13,9 @@ from . import config
 
 
 class OllamaError(RuntimeError):
-    pass
+    def __init__(self, message, raw: str = ""):
+        super().__init__(message)
+        self.raw = raw          # reponse brute du modele (recuperation partielle)
 
 
 def _post(path: str, payload: dict, timeout: int = None, stream: bool = False):
@@ -74,7 +76,7 @@ def extract_json(text: str):
                 return json.loads(raw[start:end + 1])
             except ValueError:
                 continue
-    raise OllamaError("Reponse JSON invalide : %s" % raw[:300])
+    raise OllamaError("Reponse JSON invalide : %s" % raw[:300], raw=raw)
 
 
 def chat_json(system: str, user: str, schema: dict, model: str = None,
