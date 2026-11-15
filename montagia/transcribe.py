@@ -304,6 +304,13 @@ def transcript_text(segments: list, max_chars: int = 0) -> str:
 # Remappage de timeline
 # --------------------------------------------------------------------------
 
+# Un sous-titre coupe par le montage n'est garde que si le morceau restant
+# est lisible : au moins 0,4 s, ou au moins la moitie de la phrase d'origine.
+# Sinon il apparaitrait un eclair de texte (ex. 0,2 s d'une phrase supprimee).
+MIN_FRAGMENT_SECONDS = 0.4
+MIN_FRAGMENT_RATIO = 0.5
+
+
 def remap_segments(segments: list, plan: list) -> list:
     """Reconvertit des timecodes source vers la timeline du montage.
 
@@ -325,7 +332,10 @@ def remap_segments(segments: list, plan: list) -> list:
                 continue
             new_start = offset + max(0.0, start - cut_start)
             new_end = offset + max(0.0, min(end, cut_end) - cut_start)
-            if new_end - new_start < 0.05:
+            kept = new_end - new_start
+            original = max(end - start, 1e-6)
+            if kept < 0.05 or (kept < MIN_FRAGMENT_SECONDS
+                               and kept / original < MIN_FRAGMENT_RATIO):
                 continue
             out.append({
                 "index": len(out) + 1,

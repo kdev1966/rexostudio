@@ -13,7 +13,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from montagia import ai, config, edit, kdenlive, media, pipeline, prompts, tools, transcribe  # noqa: E402
+from montagia import ai, config, edit, media, pipeline, prompts, tools, transcribe  # noqa: E402
 
 RESET = "\033[0m"
 ORANGE = "\033[38;5;208m"
@@ -119,17 +119,18 @@ class Assistant(object):
         ok("%s (%.1f s de calcul)" % (result["path"], time.time() - t0))
         return result
 
-    def kdenlive(self, profile="16:9"):
-        step("Projet Kdenlive")
+    def filmcraft(self, profile="16:9"):
+        step("Projet FilmCraft")
         if not self.cut_plan:
             self.plan()
+        self.ensure_transcribed()
         base = tools.safe_component(self.name.rsplit(".", 1)[0], "projet")
-        out = os.path.join(config.EXPORTS_DIR, base + ".kdenlive")
-        kdenlive.build_project(self.path, self.cut_plan, out, profile=profile,
-                               title=self.name)
-        check = kdenlive.validate(out)
-        ok("%s - %s" % (out, check.get("message", "")))
-        return out
+        out = os.path.join(config.EXPORTS_DIR, base + ".fcproj")
+        result = pipeline.build_filmcraft_job(
+            _FakeJob(), self.path, self.cut_plan, out, profile=profile,
+            title="%s - MontageIA" % self.name, subtitle_segments=self.segments)
+        (ok if result["valid"] else warn)("%s - %s" % (result["path"], result["message"]))
+        return result
 
     def chat(self, question):
         step("Question : %s" % question)
@@ -201,8 +202,8 @@ def run_command(assistant, cmd: str, parts: list):
         assistant.render(parts[1] if len(parts) > 1 else "16:9")
     elif cmd == "subs":
         assistant.subs()
-    elif cmd == "kdenlive":
-        assistant.kdenlive()
+    elif cmd == "filmcraft":
+        assistant.filmcraft(parts[1] if len(parts) > 1 else "16:9")
     elif cmd == "pack":
         assistant.pack()
     elif cmd in ("resume", "summary"):
@@ -240,7 +241,7 @@ def interactive():
     plan [consigne]      plan de coupe propose par l'IA
     render [16:9|9:16]   rend le plan de coupe
     subs                 genere le fichier .srt
-    kdenlive             genere le projet Kdenlive
+    filmcraft [16:9|9:16] envoie le montage dans FilmCraft
     pack                 titres, description, hashtags
     resume               resume de la video
     chat <question>      pose une question sur la video

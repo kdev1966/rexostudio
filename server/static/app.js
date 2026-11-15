@@ -83,7 +83,7 @@ async function loadStatus() {
     chips.push(chip('ffmpeg', !!s.ffmpeg));
     chips.push(chip('Whisper ' + (s.whisper_models.map(m => m.name).join('/') || 'absent'), !!s.whisper));
     chips.push(chip('VAD', !!s.vad_model));
-    chips.push(chip('Kdenlive', !!s.kdenlive));
+    chips.push(chip('FilmCraft', !!s.filmcraft));
     $('#status-bar').innerHTML = chips.join('');
 
     const sel = $('#whisper-model');
@@ -255,7 +255,7 @@ async function refreshProject() {
     $('#btn-plan').disabled = !hasTrans;
     $('#btn-render169').disabled = !S.plan.length;
     $('#btn-render916').disabled = !S.plan.length;
-    $('#btn-kdenlive').disabled = !S.plan.length;
+    $('#btn-filmcraft').disabled = !S.plan.length;
     $('#btn-subs').disabled = !hasTrans;
   } catch (e) { /* ignore */ }
 }
@@ -330,14 +330,15 @@ function renderVideo(format) {
   });
 }
 
-$('#btn-kdenlive').addEventListener('click', () => {
-  runJob('/api/kdenlive', {
+$('#btn-filmcraft').addEventListener('click', () => {
+  runJob('/api/filmcraft', {
     project_id: S.project.id,
     segments: S.plan,
     profile: '16:9',
   }, (result) => {
-    toast('Projet Kdenlive prêt');
-    if (result && result.path) openIn('kdenlive', result.path);
+    // Le projet est deja ouvert dans FilmCraft a la fin du job.
+    if (result && result.valid) toast('Projet ouvert dans FilmCraft');
+    else toast((result && result.message) || 'Projet FilmCraft à vérifier', true);
   });
 });
 
@@ -433,7 +434,7 @@ function renderPlan() {
 
   $('#btn-render169').disabled = !S.plan.length;
   $('#btn-render916').disabled = !S.plan.length;
-  $('#btn-kdenlive').disabled = !S.plan.length;
+  $('#btn-filmcraft').disabled = !S.plan.length;
 }
 
 function savePlan() {
@@ -532,13 +533,13 @@ function renderExports() {
   }
   box.innerHTML = list.map((p) => {
     const isVideo = /\.mp4$/i.test(p);
-    const icon = isVideo ? '🎬' : (/\.kdenlive$/i.test(p) ? '🎞️' : '📄');
+    const icon = isVideo ? '🎬' : (/\.fcproj$/i.test(p) ? '🎞️' : '📄');
     const url = '/api/file?path=' + encodeURIComponent(p);
     return '<div class="export-item"><span class="fi">' + icon + '</span>' +
       '<span class="fn"><b>' + escapeHtml(p.split('/').pop()) + '</b>' +
       '<span>' + escapeHtml(p) + '</span></span>' +
       (isVideo ? '<button class="btn btn-mini" data-preview="' + escapeHtml(url) + '">Lire</button>' : '') +
-      (/\.kdenlive$/i.test(p) ? '<button class="btn btn-mini" data-open-kd="' + escapeHtml(p) + '">Kdenlive</button>' : '') +
+      (/\.fcproj$/i.test(p) ? '<button class="btn btn-mini" data-open-fc="' + escapeHtml(p) + '">FilmCraft</button>' : '') +
       '<button class="btn btn-mini" data-reveal="' + escapeHtml(p) + '">Finder</button>' +
       '<a class="btn btn-mini" href="' + url + '" download>Télécharger</a></div>';
   }).join('');
@@ -548,8 +549,8 @@ function renderExports() {
       $('#preview').src = b.dataset.preview;
       $('#preview-box').classList.remove('hidden');
     }));
-  box.querySelectorAll('[data-open-kd]').forEach(b =>
-    b.addEventListener('click', () => openIn('kdenlive', b.dataset.openKd)));
+  box.querySelectorAll('[data-open-fc]').forEach(b =>
+    b.addEventListener('click', () => openIn('filmcraft', b.dataset.openFc)));
   box.querySelectorAll('[data-reveal]').forEach(b =>
     b.addEventListener('click', () => openIn('reveal', b.dataset.reveal)));
 }

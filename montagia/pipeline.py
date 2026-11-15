@@ -4,8 +4,9 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import tempfile
 
-from . import ai, config, edit, kdenlive, media, prompts, transcribe
+from . import ai, config, edit, filmcraft, media, prompts, transcribe
 
 AI_CACHE_DIR = os.path.join(config.CACHE_DIR, "ai")
 
@@ -323,50 +324,85 @@ def render_video(job, source: str, segments: list, out_path: str, fmt: str = "16
     segments = prepare_plan(source, segments)
 
     # Les sous-titres doivent suivre la timeline du montage, pas celle de la
-    # source : on les regenere sur les timecodes re-calcules.
+    # source : on les regenere sur les timecodes re-calcules, dans un fichier
+    # propre a ce rendu (deux rendus simultanes ne s'ecrasent plus).
+    temp_srt = ""
     if burn_subtitles and subtitle_segments:
         remapped = transcribe.remap_segments(subtitle_segments, segments)
-        srt_dir = os.path.join(config.CACHE_DIR, "subs")
-        os.makedirs(srt_dir, exist_ok=True)
-        subtitles = transcribe.write_srt(
-            remapped, os.path.join(srt_dir, "remapped.srt"))
+        temp_srt = subtitles = _temp_srt(remapped, "rendu")
         job.add_log("Sous-titres recalcules sur la timeline du montage (%d lignes)"
                     % len(remapped))
-
-    result = edit.export(
-        source, segments, out_path, fmt=fmt, encoder=encoder, quality=quality,
-        subtitles=subtitles, burn_subtitles=burn_subtitles, focus_x=focus_x,
-        normalize_audio=normalize_audio,
-        on_log=lambda m: job.add_log(m),
-        on_progress=lambda v, s: job.set_progress(v, s))
+    try:
+        result = edit.export(
+            source, segments, out_path, fmt=fmt, encoder=encoder, quality=quality,
+            subtitles=subtitles, burn_subtitles=burn_subtitles, focus_x=focus_x,
+            normalize_audio=normalize_audio,
+            on_log=lambda m: job.add_log(m),
+            on_progress=lambda v, s: job.set_progress(v, s))
+    finally:
+        _remove(temp_srt)
     job.set_progress(1.0, "Export termine")
     return result
 
 
-def build_kdenlive_job(job, source: str, segments: list, out_path: str,
-                        profile: str = "16:9", srt_path: str = "",
-                        title: str = "Projet MontageIA", notes: str = "",
-                        subtitle_segments: list = None) -> dict:
-    job.set_progress(0.3, "Ecriture du projet Kdenlive")
-    segments = prepare_plan(source, segments)
-    # La piste de sous-titres doit suivre la timeline du montage.
+def build_filmcraft_job(job, source: str, segments: list, out_path: str,
+                        profile: str = "16:9", title: str = "Montage MontageIA",
+                        notes: str = "", subtitle_segments: list = None) -> dict:
+    """Envoie le plan de coupe dans FilmCraft et enregistre le projet .fcproj."""
+    job.set_progress(0.05, "Preparation du projet FilmCraft")
+    info = media.probe(source)
+    segments = edit.normalize_segments(segments, info["duration"])
+    fps = filmcraft.fps_fraction(info.get("fps") or 0)
+    # Plan cale sur les images : c'est la timeline que FilmCraft construira,
+    # et donc celle sur laquelle les sous-titres doivent etre recales.
+    plan = filmcraft.frame_plan(segments, fps)
+    if not plan:
+        raise RuntimeError("Plan de coupe vide : rien a envoyer a FilmCraft.")
+
+    temp_srt = ""
     if subtitle_segments:
-        remapped = transcribe.remap_segments(subtitle_segments, segments)
-        srt_dir = os.path.join(config.CACHE_DIR, "subs")
-        os.makedirs(srt_dir, exist_ok=True)
-        srt_path = transcribe.write_srt(
-            remapped, os.path.join(srt_dir, "kdenlive_remapped.srt"))
-        job.add_log("Piste de sous-titres recalee sur le montage (%d lignes)"
-                    % len(remapped))
-    path = kdenlive.build_project(source, segments, out_path, profile=profile,
-                                  srt_path=srt_path, title=title, notes=notes)
-    job.add_log("Projet : %s" % path)
-    job.set_progress(0.7, "Validation par MLT")
-    check = kdenlive.validate(path)
-    job.add_log(check.get("message", ""))
-    job.set_progress(1.0, "Projet Kdenlive pret")
-    return {"path": path, "valid": check.get("ok", False),
-            "message": check.get("message", "")}
+        remapped = transcribe.remap_segments(subtitle_segments, plan)
+        temp_srt = _temp_srt(remapped, "filmcraft")
+        job.add_log("Sous-titres recales sur la timeline (%d lignes)" % len(remapped))
+    try:
+        job.set_progress(0.15, "Connexion a FilmCraft")
+        client = filmcraft.connect(log=job.add_log)
+        job.set_progress(0.3, "Construction de la timeline dans FilmCraft")
+        result = filmcraft.build_project(
+            client, source, plan, out_path, fps, info, profile=profile,
+            srt_path=temp_srt, title=title, notes=notes, log=job.add_log)
+    finally:
+        _remove(temp_srt)
+
+    job.set_progress(0.9, "Verification du projet enregistre")
+    summary = filmcraft.read_project(result["path"])
+    expected = round(sum(p["frames"] for p in plan) / float(fps), 3)
+    seq = next((s for s in summary["sequences"] if s["clips"] == len(plan)), None)
+    valid = bool(seq) and abs(seq["duration"] - expected) < 0.05
+    message = ("Projet FilmCraft verifie : %d clips, %.2f s, %d sous-titres, %d marqueurs"
+               % (seq["clips"], seq["duration"], seq["captions"], seq["markers"])
+               if valid else "Le projet enregistre ne correspond pas au plan de coupe")
+    job.add_log(message)
+    job.set_progress(1.0, "Projet FilmCraft pret")
+    return {"path": result["path"], "valid": valid, "message": message,
+            "clips": result["clips"], "captions": result["captions"]}
+
+
+def _temp_srt(segments: list, prefix: str) -> str:
+    """SRT temporaire unique (cache/subs), a supprimer apres usage."""
+    srt_dir = os.path.join(config.CACHE_DIR, "subs")
+    os.makedirs(srt_dir, exist_ok=True)
+    fd, path = tempfile.mkstemp(prefix=prefix + "_", suffix=".srt", dir=srt_dir)
+    os.close(fd)
+    return transcribe.write_srt(segments, path)
+
+
+def _remove(path: str) -> None:
+    if path:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
 
 
 def save_subs(segments: list, path: str) -> str:

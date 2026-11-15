@@ -22,7 +22,7 @@
 | Client Ollama (JSON Schema + stream) | `montagia/ai.py` | ✅ |
 | Prompts & schémas JSON | `montagia/prompts.py` | ✅ |
 | Moteur de rendu ffmpeg | `montagia/edit.py` | ✅ 16:9 + 9:16 |
-| Générateur de projet Kdenlive | `montagia/kdenlive.py` | ✅ validé par `melt` |
+| Pilotage FilmCraft (remplace Kdenlive) | `montagia/filmcraft.py` | ✅ testé en réel 16:9 et 9:16 |
 | Orchestration | `montagia/pipeline.py` | ✅ |
 | État projet | `montagia/project.py` | ✅ |
 | Tâches longues + progression | `montagia/jobs.py` | ✅ |
@@ -92,7 +92,22 @@ AVX2/FMA/F16C → le même binaire tourne sur l'iMac et sur le MacBook de dev) e
 11. **Requêtes d'autres sites acceptées** (`/api/open`, `/api/upload`) → contrôle
     `Host` / `Origin` + `Content-Type: application/json` obligatoire sur les POST.
 
+12. **Éclair de sous-titre** (0,2 s d'une phrase presque coupée) → un morceau n'est gardé
+    que s'il dure ≥ 0,4 s ou garde ≥ 50 % de la phrase (`transcribe.remap_segments`).
+
 Tests : `python3 -m unittest discover -s tests` (stdlib, sans Ollama ni ffmpeg).
+
+### FilmCraft (remplace Kdenlive depuis le 15/11/2026)
+
+- Piloté en direct par son serveur de contrôle local (`--control <port>`, jeton aléatoire de
+  64 hex dans `workspace/cache/filmcraft-session.json`, droits 0600). Port : `MONTAGIA_FILMCRAFT_PORT` (9877).
+- **Tous les temps en ticks entiers** (254 016 000 000 / s). Piège : `"time": {"seconds": x}` est
+  IGNORÉ par `timeline.place` (le clip part à 0 et écrase le précédent) → toujours des ticks.
+- Plan **calé sur les images** (`filmcraft.frame_plan`) ; les sous-titres sont recalés sur ce même
+  plan → synchrones avec la timeline FilmCraft.
+- `file.newProject` REMPLACE le projet ouvert sans demander → `file.autoSaveNow` avant (copie de
+  secours dans le dossier Auto-Save de FilmCraft).
+- Si FilmCraft est déjà ouvert sans pilotage, MontageIA refuse avec un message (pas de 2ᵉ instance).
 
 ---
 
@@ -129,8 +144,7 @@ Tests : `python3 -m unittest discover -s tests` (stdlib, sans Ollama ni ffmpeg).
    à ajuster si les transcriptions sont longues.
 7. **Nettoyage des imports inutilisés** : `edit.py` (`math`, `json`), `tools.py` (`shlex`),
    `kdenlive.py` (`import re` dans la fonction).
-8. **Pack de sous-titres vers Kdenlive** : vérifier que la piste `subtitle_feed`
-   s'affiche bien à l'import (validé par MLT, pas visuellement dans Kdenlive).
+8. ~~Pack de sous-titres vers Kdenlive~~ → remplacé par FilmCraft (`captions.import`, vérifié visuellement).
 
 ### Éventuel (améliorations)
 
@@ -185,7 +199,9 @@ python3 -c "import sys;sys.path.insert(0,'.');import montagia.cli,montagia.pipel
 
 - **Ollama doit tourner** : `ollama serve` (le `start.sh` le lance s'il est absent).
 - `qwen2.5:3b` Q4_K_M, 1,9 Go — génération ≈ 8,5 tok/s.
-- ffmpeg/ffprobe/melt viennent de **Kdenlive** (`/Applications/kdenlive.app/Contents/MacOS`),
-  pas d'un `brew install` (Homebrew n'est pas installé).
+- ffmpeg/ffprobe sont dans `bin/` (builds statiques evermeet 9.0.2, installés par
+  `scripts/install_models.sh`) ; Homebrew n'est pas installé. Kdenlive n'est plus utilisé.
+- Production : **iMac de Najeh** (`najehstudio@192.168.1.166`, accès par clé SSH) ;
+  développement sur un MacBook Pro 2015 (i7-4870HQ, sans ADX).
 - `h264_videotoolbox` disponible et 2,2× plus rapide que libx264 sur cette machine.
 - macOS 12.7.6 → `cgi` existe encore mais **ne doit plus être utilisé** (supprimé en 3.13).

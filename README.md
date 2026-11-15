@@ -1,7 +1,8 @@
 # 🎬 MontageIA — assistant de montage vidéo par IA, 100 % local
 
 Un système d'assistance au montage vidéo qui utilise **qwen2.5:3b** sur **Ollama local**,
-**whisper.cpp** pour la transcription et **ffmpeg** pour le montage réel.
+**whisper.cpp** pour la transcription, **ffmpeg** pour le montage réel et **FilmCraft**
+pour continuer le montage à la main.
 Aucune donnée ne sort de la machine, aucune dépendance Python à installer.
 
 > **Principe de conception** : un modèle 3B n'est pas fiable pour écrire des
@@ -16,7 +17,7 @@ Aucune donnée ne sort de la machine, aucune dépendance Python à installer.
 
 ```bash
 cd ~/Desktop/MontageIA
-./scripts/install_models.sh     # whisper.cpp + modèles (base, small, VAD)
+./scripts/install_models.sh     # whisper.cpp statique + modèles + ffmpeg (tout vérifié)
 ./start.sh                      # ouvre http://127.0.0.1:8080
 ```
 
@@ -26,9 +27,9 @@ cd ~/Desktop/MontageIA
 |---|---|---|
 | Ollama ≥ 0.12 | LLM local | `/usr/local/bin/ollama` |
 | `qwen2.5:3b` | modèle | `ollama pull qwen2.5:3b` |
-| whisper.cpp | transcription | `bin/whisper-cli` + `models/` |
-| ffmpeg / ffprobe | média |fourni par Kdenlive |
-| melt (MLT) | validation projet Kdenlive |fourni par Kdenlive |
+| whisper.cpp | transcription | `bin/whisper-cli` (compilé en statique) + `models/` |
+| ffmpeg / ffprobe | média | `bin/` (build statique evermeet, SHA-256 épinglé) |
+| FilmCraft ≥ 0.20 | éditeur vidéo, piloté en direct | `/Applications/FilmCraft.app` |
 
 Aucun `pip install` : le projet n'utilise que la bibliothèque standard Python 3.9.
 
@@ -51,7 +52,8 @@ Le parcours :
 3. **Transcrire** — Whisper + VAD → segments horodatés (9 s pour 3 min).
 4. **Plan de coupe IA** — l'IA choisit les segments à garder, avec justification.
 5. **Rendu** — 16:9 et/ou 9:16, sous-titres optionnels, son normalisé.
-6. **Projet Kdenlive** — un `.kdenlive` prêt à ouvrir, sous-titres compris.
+6. **Envoyer vers FilmCraft** — le montage s'ouvre dans FilmCraft : clips calés à l'image,
+   piste de sous-titres, un marqueur par coupe avec la raison donnée par l'IA (`.fcproj`).
 
 ### Mode terminal
 
@@ -61,7 +63,7 @@ Le parcours :
 python3 -m montagia.cli ~/Desktop/Studio_IA/tests/vlog_valentijn.webm plan "garde le plus marquant"
 ```
 
-Commandes : `analyse`, `transcribe`, `plan`, `render 16:9`, `subs`, `kdenlive`,
+Commandes : `analyse`, `transcribe`, `plan`, `render 16:9`, `subs`, `filmcraft [16:9|9:16]`,
 `pack`, `resume`, `chat <question>`.
 
 ---
@@ -127,7 +129,7 @@ MontageIA/
 │   ├── ai.py                    client Ollama (JSON Schema + streaming)
 │   ├── prompts.py               prompts et schémas JSON
 │   ├── edit.py                  moteur de rendu ffmpeg
-│   ├── kdenlive.py              génération de projet .kdenlive (XML MLT)
+│   ├── filmcraft.py             pilotage de FilmCraft (projet .fcproj)
 │   ├── pipeline.py              orchestration
 │   ├── project.py               état d'un projet en cours
 │   ├── jobs.py                  tâches longues + progression
@@ -146,7 +148,7 @@ vidéo → silencedetect → segments de parole
       → qwen2.5:3b (JSON) → sélection d'identifiants
       → résolution des timecodes → plan de coupe
       → ffmpeg select/aselect → rendu 16:9 ou 9:16
-      → XML MLT → projet .kdenlive
+      → serveur de contrôle FilmCraft → projet .fcproj
 ```
 
 ---
@@ -155,7 +157,7 @@ vidéo → silencedetect → segments de parole
 
 | Route | Effet |
 |---|---|
-| `GET /api/status` | état d'Ollama, ffmpeg, Whisper, Kdenlive |
+| `GET /api/status` | état d'Ollama, ffmpeg, Whisper, FilmCraft |
 | `POST /api/upload?name=` | téléversement (corps brut, streaming disque) |
 | `POST /api/analyze` | détection des silences |
 | `POST /api/transcribe` | transcription Whisper + VAD |
@@ -166,7 +168,7 @@ vidéo → silencedetect → segments de parole
 | `POST /api/fixsubs` | correction des sous-titres |
 | `POST /api/chat` | chat (SSE, streaming) |
 | `POST /api/render` | export 16:9 / 9:16 |
-| `POST /api/kdenlive` | projet Kdenlive |
+| `POST /api/filmcraft` | envoi du montage dans FilmCraft |
 | `GET /api/jobs/<id>/events` | progression en direct (SSE) |
 | `GET /api/file?path=` | téléchargement / prévisualisation |
 
@@ -180,7 +182,7 @@ vidéo → silencedetect → segments de parole
 | Transcription très lente | modèle `small` sélectionné | choisir `base` |
 | Aucun silence détecté | seuil trop strict | `-30 dB` par défaut ; baisser via l'API `noise_db` |
 | Sous-titres décalés | les timecodes sont recalculés automatiquement | — |
-| `.kdenlive` vide à l'ouverture | profil de projet | choisir 16:9 pour une source horizontale |
+| « FilmCraft est déjà ouvert » | FilmCraft lancé à la main, sans pilotage | enregistrer, quitter FilmCraft ; MontageIA le relance |
 | Port 8080 occupé | un autre service | `MONTAGIA_PORT=8090 ./start.sh` |
 
 ---
@@ -190,5 +192,6 @@ vidéo → silencedetect → segments de parole
 - **qwen2.5:3b** — Alibaba, Apache 2.0
 - **whisper.cpp** — MIT (Georgi Gerganov)
 - **Ollama** — MIT
-- **Kdenlive / MLT** — GPL
+- **FilmCraft** — MIT ou Apache-2.0
+- **FFmpeg** (build evermeet.cx) — GPL
 - Vidéos de test : Wikimedia Commons (CC BY-SA) — `~/Desktop/Studio_IA/tests/`

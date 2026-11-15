@@ -15,7 +15,7 @@ def probe(path: str) -> dict:
     """Retourne les metadonnees du media via ffprobe."""
     ffprobe = config.ffprobe_bin()
     if not ffprobe:
-        raise RuntimeError("ffprobe introuvable (installez Kdenlive ou ffmpeg)")
+        raise RuntimeError("ffprobe introuvable (lancez scripts/install_models.sh)")
     cmd = [
         ffprobe, "-hide_banner", "-v", "error",
         "-print_format", "json",

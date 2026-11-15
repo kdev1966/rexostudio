@@ -98,15 +98,19 @@ VIDEO_EXTENSIONS = {
 
 MAX_UPLOAD_BYTES = 4 * 1024 ** 3   # 4 Go
 
-KDENLIVE_APP = "/Applications/kdenlive.app"
+# --------------------------------------------------------------------------
+# FilmCraft (editeur video pilote en direct, voir montagia/filmcraft.py)
+# --------------------------------------------------------------------------
+FILMCRAFT_APP = os.environ.get("MONTAGIA_FILMCRAFT_APP", "/Applications/FilmCraft.app")
+FILMCRAFT_BIN = os.path.join(FILMCRAFT_APP, "Contents", "MacOS", "FilmCraft")
+# Port du serveur de controle local de FilmCraft (127.0.0.1 uniquement).
+FILMCRAFT_PORT = int(os.environ.get("MONTAGIA_FILMCRAFT_PORT", "9877"))
 
 # --------------------------------------------------------------------------
 # Decouverte des binaires
 # --------------------------------------------------------------------------
 _BINARY_EXTRA_PATHS = [
     BIN_DIR,                     # binaires livres avec le projet (prioritaires)
-    "/Applications/kdenlive.app/Contents/MacOS",
-    "/Applications/Kdenlive.app/Contents/MacOS",
     "/opt/homebrew/bin",
     "/usr/local/bin",
     "/usr/bin",
@@ -115,7 +119,7 @@ _BINARY_EXTRA_PATHS = [
 
 
 def find_binary(name: str) -> str:
-    """Chemin d'un binaire : bin/ du projet, puis Kdenlive, puis le PATH."""
+    """Chemin d'un binaire : bin/ du projet, puis les dossiers usuels et le PATH."""
     for folder in _BINARY_EXTRA_PATHS:
         candidate = os.path.join(folder, name)
         if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
@@ -132,10 +136,6 @@ def ffmpeg_bin() -> str:
 
 def ffprobe_bin() -> str:
     return find_binary("ffprobe")
-
-
-def melt_bin() -> str:
-    return find_binary("melt")
 
 
 def whisper_bin() -> str:

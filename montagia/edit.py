@@ -55,7 +55,7 @@ def normalize_segments(segments: list, duration: float = 0.0) -> list:
     """Nettoie le plan de coupe : ordre, bornes, chevauchements, minimums.
 
     Les champs annexes (id, reason...) sont conserves : le meme plan normalise
-    sert au rendu, au recalage des sous-titres et au projet Kdenlive, qui
+    sert au rendu, au recalage des sous-titres et au projet FilmCraft, qui
     doivent tous partager exactement la meme timeline. Idempotente.
     """
     clean = []

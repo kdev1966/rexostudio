@@ -98,6 +98,13 @@ class RenderSubtitleSyncTest(unittest.TestCase):
                          [(0.0, 5.0, "a"), (5.0, 10.0, "c")])
         self.assertLessEqual(captured["subs"][-1]["end"], rendered_length)
 
+    def test_remap_drops_unreadable_fragments(self):
+        subs = [{"start": 3.0, "end": 7.0, "text": "phrase coupee"},
+                {"start": 0.0, "end": 0.3, "text": "Oui"}]
+        # 0,2 s restants d'une phrase de 4 s : supprime ; mot court entier : garde.
+        out = transcribe.remap_segments(subs, [{"start": 0.0, "end": 3.2}])
+        self.assertEqual([s["text"] for s in out], ["Oui"])
+
     def test_remap_follows_plan(self):
         out = transcribe.remap_segments(SUBS, [{"start": 10, "end": 15}])
         self.assertEqual([(s["start"], s["end"], s["text"]) for s in out],

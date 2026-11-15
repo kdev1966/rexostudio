@@ -19,7 +19,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from montagia import ai, config, media, pipeline, project, tools, transcribe  # noqa: E402
+from montagia import ai, config, filmcraft, media, pipeline, project, tools, transcribe  # noqa: E402
 from montagia.jobs import MANAGER  # noqa: E402
 
 MAX_BODY = 8 * 1024 ** 3
@@ -186,8 +186,8 @@ class StudioHandler(BaseHTTPRequestHandler):
                 return self._api_chat()
             if route == "/api/render":
                 return self._api_render()
-            if route == "/api/kdenlive":
-                return self._api_kdenlive()
+            if route == "/api/filmcraft":
+                return self._api_filmcraft()
             if route == "/api/subs":
                 return self._api_subs()
             if route == "/api/open":
@@ -250,8 +250,7 @@ class StudioHandler(BaseHTTPRequestHandler):
             "whisper": config.whisper_bin(),
             "whisper_models": whisper_models,
             "vad_model": config.whisper_vad_model(),
-            "kdenlive": os.path.isdir(config.KDENLIVE_APP),
-            "melt": config.melt_bin(),
+            "filmcraft": filmcraft.installed(),
             "model": config.LLM_MODEL,
             "num_ctx": config.LLM_NUM_CTX,
             "workspace": config.WORKSPACE,
@@ -490,24 +489,24 @@ class StudioHandler(BaseHTTPRequestHandler):
         MANAGER.run_async(job, run)
         return self._json({"job_id": job.id, "output": out_path})
 
-    def _api_kdenlive(self):
+    def _api_filmcraft(self):
         data = self._body_json()
         proj = self._get_project(data)
         segments = data.get("segments") or proj.plan
         if not segments:
             return self._error("Aucun segment : rien a mettre dans le projet")
         base = tools.safe_component(proj.name.rsplit(".", 1)[0], "projet")
-        out_path = os.path.join(config.EXPORTS_DIR, base + ".kdenlive")
-        job = MANAGER.create("kdenlive", "Projet Kdenlive")
+        out_path = os.path.join(config.EXPORTS_DIR, base + ".fcproj")
+        job = MANAGER.create("filmcraft", "Projet FilmCraft")
         subs = proj.results.get("corrected_segments") or proj.transcript_segments
+        notes = proj.results.get("plan_rationale", "")
 
         def run(j):
-            result = pipeline.build_kdenlive_job(
+            result = pipeline.build_filmcraft_job(
                 j, proj.path, segments, out_path,
                 profile=data.get("profile", "16:9"),
-                srt_path=data.get("srt") or proj.srt_path,
                 title=data.get("title") or ("%s - MontageIA" % proj.name),
-                subtitle_segments=subs)
+                notes=notes, subtitle_segments=subs)
             proj.add_export(out_path)
             return result
 
@@ -537,17 +536,13 @@ class StudioHandler(BaseHTTPRequestHandler):
         path = os.path.abspath(data.get("path") or "")
         if not path:
             return self._error("Chemin manquant")
-        # is_within et non startswith : "/ApplicationsXYZ" passait le filtre.
-        if not (tools.is_within(config.WORKSPACE, path)
-                or tools.is_within("/Applications", path)):
+        # Uniquement l'espace de travail (is_within resout les liens et les "..").
+        if not tools.is_within(config.WORKSPACE, path):
             return self._error("Acces refuse", 403)
-        if target == "kdenlive":
-            if not os.path.isdir(config.KDENLIVE_APP):
-                return self._error("Kdenlive n'est pas installe")
-            if path.endswith(".kdenlive"):
-                subprocess.Popen(["open", "-a", config.KDENLIVE_APP, path])
-            else:
-                subprocess.Popen(["open", "-a", config.KDENLIVE_APP])
+        if target == "filmcraft":
+            if not path.endswith(".fcproj") or not os.path.isfile(path):
+                return self._error("Projet FilmCraft introuvable", 404)
+            filmcraft.open_project(path)
             return self._json({"ok": True})
         if target == "reveal":
             subprocess.Popen(["open", "-R", path])
@@ -608,7 +603,7 @@ def main():
     print("  Modele IA   : %s %s" % (config.LLM_MODEL, "(pret)" if status.get("up") else "(HORS LIGNE)"))
     print("  ffmpeg      : %s" % (config.ffmpeg_bin() or "INTROUVABLE"))
     print("  whisper.cpp : %s" % (config.whisper_bin() or "INTROUVABLE"))
-    print("  Kdenlive    : %s" % ("installe" if os.path.isdir(config.KDENLIVE_APP) else "absent"))
+    print("  FilmCraft   : %s" % ("installe" if filmcraft.installed() else "absent"))
     print("  Espace      : %s" % config.WORKSPACE)
     print("  " + "-" * 62)
     print("  Ctrl+C pour arreter.")
