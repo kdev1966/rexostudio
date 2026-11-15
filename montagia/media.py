@@ -149,6 +149,44 @@ def speech_segments(duration: float, silences: list, pad: float = None) -> list:
 
 
 # --------------------------------------------------------------------------
+# Changements de plan (videos sans parole)
+# --------------------------------------------------------------------------
+
+_SCENE = re.compile(r"lavfi\.scd\.score:\s*([\d.]+),\s*lavfi\.scd\.time:\s*([\d.]+)")
+
+SCENE_THRESHOLD = 10.0      # score scdet (0-100) : 10 = coupe franche
+
+
+def detect_scenes(path: str, threshold: float = SCENE_THRESHOLD,
+                  min_gap: float = 0.5) -> list:
+    """Instants des changements de plan (secondes), via le filtre scdet.
+
+    L'image est reduite a 320 px de large avant l'analyse : la detection
+    reste fiable et le calcul est bien plus leger. Deux coupes a moins de
+    min_gap secondes (flash, fondu) ne comptent que pour une.
+    """
+    ffmpeg = config.ffmpeg_bin()
+    if not ffmpeg:
+        raise RuntimeError("ffmpeg introuvable")
+    cmd = [
+        ffmpeg, "-hide_banner", "-nostdin", "-i", path,
+        "-an", "-sn", "-dn",
+        "-vf", "scale=320:-2,scdet=threshold=%s" % threshold,
+        "-f", "null", "-",
+    ]
+    out = tools.run_streaming(cmd, on_line=None, timeout=3600)
+    cuts = []
+    for line in out.splitlines():
+        m = _SCENE.search(line)
+        if not m:
+            continue
+        t = round(float(m.group(2)), 3)
+        if not cuts or t - cuts[-1] >= min_gap:
+            cuts.append(t)
+    return cuts
+
+
+# --------------------------------------------------------------------------
 # Loudness (normalisation EBU R128)
 # --------------------------------------------------------------------------
 

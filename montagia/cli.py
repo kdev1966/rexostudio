@@ -51,6 +51,11 @@ class Assistant(object):
         # "TypeError: 'list' object is not callable".
         self.cut_plan = []
         self.duration = 0.0
+        self.scenes = []
+
+    def _build_candidates(self):
+        return pipeline.build_candidates(self.segments, duration=self.duration,
+                                         scenes=self.scenes)
 
     # -- etapes ------------------------------------------------------------
     def analyze(self):
@@ -60,8 +65,14 @@ class Assistant(object):
         ok("%dx%d | %.2f fps | %s | %.1f s" % (
             info["width"], info["height"], info["fps"], info["vcodec"], self.duration))
         t0 = time.time()
-        silences = media.detect_silence(self.path)
+        silences = media.detect_silence(self.path) if info["has_audio"] else []
         ok("%d silences detectes en %.2f s" % (len(silences), time.time() - t0))
+        if info["has_video"]:
+            t0 = time.time()
+            self.scenes = media.detect_scenes(self.path)
+            ok("%d changements de plan en %.2f s" % (len(self.scenes), time.time() - t0))
+        if self.segments:
+            self.candidates = self._build_candidates()
 
     def ensure_analyzed(self):
         if not self.duration:
@@ -78,7 +89,7 @@ class Assistant(object):
                                        workdir=os.path.join(config.CACHE_DIR, "audio"))
         self.segments = result["segments"]
         self.transcript = transcribe.transcript_text(self.segments)
-        self.candidates = pipeline.build_candidates(self.segments)
+        self.candidates = self._build_candidates()
         ok("%d segments en %.1f s (langue: %s)" % (
             len(self.segments), time.time() - t0, result["language"]))
         return result

@@ -49,19 +49,27 @@ def cached_ai(task: str, payload: dict, compute):
 
 def analyze_media(job, path: str, noise_db: float = None,
                   min_dur: float = None) -> dict:
-    """Silence + metadonnees + segments de parole."""
+    """Silences + changements de plan + metadonnees + segments de parole."""
     job.set_progress(0.05, "Analyse du media")
     info = media.probe(path)
     job.add_log("Media : %s | %dx%d | %.1f fps | %s | %s"
                 % (os.path.basename(path), info["width"], info["height"],
                    info["fps"], info["vcodec"], info["acodec"]))
-    job.set_progress(0.25, "Detection des silences")
-    silences = media.detect_silence(path, noise_db, min_dur)
-    job.add_log("Silences detectes : %d (total %.1f s)"
-                % (len(silences), sum(s["duration"] for s in silences)))
+    silences = []
+    if info.get("has_audio"):
+        job.set_progress(0.2, "Detection des silences")
+        silences = media.detect_silence(path, noise_db, min_dur)
+        job.add_log("Silences detectes : %d (total %.1f s)"
+                    % (len(silences), sum(s["duration"] for s in silences)))
+    scenes = []
+    if info.get("has_video"):
+        job.set_progress(0.45, "Detection des changements de plan")
+        scenes = media.detect_scenes(path)
+        job.add_log("Changements de plan : %d" % len(scenes))
     segments = media.speech_segments(info["duration"], silences)
     job.set_progress(1.0, "Analyse terminee")
-    return {"info": info, "silences": silences, "speech_segments": segments}
+    return {"info": info, "silences": silences, "speech_segments": segments,
+            "scenes": scenes}
 
 
 # --------------------------------------------------------------------------
@@ -82,19 +90,32 @@ def transcribe_media(job, path: str, model: str = None, language: str = "auto") 
 # Candidats au plan de coupe
 # --------------------------------------------------------------------------
 
+# Une video est consideree "peu parlee" quand la parole couvre moins de la
+# moitie de sa duree : on propose alors aussi les plans sans parole a l'IA.
+# Les videos parlees (vlog, tuto, interview) gardent exactement le
+# comportement precedent : seuls les segments de parole sont candidats.
+VISUAL_SPEECH_COVERAGE = 0.5
+VISUAL_MIN_SECONDS = 1.0       # plus court : pas un plan exploitable
+VISUAL_MAX_SECONDS = 8.0       # plan plus long : decoupe en morceaux
+VISUAL_LABEL = "[plan sans parole]"
+
+
 def build_candidates(segments: list, min_duration: float = 1.5,
-                     max_count: int = prompts.MAX_CANDIDATES) -> list:
+                     max_count: int = prompts.MAX_CANDIDATES,
+                     duration: float = 0.0, scenes: list = None) -> list:
     """Transforme les segments de transcription en candidats numerotes S1, S2...
 
     Les segments trop courts sont fusionnes avec le suivant : moins de candidats
     = prompt plus court = reponse plus rapide et plus fiable.
+
+    Video peu parlee (musique, plans de coupe, sans voix) : les intervalles
+    sans parole sont decoupes aux changements de plan (scenes) et proposes
+    comme candidats "visuels", pour que l'IA puisse aussi les monter.
     """
-    if not segments:
-        return []
     merged = []
-    for seg in segments:
-        duration = float(seg["end"]) - float(seg["start"])
-        if duration < min_duration and merged:
+    for seg in segments or []:
+        seg_duration = float(seg["end"]) - float(seg["start"])
+        if seg_duration < min_duration and merged:
             merged[-1]["end"] = seg["end"]
             merged[-1]["text"] = (merged[-1]["text"] + " " + seg["text"]).strip()
         else:
@@ -102,7 +123,13 @@ def build_candidates(segments: list, min_duration: float = 1.5,
                 "start": float(seg["start"]),
                 "end": float(seg["end"]),
                 "text": seg.get("text", ""),
+                "kind": "parole",
             })
+
+    speech = sum(m["end"] - m["start"] for m in merged)
+    if duration and speech < VISUAL_SPEECH_COVERAGE * duration:
+        merged = sorted(merged + visual_candidates(merged, duration, scenes or []),
+                        key=lambda m: m["start"])
 
     if len(merged) > max_count:
         step = len(merged) / float(max_count)
@@ -113,10 +140,12 @@ def build_candidates(segments: list, min_duration: float = 1.5,
             chunk = merged[lo:hi]
             if not chunk:
                 continue
+            spoken = [c for c in chunk if c["kind"] == "parole"]
             compact.append({
                 "start": chunk[0]["start"],
                 "end": chunk[-1]["end"],
-                "text": " ".join(c["text"] for c in chunk),
+                "text": " ".join(c["text"] for c in spoken),
+                "kind": "parole" if spoken else "visuel",
             })
         merged = compact
 
@@ -127,8 +156,33 @@ def build_candidates(segments: list, min_duration: float = 1.5,
             "start": round(seg["start"], 3),
             "end": round(seg["end"], 3),
             "text": seg["text"],
+            "kind": seg["kind"],
             "duration": round(seg["end"] - seg["start"], 3),
         })
+    return out
+
+
+def visual_candidates(speech: list, duration: float, scenes: list) -> list:
+    """Plans sans parole : les trous entre segments de parole, coupes aux
+    changements de plan puis en morceaux de VISUAL_MAX_SECONDS au plus."""
+    gaps, cursor = [], 0.0
+    for seg in sorted(speech, key=lambda s: s["start"]):
+        if seg["start"] - cursor >= VISUAL_MIN_SECONDS:
+            gaps.append((cursor, seg["start"]))
+        cursor = max(cursor, seg["end"])
+    if duration - cursor >= VISUAL_MIN_SECONDS:
+        gaps.append((cursor, duration))
+
+    out = []
+    for gap_start, gap_end in gaps:
+        bounds = [gap_start] + [t for t in sorted(scenes) if gap_start < t < gap_end] + [gap_end]
+        for shot_start, shot_end in zip(bounds, bounds[1:]):
+            pieces = max(1, int(-(-(shot_end - shot_start) // VISUAL_MAX_SECONDS)))
+            size = (shot_end - shot_start) / pieces
+            for k in range(pieces):
+                a, b = shot_start + k * size, shot_start + (k + 1) * size
+                if b - a >= VISUAL_MIN_SECONDS:
+                    out.append({"start": a, "end": b, "text": "", "kind": "visuel"})
     return out
 
 

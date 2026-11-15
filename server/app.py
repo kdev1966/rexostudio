@@ -27,6 +27,13 @@ MAX_BODY = config.MAX_UPLOAD_BYTES
 _FINAL_STATUSES = ("done", "error", "cancelled")
 
 
+def _candidates(proj) -> list:
+    """Candidats au plan de coupe : parole, plus plans visuels si peu parle."""
+    return pipeline.build_candidates(
+        proj.transcript_segments, duration=(proj.info or {}).get("duration") or 0.0,
+        scenes=proj.scenes)
+
+
 def _parse_range(header, size: int):
     """En-tete Range -> (debut, fin) inclus, None (fichier entier) ou "invalid".
 
@@ -395,6 +402,11 @@ class StudioHandler(BaseHTTPRequestHandler):
             proj.info = result["info"]
             proj.silences = result["silences"]
             proj.speech_segments = result["speech_segments"]
+            proj.scenes = result["scenes"]
+            if proj.transcript_segments:
+                # Analyse faite apres la transcription : les plans detectes
+                # completent les candidats (videos peu parlees).
+                proj.candidates = _candidates(proj)
             return result
 
         self._run_job(job, proj, run)
@@ -413,7 +425,7 @@ class StudioHandler(BaseHTTPRequestHandler):
             proj.transcript = transcribe.transcript_text(result["segments"])
             proj.language = result.get("language", "")
             proj.model = result.get("model", "")
-            proj.candidates = pipeline.build_candidates(result["segments"])
+            proj.candidates = _candidates(proj)
             srt_path = os.path.join(
                 config.EXPORTS_DIR,
                 "%s.srt" % tools.safe_component(proj.name.rsplit(".", 1)[0], "sous-titres"))
@@ -430,7 +442,7 @@ class StudioHandler(BaseHTTPRequestHandler):
         proj = self._get_project(data)
         candidates = data.get("candidates") or proj.candidates
         if not candidates:
-            candidates = pipeline.build_candidates(proj.transcript_segments)
+            candidates = _candidates(proj)
         transcript = data.get("transcript") or proj.transcript
         duration = (proj.info or {}).get("duration") or 0.0
         job = MANAGER.create("plan", "Plan de coupe IA")
@@ -482,7 +494,7 @@ class StudioHandler(BaseHTTPRequestHandler):
         proj = self._get_project(data)
         candidates = data.get("candidates") or proj.candidates
         if not candidates:
-            candidates = pipeline.build_candidates(proj.transcript_segments)
+            candidates = _candidates(proj)
         job = MANAGER.create("trailer", "Recherche des meilleurs moments")
 
         def run(j):

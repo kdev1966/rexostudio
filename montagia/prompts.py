@@ -21,7 +21,7 @@ MAX_CANDIDATES = 60
 
 # Version des prompts : incrémenter quand un prompt change, pour invalider
 # le cache disque des résultats IA (sinon on ressort l'ancienne réponse).
-PROMPT_VERSION = "v1"
+PROMPT_VERSION = "v2"   # v2 : candidats visuels [plan sans parole]
 
 # --------------------------------------------------------------------------
 # Schemas JSON
@@ -185,6 +185,8 @@ def candidate_lines(candidates: list, preview: int = CANDIDATE_PREVIEW) -> str:
         text = (cand.get("text") or "").strip()
         if len(text) > preview:
             text = text[:preview] + "..."
+        if cand.get("kind") == "visuel" or not text:
+            text = "[plan sans parole]"
         lines.append("%s [%.1fs -> %.1fs] %s" % (
             cand["id"], cand["start"], cand["end"], text))
     return "\n".join(lines)
@@ -203,6 +205,9 @@ def build_cut_plan_prompt(candidates: list, duration: float, instruction: str = 
         "- Supprime les repetitions, les faux departs, les digressions et les silences.\n"
         "- Garde au moins 3 segments si la video en contient plus de 3.\n"
         "- N'invente jamais d'identifiant : utilise uniquement ceux listes ci-dessus.\n"
+        "- [plan sans parole] = plan visuel (musique, ambiance, illustration). Dans une "
+        "video parlee, garde-les seulement s'ils illustrent le propos ; dans une video "
+        "sans voix, choisis-les pour le rythme et la duree demandee.\n"
         "- trim_start / trim_end : facultatifs, en secondes, pour rogner un debut ou "
         "une fin de segment (mets 0 si tu ne rognes pas).\n"
         "- reason : 3 a 5 mots maximum decrivant le CONTENU du segment garde "

@@ -503,7 +503,7 @@ function renderCandidates() {
   const tbody = $('#cand-table tbody');
   tbody.innerHTML = S.candidates.map(c =>
     '<tr><td>' + c.id + '</td><td>' + fmtTime(c.start) + '</td><td>' + fmtTime(c.end) +
-    '</td><td>' + escapeHtml((c.text || '').slice(0, 160)) + '</td></tr>'
+    '</td><td>' + (c.kind === 'visuel' ? '<em class="muted">plan sans parole</em>' : escapeHtml((c.text || '').slice(0, 160))) + '</td></tr>'
   ).join('');
 }
 
