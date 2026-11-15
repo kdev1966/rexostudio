@@ -703,10 +703,13 @@ def main():
         print("")
     httpd = ThreadingHTTPServer((config.HOST, config.PORT), StudioHandler)
     httpd.daemon_threads = True
-    try:
-        webbrowser.open("http://%s:%d" % (config.HOST, config.PORT))
-    except Exception:
-        pass
+    # MONTAGIA_NO_BROWSER=1 : lancement a distance (SSH), pas de navigateur
+    # ouvert sur l'ecran de la machine.
+    if not os.environ.get("MONTAGIA_NO_BROWSER"):
+        try:
+            webbrowser.open("http://%s:%d" % (config.HOST, config.PORT))
+        except Exception:
+            pass
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
