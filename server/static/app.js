@@ -493,6 +493,7 @@ function playItems(items, label) {
   playlist = items;
   playIndex = 0;
   $('#player-label').textContent = label;
+  $('#player-box').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   player.currentTime = items[0].start;
   player.play().catch(() => {});
   highlightPlaying();

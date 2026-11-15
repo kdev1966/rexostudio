@@ -253,7 +253,7 @@ body.busy #btn-prepare, body.busy .btn-small { opacity: .38; pointer-events: non
 .inline-label input { padding: 6px 8px; }
 
 /* ---------- lecteur ---------- */
-.player-box { margin-bottom: 10px; }
+.player-box { margin-bottom: 10px; scroll-margin-top: 96px; }  /* sous l'en-tete fixe */
 .player-box video { width: 100%; max-height: 300px; border-radius: 8px; background: #000; display: block; }
 .player-bar { display: flex; align-items: center; gap: 10px; margin-top: 7px; }
 .player-bar .btn { flex: none; }
