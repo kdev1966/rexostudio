@@ -1,58 +1,108 @@
 #!/bin/bash
 # ---------------------------------------------------------------------------
-# Installe les outils locaux de transcription (whisper.cpp + modeles).
-# Aucune dependance Python : tout est en C/C++ natif.
+# Installe les outils locaux de transcription, sans dependance externe :
+#   1. bin/whisper-cli  : whisper.cpp compile en STATIQUE (un seul binaire,
+#                         aucune bibliotheque .dylib a cote)
+#   2. models/          : modele Whisper + modele VAD Silero
+# Tout est verifie : somme SHA-256 de CMake et des modeles, commit Git de
+# whisper.cpp. Relancable sans risque : ce qui est deja en place est garde.
+#
+#   ./scripts/install_models.sh            base + VAD
+#   ./scripts/install_models.sh small      ajoute le modele small (488 Mo)
 # ---------------------------------------------------------------------------
-set -u
+set -euo pipefail
 cd "$(dirname "$0")/.."
 
 GREEN=$'\033[32m'; ORANGE=$'\033[38;5;208m'; RED=$'\033[31m'; OFF=$'\033[0m'
-WHISPER_SRC="${WHISPER_SRC:-$HOME/Desktop/Studio_IA/whisper.cpp}"
-MODELS_DIR="$PWD/models"
-BIN_DIR="$PWD/bin"
+ok()   { echo "${GREEN}●${OFF} $*"; }
+warn() { echo "${ORANGE}●${OFF} $*"; }
+fail() { echo "${RED}●${OFF} $*"; exit 1; }
+
+ROOT="$PWD"
+MODELS_DIR="$ROOT/models"
+BIN_DIR="$ROOT/bin"
+BUILD_DIR="${MONTAGIA_BUILD_DIR:-$HOME/Library/Caches/MontageIA-build}"
+
+# Versions figees (verifiees le 15/11/2026)
+WHISPER_TAG="v1.9.5"
+WHISPER_COMMIT="d2a764c648779feb36d44363f212a29b00aad1af"
+CMAKE_VERSION="4.4.5"
 
 mkdir -p "$MODELS_DIR" "$BIN_DIR"
 
-echo "== 1/3  binaire whisper-cli =="
-if [ -x "$BIN_DIR/whisper-cli" ]; then
-  echo "${GREEN}●${OFF} déjà présent : bin/whisper-cli"
-elif [ -x "$WHISPER_SRC/build/bin/whisper-cli" ]; then
-  cp "$WHISPER_SRC/build/bin/whisper-cli" "$BIN_DIR/"
-  chmod +x "$BIN_DIR/whisper-cli"
-  echo "${GREEN}●${OFF} copié depuis $WHISPER_SRC"
+# Telecharge $2 vers $1 et verifie la somme SHA-256 $3 (fichier garde s'il est deja bon).
+fetch() {
+  local dest="$1" url="$2" sha="$3"
+  if [ -f "$dest" ] && echo "$sha  $dest" | shasum -a 256 -c - >/dev/null 2>&1; then
+    ok "$(basename "$dest") deja present (SHA-256 verifie)"
+    return
+  fi
+  curl -fL --progress-bar -o "$dest.part" "$url"
+  echo "$sha  $dest.part" | shasum -a 256 -c - >/dev/null || { rm -f "$dest.part"; fail "SHA-256 incorrect pour $(basename "$dest")"; }
+  mv "$dest.part" "$dest"
+  ok "$(basename "$dest") telecharge (SHA-256 verifie)"
+}
+
+# --------------------------------------------------------------------------
+echo "== 1/2  binaire whisper-cli =="
+if "$BIN_DIR/whisper-cli" --help >/dev/null 2>&1; then
+  ok "bin/whisper-cli fonctionne deja"
 else
-  echo "${ORANGE}whisper.cpp introuvable. Clonez https://github.com/ggerganov/whisper.cpp"
-  echo "  puis compilez :  cmake -B build && cmake --build build -j4"
+  [ -x "$BIN_DIR/whisper-cli" ] && warn "bin/whisper-cli present mais inutilisable (bibliotheque manquante) : recompilation"
+  command -v clang >/dev/null || fail "compilateur absent : lancez  xcode-select --install"
+  mkdir -p "$BUILD_DIR"; cd "$BUILD_DIR"
+
+  CM="cmake-$CMAKE_VERSION-macos-universal"
+  CMAKE="$BUILD_DIR/$CM/CMake.app/Contents/bin/cmake"
+  if [ ! -x "$CMAKE" ]; then
+    curl -fsSL -o cmake-sha.txt "https://github.com/Kitware/CMake/releases/download/v$CMAKE_VERSION/cmake-$CMAKE_VERSION-SHA-256.txt"
+    curl -fL --progress-bar -o "$CM.tar.gz" "https://github.com/Kitware/CMake/releases/download/v$CMAKE_VERSION/$CM.tar.gz"
+    grep " $CM.tar.gz\$" cmake-sha.txt | shasum -a 256 -c - >/dev/null || fail "SHA-256 de CMake incorrect"
+    tar -xzf "$CM.tar.gz" && rm "$CM.tar.gz"
+    ok "CMake $CMAKE_VERSION (SHA-256 verifie)"
+  fi
+
+  rm -rf whisper.cpp
+  git -c advice.detachedHead=false clone -q --depth 1 --branch "$WHISPER_TAG" \
+    https://github.com/ggml-org/whisper.cpp.git
+  [ "$(git -C whisper.cpp rev-parse HEAD)" = "$WHISPER_COMMIT" ] || fail "commit whisper.cpp inattendu"
+  ok "whisper.cpp $WHISPER_TAG (commit verifie)"
+
+  # Jeu d'instructions commun aux Mac Intel 2015 (Haswell/Broadwell) :
+  # GGML_NATIVE=OFF pour qu'un binaire compile sur l'iMac tourne aussi
+  # sur le MacBook (qui n'a pas ADX), et inversement.
+  "$CMAKE" -S whisper.cpp -B whisper.cpp/build -DCMAKE_BUILD_TYPE=Release \
+    -DBUILD_SHARED_LIBS=OFF -DGGML_NATIVE=OFF \
+    -DGGML_AVX=ON -DGGML_AVX2=ON -DGGML_FMA=ON -DGGML_F16C=ON \
+    -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_SERVER=OFF \
+    -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0 >configure.log 2>&1 \
+    || { tail -30 configure.log; fail "configuration CMake echouee"; }
+  echo "Compilation (quelques minutes)..."
+  "$CMAKE" --build whisper.cpp/build -j"$(sysctl -n hw.ncpu)" --target whisper-cli >build.log 2>&1 \
+    || { tail -30 build.log; fail "compilation echouee (voir $BUILD_DIR/build.log)"; }
+
+  install -m 755 whisper.cpp/build/bin/whisper-cli "$BIN_DIR/whisper-cli"
+  cd "$ROOT"
+  if otool -L "$BIN_DIR/whisper-cli" | grep -q "@rpath"; then
+    fail "bin/whisper-cli depend encore de bibliotheques externes"
+  fi
+  "$BIN_DIR/whisper-cli" --help >/dev/null 2>&1 || fail "bin/whisper-cli ne demarre pas"
+  ok "bin/whisper-cli compile (statique)"
 fi
 
-echo "== 2/3  modèles de transcription =="
-for model in base small; do
-  if [ -s "$MODELS_DIR/ggml-$model.bin" ]; then
-    echo "${GREEN}●${OFF} ggml-$model.bin déjà présent"
-    continue
-  fi
-  if [ -x "$WHISPER_SRC/models/download-ggml-model.sh" ]; then
-    ( cd "$WHISPER_SRC/models" && ./download-ggml-model.sh "$model" "$MODELS_DIR" >/dev/null 2>&1 ) \
-      && echo "${GREEN}●${OFF} ggml-$model.bin téléchargé" \
-      || echo "${ORANGE}échec du téléchargement de ggml-$model.bin${OFF}"
-  else
-    echo "${ORANGE}script de téléchargement introuvable ($WHISPER_SRC/models/download-ggml-model.sh)${OFF}"
-  fi
-done
-
-echo "== 3/3  modèle VAD (Silero) =="
-if [ -s "$MODELS_DIR/ggml-silero-v6.2.0.bin" ]; then
-  echo "${GREEN}●${OFF} modèle VAD déjà présent"
-elif [ -x "$WHISPER_SRC/models/download-vad-model.sh" ]; then
-  ( cd "$WHISPER_SRC/models" && ./download-vad-model.sh silero-v6.2.0 "$MODELS_DIR" >/dev/null 2>&1 ) \
-    && echo "${GREEN}●${OFF} modèle VAD téléchargé" \
-    || echo "${ORANGE}échec du téléchargement du modèle VAD${OFF}"
-else
-  echo "${ORANGE}script VAD introuvable${OFF}"
+# --------------------------------------------------------------------------
+echo "== 2/2  modeles =="
+HF="https://huggingface.co"
+fetch "$MODELS_DIR/ggml-base.bin" "$HF/ggerganov/whisper.cpp/resolve/main/ggml-base.bin" \
+  60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe
+fetch "$MODELS_DIR/ggml-silero-v6.2.0.bin" "$HF/ggml-org/whisper-vad/resolve/main/ggml-silero-v6.2.0.bin" \
+  2aa269b785eeb53a82983a20501ddf7c1d9c48e33ab63a41391ac6c9f7fb6987
+if [ "${1:-}" = "small" ]; then
+  fetch "$MODELS_DIR/ggml-small.bin" "$HF/ggerganov/whisper.cpp/resolve/main/ggml-small.bin" \
+    1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b
 fi
 
 echo ""
-echo "Contenu de models/ :"
-ls -lh "$MODELS_DIR" 2>/dev/null | tail -n +2
+ls -lh "$MODELS_DIR" | tail -n +2
 echo ""
-echo "${GREEN}Installation terminée.${OFF}"
+ok "Installation terminee."

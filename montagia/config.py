@@ -57,6 +57,12 @@ WHISPER_BIN = os.path.join(BIN_DIR, "whisper-cli")
 # Ordre de preference : le plus petit modele dispo (rapide) -> le plus gros (precis).
 WHISPER_MODEL_PREFERENCE = ["base", "small", "tiny", "medium"]
 
+# Metal (GPU) pour whisper : DESACTIVE par defaut. Mesure sur l'iMac 2015
+# (Iris Pro 6200, modele base) : CPU seul 1,4 s contre 2,7 s avec Metal, et
+# Metal compile ses shaders au premier lancement (~55 s). MONTAGIA_WHISPER_GPU=1
+# pour le reactiver sur une machine ou le GPU est plus rapide.
+WHISPER_USE_GPU = os.environ.get("MONTAGIA_WHISPER_GPU", "0") == "1"
+
 WHISPER_LANGUAGES = {
     "auto": "auto", "fr": "fr", "en": "en", "ar": "ar", "es": "es",
     "de": "de", "it": "it", "pt": "pt", "nl": "nl", "ru": "ru", "zh": "zh",
@@ -98,6 +104,7 @@ KDENLIVE_APP = "/Applications/kdenlive.app"
 # Decouverte des binaires
 # --------------------------------------------------------------------------
 _BINARY_EXTRA_PATHS = [
+    BIN_DIR,                     # binaires livres avec le projet (prioritaires)
     "/Applications/kdenlive.app/Contents/MacOS",
     "/Applications/Kdenlive.app/Contents/MacOS",
     "/opt/homebrew/bin",
@@ -108,7 +115,7 @@ _BINARY_EXTRA_PATHS = [
 
 
 def find_binary(name: str) -> str:
-    """Retourne le chemin d'un binaire en privilegiant Kdenlive puis le PATH."""
+    """Chemin d'un binaire : bin/ du projet, puis Kdenlive, puis le PATH."""
     for folder in _BINARY_EXTRA_PATHS:
         candidate = os.path.join(folder, name)
         if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
@@ -132,26 +139,17 @@ def melt_bin() -> str:
 
 
 def whisper_bin() -> str:
-    """whisper-cli local, sinon l'installation d'origine du dossier Studio_IA."""
+    """whisper-cli du projet (compile en statique par scripts/install_models.sh)."""
     if os.path.isfile(WHISPER_BIN) and os.access(WHISPER_BIN, os.X_OK):
         return WHISPER_BIN
-    legacy = os.path.expanduser(
-        "~/Desktop/Studio_IA/whisper.cpp/build/bin/whisper-cli")
-    if os.path.isfile(legacy):
-        return legacy
     return ""
 
 
 def whisper_model_path(name: str = "base") -> str:
     """Chemin du modele whisper.cpp (local en priorite)."""
-    candidates = [
-        os.path.join(MODELS_DIR, "ggml-%s.bin" % name),
-        os.path.expanduser(
-            "~/Desktop/Studio_IA/whisper.cpp/models/ggml-%s.bin" % name),
-    ]
-    for c in candidates:
-        if os.path.isfile(c) and os.path.getsize(c) > 5 * 1024 * 1024:
-            return c
+    path = os.path.join(MODELS_DIR, "ggml-%s.bin" % name)
+    if os.path.isfile(path) and os.path.getsize(path) > 5 * 1024 * 1024:
+        return path
     return ""
 
 
@@ -171,9 +169,6 @@ def whisper_vad_model() -> str:
     """
     candidates = [
         os.path.join(MODELS_DIR, "ggml-silero-v6.2.0.bin"),
-        os.path.join(MODELS_DIR, "ggml-silero-v6.2.0-ggml.bin"),
-        os.path.expanduser(
-            "~/Desktop/Studio_IA/whisper.cpp/models/ggml-silero-v6.2.0.bin"),
     ]
     for c in candidates:
         if os.path.isfile(c) and os.path.getsize(c) > 100 * 1024:

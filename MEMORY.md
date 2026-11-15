@@ -56,6 +56,12 @@ iMac 27" 2015 · i5-5575R **4 cœurs** · 16 Go RAM · Iris Pro 6200 · macOS 12
 | IA répétée | préfill 23 tok/s | préfixe stable → cache Ollama | 56 s → **4,5 s** (12×) |
 | Rendu | libx264 | `h264_videotoolbox` | 5,3× → **11,8×** temps réel |
 | Dépendances | `auto-editor` (PyAV) | ffmpeg natif | 0 pip install |
+| Whisper GPU | Metal (Iris Pro) | CPU seul `-ng` | 2,7 s → **1,4 s** (2×), plus de compilation Metal de ~55 s au 1er lancement |
+
+**Installation autonome (15/11/2026)** : `~/Desktop/Studio_IA` n'existe plus. `./scripts/install_models.sh`
+compile whisper.cpp v1.9.5 en **statique** (CMake 4.4.5 et commit vérifiés, `GGML_NATIVE=OFF` +
+AVX2/FMA/F16C → le même binaire tourne sur l'iMac et sur le MacBook de dev) et télécharge
+`ggml-base.bin` + `ggml-silero-v6.2.0.bin` avec vérification SHA-256.
 
 **Pièges évités :**
 - Forcer `num_batch` / `num_thread` sur Ollama **dégrade** le préfill de 2,5× → ne rien forcer.

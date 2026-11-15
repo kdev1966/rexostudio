@@ -185,6 +185,8 @@ def transcribe(source: str, model: str = None, language: str = "auto",
         ]
         if speed == "rapide":
             cmd += ["-bs", "1", "-bo", "1"]
+        if not config.WHISPER_USE_GPU:
+            cmd += ["-ng"]                  # voir config.WHISPER_USE_GPU (mesure)
         if use_vad and vad:
             cmd += ["--vad", "-vm", vad, "-vt", "0.5", "-vspd", "200", "-vsd", "300"]
         return cmd
