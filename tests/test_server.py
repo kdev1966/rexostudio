@@ -154,6 +154,29 @@ class ServerTest(unittest.TestCase):
         self.assertTrue(out_path.endswith("clip.fcproj"))
         self.assertIn(out_path, proj.exports)
 
+    def test_plan_keep_toggle_recomputes_plan(self):
+        proj = project.STORE.create("/tmp/inexistant.mp4", "bascule.mp4")
+        proj.info = {"duration": 10.0}
+        proj.candidates = [{"id": "S1", "start": 0.0, "end": 3.0, "text": "a", "kind": "parole"},
+                           {"id": "S2", "start": 4.0, "end": 6.0, "text": "b", "kind": "parole"}]
+        proj.results["plan_decisions"] = [
+            {"id": "S1", "keep": True, "type": "contenu", "by": "ia"},
+            {"id": "S2", "keep": True, "type": "digression", "by": "ia", "suggested": True}]
+        status, body = self.request("POST", "/api/plan/keep",
+                                    {"project_id": proj.id, "id": "S2", "keep": False})
+        self.assertEqual(status, 200)
+        data = json.loads(body)
+        self.assertEqual([(s["start"], s["end"]) for s in data["plan"]], [(0.0, 3.0)])
+        self.assertEqual(proj.plan, data["plan"])
+        # Tout couper est refuse (plan vide) et la decision est retablie.
+        status, _ = self.request("POST", "/api/plan/keep",
+                                 {"project_id": proj.id, "id": "S1", "keep": False})
+        self.assertEqual(status, 400)
+        self.assertTrue(proj.results["plan_decisions"][0]["keep"])
+        status, _ = self.request("POST", "/api/plan/keep",
+                                 {"project_id": proj.id, "id": "S9", "keep": False})
+        self.assertEqual(status, 404)
+
     def test_filmcraft_route_requires_a_plan(self):
         proj = project.STORE.create("/tmp/inexistant.mp4", "vide.mp4")
         status, _ = self.request("POST", "/api/filmcraft", {"project_id": proj.id})

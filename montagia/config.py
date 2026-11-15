@@ -77,6 +77,11 @@ WHISPER_PROFILES = {
 }
 WHISPER_DEFAULT_PROFILE = {"model": "", "no_context": False}
 
+# Langues ou les coupes de l'IA sont seulement PROPOSEES (a valider dans
+# l'interface) : en arabe tunisien, le modele 3B coupait l'annonce du sujet
+# comme "digression" (film002). Les regles sures restent appliquees.
+SUGGEST_ONLY_LANGUAGES = ("ar",)
+
 WHISPER_LANGUAGES = {
     "auto": "auto", "fr": "fr", "en": "en", "ar": "ar", "es": "es",
     "de": "de", "it": "it", "pt": "pt", "nl": "nl", "ru": "ru", "zh": "zh",

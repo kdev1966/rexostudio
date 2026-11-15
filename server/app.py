@@ -207,6 +207,8 @@ class StudioHandler(BaseHTTPRequestHandler):
                 return self._api_transcribe()
             if route == "/api/plan":
                 return self._api_plan()
+            if route == "/api/plan/keep":
+                return self._api_plan_keep()
             if route == "/api/pack":
                 return self._api_pack()
             if route == "/api/summary":
@@ -451,10 +453,12 @@ class StudioHandler(BaseHTTPRequestHandler):
         duration = (proj.info or {}).get("duration") or 0.0
         job = MANAGER.create("plan", "Plan de coupe IA")
 
+        suggest = proj.language in config.SUGGEST_ONLY_LANGUAGES
+
         def run(j):
             result = pipeline.ai_cut_plan(
                 j, candidates, duration, transcript,
-                data.get("instruction", ""), data.get("style", ""))
+                data.get("instruction", ""), data.get("style", ""), suggest_only=suggest)
             proj.plan = result["segments"]
             proj.results["plan_rationale"] = result.get("rationale", "")
             proj.results["plan_decisions"] = result.get("decisions", [])
@@ -463,6 +467,28 @@ class StudioHandler(BaseHTTPRequestHandler):
 
         self._run_job(job, proj, run)
         return self._json({"job_id": job.id})
+
+    def _api_plan_keep(self):
+        """Bascule un passage entre garder et couper ; le plan est recalcule."""
+        data = self._body_json()
+        proj = self._get_project(data)
+        rows = proj.results.get("plan_decisions") or []
+        target = str(data.get("id") or "")
+        row = next((r for r in rows if r.get("id") == target), None)
+        if not row:
+            return self._error("Passage inconnu : %s" % target, 404)
+        row["keep"] = bool(data.get("keep"))
+        row["by_user"] = True
+        result = pipeline.plan_from_decisions(
+            proj.candidates, rows, (proj.info or {}).get("duration") or 0.0)
+        if not result["segments"]:
+            row["keep"] = True
+            return self._error("Au moins un passage doit etre garde")
+        proj.plan = result["segments"]
+        proj.results["plan_rationale"] = result["rationale"]
+        project.STORE.save(proj)
+        return self._json({"plan": proj.plan, "rationale": result["rationale"],
+                           "decisions": rows, "kept_duration": result["kept_duration"]})
 
     def _api_pack(self):
         data = self._body_json()

@@ -253,3 +253,13 @@ summary:hover { color: var(--accent); }
 .recent-item .rn { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .recent-item .rb { font-size: 10.5px; color: var(--muted); white-space: nowrap; }
 .recent-item .warn { color: #e0a14a; }
+
+/* ---------- passages et decisions ---------- */
+#cand-table tr.cut td { color: var(--muted); }
+#cand-table tr.cut td.txt { text-decoration: line-through; }
+#cand-table tr.suggest td { background: rgba(245, 179, 66, .09); }
+#cand-table td.dec { white-space: nowrap; font-size: 11.5px; }
+#cand-table td.dec.suggest { color: var(--warn); font-weight: 600; }
+#cand-table input[type=checkbox] { accent-color: var(--accent); cursor: pointer; }
+.suggest-badge { margin-left: 8px; padding: 1px 8px; border-radius: 10px; font-size: 11px;
+  background: rgba(245, 179, 66, .16); color: var(--warn); }

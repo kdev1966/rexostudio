@@ -233,7 +233,7 @@ CUT_BATCH = 40     # passages classes par appel (contexte borne a 4096 tokens)
 
 
 def ai_cut_plan(job, candidates: list, duration: float, transcript: str = "",
-                instruction: str = "", style: str = "") -> dict:
+                instruction: str = "", style: str = "", suggest_only: bool = False) -> dict:
     """Plan de coupe : regles sures (deja dans candidates[i]["rule"]), puis
     l'IA classe chaque passage restant ; on garde contenu / introduction /
     conclusion / illustration (cutting.KEEP_TYPES).
@@ -303,23 +303,39 @@ def ai_cut_plan(job, candidates: list, duration: float, transcript: str = "",
     # Passage que l'IA n'a pas classe : garde (on ne coupe pas a l'aveugle).
     for cand in candidates:
         decisions.setdefault(cand["id"], {"type": "contenu", "by": "defaut"})
-    keep = {cid: d["type"] in cutting.KEEP_TYPES for cid, d in decisions.items()}
+    for cand in candidates:
+        cand.pop("_index", None)
+    rows = []
+    for cand in candidates:
+        d = decisions[cand["id"]]
+        keep = d["type"] in cutting.KEEP_TYPES
+        # Mode suggestions : la coupe de l'IA est proposee, pas appliquee.
+        suggested = suggest_only and d["by"] == "ia" and not keep
+        rows.append(dict(id=cand["id"], keep=keep or suggested, suggested=suggested, **d))
 
     job.set_progress(0.9, "Application du plan de coupe")
+    result = plan_from_decisions(candidates, rows, duration)
+    if not result["segments"]:
+        raise RuntimeError("Tous les passages ont ete coupes : precisez la consigne.")
+    job.set_progress(1.0, "Plan de coupe pret")
+    result["style"] = style
+    return result
+
+
+def plan_from_decisions(candidates: list, rows: list, duration: float) -> dict:
+    """Plan (segments + justification) a partir des decisions par passage.
+    Sert au plan initial et a chaque bascule garder/couper dans l'interface."""
+    for index, cand in enumerate(candidates):
+        cand["_index"] = index
+    keep = {r["id"]: bool(r["keep"]) for r in rows}
     segments = cutting.merge_kept(candidates, keep)
     for cand in candidates:
         cand.pop("_index", None)
-    if not segments:
-        raise RuntimeError("Tous les passages ont ete coupes : precisez la consigne.")
-
-    rationale = _cut_summary(candidates, decisions, keep, segments, duration)
-    job.set_progress(1.0, "Plan de coupe pret")
+    decisions = {r["id"]: r for r in rows}
     return {
         "segments": segments,
-        "rationale": rationale,
-        "style": style,
-        "decisions": [dict(id=c["id"], keep=keep[c["id"]], **decisions[c["id"]])
-                      for c in candidates],
+        "rationale": _cut_summary(candidates, decisions, keep, segments, duration),
+        "decisions": rows,
         "kept_duration": round(sum(s["end"] - s["start"] for s in segments), 2),
         "source_duration": round(duration, 2),
     }
@@ -348,7 +364,7 @@ def _cut_summary(candidates, decisions, keep, segments, duration) -> str:
     by_source = {"regle": {}, "ia": {}}
     for cand in candidates:
         d = decisions[cand["id"]]
-        if not keep[cand["id"]] and d["by"] in by_source:
+        if not keep[cand["id"]] and not d.get("by_user") and d["by"] in by_source:
             counts = by_source[d["by"]]
             counts[d["type"]] = counts.get(d["type"], 0) + 1
     parts = []
@@ -360,6 +376,14 @@ def _cut_summary(candidates, decisions, keep, segments, duration) -> str:
     text = "Garde %.1f s sur %.1f s." % (kept, duration)
     if parts:
         text += " Coupe : %s." % " ; ".join(parts)
+    suggested = sum(1 for c in candidates if decisions[c["id"]].get("suggested")
+                    and keep[c["id"]])
+    if suggested:
+        text += (" %d coupe%s proposee%s par l'IA, a valider."
+                 % (suggested, "s" if suggested > 1 else "", "s" if suggested > 1 else ""))
+    manual = sum(1 for c in candidates if decisions[c["id"]].get("by_user"))
+    if manual:
+        text += " %d choix manuel%s." % (manual, "s" if manual > 1 else "")
     return text
 
 

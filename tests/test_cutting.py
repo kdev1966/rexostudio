@@ -220,6 +220,31 @@ class CutPlanTest(unittest.TestCase):
         by_ia = [d for d in result["decisions"] if d["by"] != "regle"]
         self.assertTrue(all(d["keep"] for d in by_ia))
 
+    def test_suggest_only_proposes_ai_cuts_but_applies_rules(self):
+        words, duration = load_cafe()
+        cands = pipeline.build_candidates(transcribe.build_lines(words),
+                                          duration=duration, words=words)
+        answer = {"decisions": [
+            {"id": c["id"], "type": "digression" if c["text"].startswith("Au fait") else "contenu"}
+            for c in cands if not c["rule"]]}
+        with mock.patch.object(pipeline.ai, "chat_json", return_value=answer), \
+                mock.patch.object(pipeline, "cached_ai", lambda _t, _p, compute: compute()):
+            result = pipeline.ai_cut_plan(Job(), cands, duration, suggest_only=True)
+        rows = {r["id"]: r for r in result["decisions"]}
+        digression = next(c["id"] for c in cands if c["text"].startswith("Au fait"))
+        self.assertTrue(rows[digression]["keep"])           # proposee, pas appliquee
+        self.assertTrue(rows[digression]["suggested"])
+        ruled = [c["id"] for c in cands if c["rule"]]
+        self.assertTrue(all(not rows[cid]["keep"] for cid in ruled))
+        self.assertIn("1 coupe proposee par l'IA, a valider", result["rationale"])
+
+        # La personne valide la suggestion : le plan est recalcule sans la digression.
+        rows[digression]["keep"] = False
+        rows[digression]["by_user"] = True
+        again = pipeline.plan_from_decisions(cands, list(rows.values()), duration)
+        self.assertLess(again["kept_duration"], result["kept_duration"])
+        self.assertIn("1 choix manuel", again["rationale"])
+
     def test_truncated_reply_is_salvaged(self):
         # Reponse coupee au plafond de tokens (cas reel sur film001.mp4).
         raw = ('{\n  "decisions" : [\n    {\n      "id" : "S3",\n      "type" : "contenu"\n'

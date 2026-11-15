@@ -495,16 +495,73 @@ function savePlan() {
   }).catch(() => {});
 }
 
+const TYPE_LABELS = {
+  contenu: 'contenu', introduction: 'introduction', conclusion: 'conclusion',
+  illustration: 'illustration', digression: 'digression', hors_sujet: 'hors sujet',
+  remplissage: 'remplissage', hesitation: 'hésitation', faux_depart: 'faux départ',
+  repetition: 'répétition',
+};
+
+function decisionLabel(d) {
+  if (!d) return '';
+  const t = TYPE_LABELS[d.type] || d.type || '';
+  if (d.by_user) return 'choix manuel';
+  if (d.suggested) return 'suggestion IA : ' + t;
+  if (d.by === 'regle') return 'règle : ' + t;
+  if (d.by === 'ia') return 'IA : ' + t;
+  return t;
+}
+
 function renderCandidates() {
   const box = $('#candidates-box');
   if (!S.candidates.length) { box.classList.add('hidden'); return; }
   box.classList.remove('hidden');
   $('#cand-count').textContent = S.candidates.length;
+  const decisions = {};
+  ((S.project && S.project.results && S.project.results.plan_decisions) || [])
+    .forEach((d) => { decisions[d.id] = d; });
+  const pending = Object.values(decisions).filter((d) => d.suggested && d.keep && !d.by_user).length;
+  $('#suggest-count').textContent = pending + ' suggestion' + (pending > 1 ? 's' : '') + ' à valider';
+  $('#suggest-count').classList.toggle('hidden', !pending);
+  if (pending) $('#cand-details').open = true;
   const tbody = $('#cand-table tbody');
-  tbody.innerHTML = S.candidates.map(c =>
-    '<tr><td>' + c.id + '</td><td>' + fmtTime(c.start) + '</td><td>' + fmtTime(c.end) +
-    '</td><td>' + (c.kind === 'visuel' ? '<em class="muted">plan sans parole</em>' : escapeHtml((c.text || '').slice(0, 160))) + '</td></tr>'
-  ).join('');
+  tbody.innerHTML = S.candidates.map((c) => {
+    const d = decisions[c.id];
+    const kept = d ? d.keep : true;
+    const suggest = d && d.suggested && d.keep && !d.by_user;
+    const cls = (kept ? '' : 'cut') + (suggest ? ' suggest' : '');
+    const text = c.kind === 'visuel' ? '<em class="muted">plan sans parole</em>'
+                                     : escapeHtml((c.text || '').slice(0, 160));
+    return '<tr class="' + cls + '">' +
+      '<td>' + (d ? '<input type="checkbox" data-keep="' + escapeHtml(c.id) + '"' +
+                (kept ? ' checked' : '') + ' title="Garder ce passage">' : '') + '</td>' +
+      '<td>' + c.id + '</td><td>' + fmtTime(c.start) + '</td><td>' + fmtTime(c.end) + '</td>' +
+      '<td class="dec' + (suggest ? ' suggest' : '') + '">' + escapeHtml(decisionLabel(d)) + '</td>' +
+      '<td class="txt">' + text + '</td></tr>';
+  }).join('');
+  $$('#cand-table [data-keep]').forEach((cb) =>
+    cb.addEventListener('change', () => setKeep(cb.dataset.keep, cb.checked)));
+}
+
+async function setKeep(id, keep) {
+  try {
+    const r = await api('/api/plan/keep', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ project_id: S.project.id, id: id, keep: keep }),
+    });
+    S.plan = r.plan;
+    S.project.plan = r.plan;
+    S.project.results.plan_decisions = r.decisions;
+    S.project.results.plan_rationale = r.rationale;
+    $('#plan-reason').textContent = r.rationale;
+    $('#plan-reason').classList.remove('hidden');
+    renderPlan();
+    renderCandidates();
+  } catch (e) {
+    toast(e.message, true);
+    renderCandidates();
+  }
 }
 
 /* ------------------------------------------------------------------ */

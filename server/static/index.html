@@ -160,11 +160,14 @@
           <p id="plan-empty" class="empty">Transcrivez la vidéo puis demandez un plan de coupe à l'IA.</p>
         </div>
         <div id="candidates-box" class="hidden">
-          <details>
-            <summary>Voir les <span id="cand-count">0</span> segments détectés</summary>
+          <details id="cand-details">
+            <summary>Passages et décisions (<span id="cand-count">0</span>)
+              <span id="suggest-count" class="suggest-badge hidden"></span></summary>
+            <p class="tiny muted">Cochez « garder » pour reprendre un passage coupé, décochez pour le couper :
+              le plan est recalculé aussitôt.</p>
             <div class="table-wrap short">
               <table id="cand-table">
-                <thead><tr><th>ID</th><th>Début</th><th>Fin</th><th>Texte</th></tr></thead>
+                <thead><tr><th>Garder</th><th>ID</th><th>Début</th><th>Fin</th><th>Décision</th><th>Texte</th></tr></thead>
                 <tbody></tbody>
               </table>
             </div>
