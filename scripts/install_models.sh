@@ -4,6 +4,7 @@
 #   1. bin/whisper-cli  : whisper.cpp compile en STATIQUE (un seul binaire,
 #                         aucune bibliotheque .dylib a cote)
 #   2. models/          : modele Whisper + modele VAD Silero
+#   3. bin/ffmpeg, bin/ffprobe : builds statiques epingles par SHA-256
 # Tout est verifie : somme SHA-256 de CMake et des modeles, commit Git de
 # whisper.cpp. Relancable sans risque : ce qui est deja en place est garde.
 #
@@ -44,7 +45,7 @@ fetch() {
 }
 
 # --------------------------------------------------------------------------
-echo "== 1/2  binaire whisper-cli =="
+echo "== 1/3  binaire whisper-cli =="
 if "$BIN_DIR/whisper-cli" --help >/dev/null 2>&1; then
   ok "bin/whisper-cli fonctionne deja"
 else
@@ -91,7 +92,7 @@ else
 fi
 
 # --------------------------------------------------------------------------
-echo "== 2/2  modeles =="
+echo "== 2/3  modeles =="
 HF="https://huggingface.co"
 fetch "$MODELS_DIR/ggml-base.bin" "$HF/ggerganov/whisper.cpp/resolve/main/ggml-base.bin" \
   60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe
@@ -101,6 +102,31 @@ if [ "${1:-}" = "small" ]; then
   fetch "$MODELS_DIR/ggml-small.bin" "$HF/ggerganov/whisper.cpp/resolve/main/ggml-small.bin" \
     1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b
 fi
+
+# --------------------------------------------------------------------------
+echo "== 3/3  ffmpeg / ffprobe =="
+# Builds statiques macOS Intel d'evermeet.cx (libass, VideoToolbox, scdet),
+# epingles par SHA-256 : un fichier different est refuse.
+# Note : evermeet ne publie pas de somme ; celles-ci ont ete relevees et le
+# binaire verifie (liens systeme uniquement, filtres et encodeurs) le 15/11/2026.
+FFMPEG_VERSION="9.0.2"
+for tool in ffmpeg ffprobe; do
+  case "$tool" in
+    ffmpeg)  sha=a45b462cf91ed89148ae218c4577e30896485d7a6792c3673bcf5f823fa01b63 ;;
+    ffprobe) sha=a29f8c2e03553223a8b480b1a1f04c42f680c138fa952c20086718a075db38cb ;;
+  esac
+  if [ -x "$BIN_DIR/$tool" ] && echo "$sha  $BIN_DIR/$tool" | shasum -a 256 -c - >/dev/null 2>&1; then
+    ok "bin/$tool deja present (SHA-256 verifie)"
+    continue
+  fi
+  tmp="$(mktemp -d)"
+  curl -fL --progress-bar -o "$tmp/$tool.zip" "https://evermeet.cx/ffmpeg/$tool-$FFMPEG_VERSION.zip"
+  unzip -q "$tmp/$tool.zip" -d "$tmp"
+  echo "$sha  $tmp/$tool" | shasum -a 256 -c - >/dev/null || { rm -rf "$tmp"; fail "SHA-256 incorrect pour $tool"; }
+  install -m 755 "$tmp/$tool" "$BIN_DIR/$tool"
+  rm -rf "$tmp"
+  ok "bin/$tool $FFMPEG_VERSION installe (SHA-256 verifie)"
+done
 
 echo ""
 ls -lh "$MODELS_DIR" | tail -n +2

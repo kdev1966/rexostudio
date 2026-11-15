@@ -9,9 +9,6 @@ cd "$(dirname "$0")"
 
 GREEN=$'\033[32m'; ORANGE=$'\033[38;5;208m'; RED=$'\033[31m'; DIM=$'\033[2m'; OFF=$'\033[0m'
 
-# ffmpeg / ffprobe / melt : on privilege ceux de Kdenlive
-export PATH="/Applications/kdenlive.app/Contents/MacOS:$PATH"
-
 PY="$(command -v python3)"
 if [ -z "$PY" ]; then
   echo "${RED}Python 3 introuvable.${OFF}"
@@ -35,15 +32,16 @@ else
 fi
 
 # --- Vérifications --------------------------------------------------------
-if [ -x "/Applications/kdenlive.app/Contents/MacOS/ffmpeg" ]; then
-  echo "${GREEN}●${OFF} ffmpeg (Kdenlive)"
-else
-  echo "${RED}●${OFF} ffmpeg introuvable — installez Kdenlive ou ffmpeg"
-fi
-
-if [ ! -x "./bin/whisper-cli" ]; then
-  echo "${ORANGE}whisper-cli absent — lancez ./scripts/install_models.sh${OFF}"
-fi
+missing=0
+for tool in ffmpeg ffprobe whisper-cli; do
+  if [ -x "./bin/$tool" ]; then
+    echo "${GREEN}●${OFF} $tool"
+  else
+    echo "${RED}●${OFF} $tool absent de bin/"
+    missing=1
+  fi
+done
+[ "$missing" = 1 ] && echo "${ORANGE}Lancez ./scripts/install_models.sh pour installer les outils manquants.${OFF}"
 
 echo "${DIM}------------------------------------------------------------${OFF}"
 
