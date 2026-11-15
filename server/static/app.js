@@ -88,11 +88,15 @@ async function loadStatus() {
 
     const sel = $('#whisper-model');
     if (s.whisper_models.length) {
-      sel.innerHTML = s.whisper_models
-        .map(m => '<option value="' + m.name + '">' + m.name + ' (' + fmtSize(m.size) + ')</option>')
-        .join('');
-      const base = s.whisper_models.find(m => m.name === 'base');
-      if (base) sel.value = 'base';
+      // "Automatique" par defaut : le serveur choisit le modele selon la
+      // langue detectee (small pour l'arabe). Le choix fait est conserve :
+      // ce menu est reconstruit a chaque rafraichissement de l'etat (15 s).
+      const current = sel.value;
+      sel.innerHTML = '<option value="">Automatique (selon la langue)</option>' +
+        s.whisper_models
+          .map(m => '<option value="' + m.name + '">' + m.name + ' (' + fmtSize(m.size) + ')</option>')
+          .join('');
+      sel.value = s.whisper_models.some(m => m.name === current) ? current : '';
     } else {
       sel.innerHTML = '<option value="">aucun modèle</option>';
     }
