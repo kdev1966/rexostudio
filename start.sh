@@ -3,6 +3,7 @@
 # MontageIA - lanceur principal.
 #   ./start.sh              -> interface web sur http://127.0.0.1:8080
 #   ./start.sh --cli        -> mode terminal (assistante au montage)
+#   ./start.sh --cli <video> [commande...] -> une seule commande (plan, render 9:16...)
 # ---------------------------------------------------------------------------
 set -u
 cd "$(dirname "$0")"
@@ -46,7 +47,8 @@ done
 echo "${DIM}------------------------------------------------------------${OFF}"
 
 if [ "${1:-}" = "--cli" ]; then
-  exec "$PY" -m montagia.cli
+  shift
+  exec "$PY" -m montagia.cli "$@"     # ./start.sh --cli video.mp4 render 9:16
 fi
 
 exec "$PY" -m montagia
