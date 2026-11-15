@@ -27,6 +27,32 @@ MAX_BODY = config.MAX_UPLOAD_BYTES
 _FINAL_STATUSES = ("done", "error", "cancelled")
 
 
+def _parse_range(header, size: int):
+    """En-tete Range -> (debut, fin) inclus, None (fichier entier) ou "invalid".
+
+    Gere une seule plage : "bytes=a-b", "bytes=a-" et "bytes=-n" (n derniers
+    octets). Plusieurs plages ou une syntaxe inconnue -> fichier entier.
+    """
+    if not header or not header.startswith("bytes=") or "," in header:
+        return None
+    first, _, last = header[len("bytes="):].strip().partition("-")
+    try:
+        if first == "":
+            if not last:
+                return None
+            length = int(last)
+            if length <= 0:
+                return "invalid"
+            return max(0, size - length), size - 1
+        start = int(first)
+        end = int(last) if last else size - 1
+    except ValueError:
+        return None
+    if start >= size or start > end:
+        return "invalid"
+    return start, min(end, size - 1)
+
+
 def _final_event(summary: dict):
     """Evenement terminal equivalent a l'etat d'un job deja fini, sinon None."""
     status = summary.get("status")
@@ -223,18 +249,38 @@ class StudioHandler(BaseHTTPRequestHandler):
             return self._error("Fichier introuvable", 404)
         ctype = mimetypes.guess_type(target)[0] or "application/octet-stream"
         size = os.path.getsize(target)
-        self.send_response(200)
+        # Requetes partielles (Range) : indispensables pour se deplacer dans
+        # une video, et Safari refuse de lire un <video> sans elles.
+        span = _parse_range(self.headers.get("Range"), size)
+        if span == "invalid":
+            self.send_response(416)
+            self.send_header("Content-Range", "bytes */%d" % size)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return None
+        start, end = span or (0, size - 1)
+        self.send_response(206 if span else 200)
         self.send_header("Content-Type", ctype)
-        self.send_header("Content-Length", str(size))
-        self.send_header("Content-Disposition",
-                         'inline; filename="%s"' % os.path.basename(target))
+        self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Content-Length", str(max(0, end - start + 1)))
+        if span:
+            self.send_header("Content-Range", "bytes %d-%d/%d" % (start, end, size))
+        # Nom encode (RFC 5987) : aucun caractere du nom ne peut casser l'en-tete.
+        self.send_header("Content-Disposition", "inline; filename*=UTF-8''%s"
+                         % urllib.parse.quote(os.path.basename(target)))
         self.end_headers()
+        if self.command == "HEAD" or size == 0:
+            return None
+        remaining = end - start + 1
         with open(target, "rb") as fh:
-            while True:
-                chunk = fh.read(512 * 1024)
+            fh.seek(start)
+            while remaining > 0:
+                chunk = fh.read(min(512 * 1024, remaining))
                 if not chunk:
                     break
                 self.wfile.write(chunk)
+                remaining -= len(chunk)
+        return None
 
     # -- API ---------------------------------------------------------------
     def _api_status(self):
@@ -257,6 +303,7 @@ class StudioHandler(BaseHTTPRequestHandler):
             "python": sys.version.split()[0],
             "cpu_count": os.cpu_count(),
             "encoders": list(config.ENCODERS),
+            "jobs_waiting": MANAGER.waiting(),
         }
         return self._json(info)
 
@@ -315,9 +362,10 @@ class StudioHandler(BaseHTTPRequestHandler):
                            "size": written,
                            "size_human": tools.human_size(written)})
 
-    def _run_job(self, job, proj, func):
+    def _run_job(self, job, proj, func, heavy=True):
         """Lance un job de projet ; le projet est enregistre a la fin, que le
-        job reussisse ou non (persistance apres redemarrage)."""
+        job reussisse ou non (persistance apres redemarrage). Les jobs lourds
+        passent un par un (voir JobManager)."""
         def wrapper(j):
             try:
                 return func(j)
@@ -326,7 +374,7 @@ class StudioHandler(BaseHTTPRequestHandler):
                     project.STORE.save(proj)
                 except OSError as exc:
                     j.add_log("Enregistrement du projet impossible : %s" % exc)
-        MANAGER.run_async(job, wrapper)
+        MANAGER.run_async(job, wrapper, heavy=heavy)
 
     def _get_project(self, data):
         pid = data.get("project_id") or ""
@@ -537,7 +585,7 @@ class StudioHandler(BaseHTTPRequestHandler):
             proj.add_export(out_path)
             return result
 
-        self._run_job(job, proj, run)
+        self._run_job(job, proj, run, heavy=False)   # pilotage : pas de calcul lourd
         return self._json({"job_id": job.id, "output": out_path})
 
     def _api_subs(self):

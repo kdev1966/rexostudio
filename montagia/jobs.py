@@ -116,11 +116,20 @@ class Job(object):
 
 
 class JobManager(object):
-    def __init__(self, max_jobs: int = 100):
+    """Jobs en arriere-plan, avec une file d'attente pour les jobs lourds.
+
+    Sur l'iMac (4 coeurs), whisper, ffmpeg et le LLM se disputent le
+    processeur : lances ensemble, chacun ralentit fortement les autres. Les
+    jobs lourds passent donc un par un (heavy_slots), dans l'ordre d'arrivee.
+    """
+
+    def __init__(self, max_jobs: int = 100, heavy_slots: int = 1):
         self._jobs = {}
         self._order = []
         self._lock = threading.Lock()
         self._max = max_jobs
+        self._heavy = threading.Semaphore(heavy_slots)
+        self._waiting = 0
 
     def create(self, job_type: str, title: str = "") -> Job:
         job = Job(job_type, title)
@@ -141,19 +150,39 @@ class JobManager(object):
             ids = list(self._order)
         return [self._jobs[i].summary() for i in ids if i in self._jobs][::-1]
 
-    def run_async(self, job: Job, func, *args, **kwargs) -> Job:
-        """Lance func(job, *args) dans un thread de fond."""
+    def waiting(self) -> int:
+        """Nombre de jobs lourds en attente d'un creneau."""
+        with self._lock:
+            return self._waiting
+
+    def run_async(self, job: Job, func, *args, heavy: bool = True, **kwargs) -> Job:
+        """Lance func(job, *args) dans un thread de fond.
+
+        heavy=True : attend son tour (un seul job lourd a la fois) ; le job
+        reste "queued" et l'interface affiche qu'il est en attente.
+        """
         def _target():
-            job.start()
+            if heavy and not self._heavy.acquire(blocking=False):
+                with self._lock:
+                    self._waiting += 1
+                job.set_progress(0.0, "En attente : une autre tache est en cours")
+                self._heavy.acquire()
+                with self._lock:
+                    self._waiting -= 1
             try:
-                result = func(job, *args, **kwargs)
-                if result is not None:
-                    job.finish(result)
-                elif job.status == "running":
-                    job.finish()
-            except Exception as exc:            # noqa: BLE001
-                traceback.print_exc()
-                job.fail(exc)
+                job.start()
+                try:
+                    result = func(job, *args, **kwargs)
+                    if result is not None:
+                        job.finish(result)
+                    elif job.status == "running":
+                        job.finish()
+                except Exception as exc:        # noqa: BLE001
+                    traceback.print_exc()
+                    job.fail(exc)
+            finally:
+                if heavy:
+                    self._heavy.release()
         thread = threading.Thread(target=_target, daemon=True)
         thread.start()
         return job

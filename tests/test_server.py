@@ -11,6 +11,7 @@ import sys
 import threading
 import time
 import unittest
+import urllib.parse
 from http.server import ThreadingHTTPServer
 from unittest import mock
 
@@ -185,6 +186,40 @@ class ServerTest(unittest.TestCase):
             self.assertEqual(fh.read(), b"second")
         self.assertFalse([f for f in os.listdir(os.path.dirname(paths[0]))
                           if f.endswith(".part")])
+
+    def _range(self, path, header):
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=TIMEOUT)
+        conn.request("GET", "/api/file?path=" + urllib.parse.quote(path),
+                     headers={"Range": header} if header else {})
+        resp = conn.getresponse()
+        out = resp.status, dict(resp.getheaders()), resp.read()
+        conn.close()
+        return out
+
+    def test_file_range_requests(self):
+        workspace = tempfile.mkdtemp()
+        path = os.path.join(workspace, "clip \"final\".mp4")
+        with open(path, "wb") as fh:
+            fh.write(bytes(range(100)))
+        with mock.patch.object(app.config, "WORKSPACE", workspace):
+            status, headers, body = self._range(path, None)
+            self.assertEqual((status, len(body)), (200, 100))
+            self.assertEqual(headers["Accept-Ranges"], "bytes")
+            self.assertNotIn('"final"', headers["Content-Disposition"])
+
+            status, headers, body = self._range(path, "bytes=10-19")
+            self.assertEqual((status, body), (206, bytes(range(10, 20))))
+            self.assertEqual(headers["Content-Range"], "bytes 10-19/100")
+
+            status, _h, body = self._range(path, "bytes=90-")
+            self.assertEqual((status, body), (206, bytes(range(90, 100))))
+
+            status, _h, body = self._range(path, "bytes=-5")
+            self.assertEqual((status, body), (206, bytes(range(95, 100))))
+
+            status, headers, _b = self._range(path, "bytes=200-300")
+            self.assertEqual(status, 416)
+            self.assertEqual(headers["Content-Range"], "bytes */100")
 
     def test_foreign_upload_is_rejected(self):
         status, _ = self.request(
