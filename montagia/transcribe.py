@@ -179,7 +179,12 @@ def transcribe(source: str, model: str = None, language: str = "auto",
             "-f", audio,
             "-l", lang,
             "-t", str(max(1, os.cpu_count() or 4)),
-            "-osrt", "-ovtt", "-otxt", "-oj",
+            "-oj",
+            # Un segment par mot (-ml 1 -sow) : whisper recale alors chaque
+            # mot sur la vraie timeline, meme avec le VAD (les temps des
+            # tokens, eux, restent sur la timeline compressee par le VAD).
+            # Les lignes de sous-titres sont reconstruites par build_lines().
+            "-ml", "1", "-sow",
             "-of", base,
             "--no-prints",
         ]
@@ -260,30 +265,21 @@ def transcribe(source: str, model: str = None, language: str = "auto",
     if os.path.exists(audio):
         os.remove(audio)
 
-    # Nettoyage des segments：[blanc], [MUSIQUE]... et recalage des index
-    clean = []
-    for seg in segments:
-        text = seg.get("text", "").strip()
-        if not text:
-            continue
-        clean.append({
-            "index": len(clean) + 1,
-            "start": seg["start"],
-            "end": seg["end"],
-            "text": text,
-        })
+    words = clean_words(segments)
+    clean = build_lines(words)
 
     write_srt(clean, srt_path)
     write_vtt(clean, base + ".vtt")
 
     text = "\n".join(s["text"] for s in clean)
-    if not os.path.exists(txt_path):
-        with open(txt_path, "w", encoding="utf-8") as fh:
-            fh.write(text)
+    with open(txt_path, "w", encoding="utf-8") as fh:
+        fh.write(text)
 
-    log("Transcription terminee : %d segments" % len(clean))
+    log("Transcription terminee : %d mots, %d lignes de sous-titres"
+        % (len(words), len(clean)))
     return {
         "segments": clean,
+        "words": words,
         "srt": srt_path,
         "vtt": base + ".vtt",
         "txt": txt_path,
@@ -292,6 +288,63 @@ def transcribe(source: str, model: str = None, language: str = "auto",
         "model": model,
         "chars": len(text),
     }
+
+
+# --------------------------------------------------------------------------
+# Mots -> lignes de sous-titres
+# --------------------------------------------------------------------------
+
+_NOISE = re.compile(r"^[\[(].*[\])]$")          # [Musique], (rires), [BLANK_AUDIO]
+_SENTENCE_END = (".", "!", "?", "\u2026")
+_CLAUSE_END = (",", ";", ":")
+
+
+def clean_words(raw: list) -> list:
+    """Mots whisper nettoyes : bruit retire, ponctuation isolee recollee au
+    mot precedent, temps croissants."""
+    words = []
+    for item in raw or []:
+        text = str(item.get("text", "")).strip()
+        if not text or _NOISE.match(text):
+            continue
+        start, end = float(item.get("start", 0)), float(item.get("end", 0))
+        if words and not any(ch.isalnum() for ch in text):
+            words[-1]["text"] += text                # "," ou "." isole
+            words[-1]["end"] = max(words[-1]["end"], end)
+            continue
+        if words:
+            start = max(start, words[-1]["end"])
+        words.append({"start": round(start, 3), "end": round(max(end, start), 3),
+                      "text": text})
+    return words
+
+
+def build_lines(words: list, max_chars: int = 84, max_seconds: float = 6.0,
+                max_gap: float = 1.0) -> list:
+    """Regroupe les mots en sous-titres lisibles : coupe en fin de phrase,
+    sur une pause, ou quand la ligne devient trop longue (2 x 42 car.)."""
+    lines, cur = [], []
+
+    def flush():
+        if cur:
+            lines.append({"index": len(lines) + 1, "start": cur[0]["start"],
+                          "end": cur[-1]["end"],
+                          "text": " ".join(w["text"] for w in cur)})
+            del cur[:]
+
+    for w in words:
+        if cur and w["start"] - cur[-1]["end"] > max_gap:
+            flush()
+        if cur and len(" ".join(x["text"] for x in cur)) + 1 + len(w["text"]) > max_chars:
+            flush()
+        cur.append(w)
+        length = len(" ".join(x["text"] for x in cur))
+        if (w["text"].endswith(_SENTENCE_END)
+                or cur[-1]["end"] - cur[0]["start"] >= max_seconds
+                or (length >= 45 and w["text"].endswith(_CLAUSE_END))):
+            flush()
+    flush()
+    return lines
 
 
 def transcript_text(segments: list, max_chars: int = 0) -> str:

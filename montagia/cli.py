@@ -44,6 +44,7 @@ class Assistant(object):
         self.path = os.path.abspath(path)
         self.name = os.path.basename(self.path)
         self.segments = []
+        self.words = []
         self.transcript = ""
         self.candidates = []
         # ATTENTION : l'attribut ne doit pas s'appeler "plan" -> il masquerait
@@ -55,7 +56,7 @@ class Assistant(object):
 
     def _build_candidates(self):
         return pipeline.build_candidates(self.segments, duration=self.duration,
-                                         scenes=self.scenes)
+                                         scenes=self.scenes, words=self.words)
 
     # -- etapes ------------------------------------------------------------
     def analyze(self):
@@ -88,6 +89,7 @@ class Assistant(object):
         result = transcribe.transcribe(self.path, model=model, language=language,
                                        workdir=os.path.join(config.CACHE_DIR, "audio"))
         self.segments = result["segments"]
+        self.words = result.get("words") or []
         self.transcript = transcribe.transcript_text(self.segments)
         self.candidates = self._build_candidates()
         ok("%d segments en %.1f s (langue: %s)" % (

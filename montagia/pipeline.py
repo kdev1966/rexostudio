@@ -6,7 +6,7 @@ import json
 import os
 import tempfile
 
-from . import ai, config, edit, filmcraft, media, prompts, transcribe
+from . import ai, config, cutting, edit, filmcraft, media, prompts, transcribe
 
 AI_CACHE_DIR = os.path.join(config.CACHE_DIR, "ai")
 
@@ -97,57 +97,43 @@ def transcribe_media(job, path: str, model: str = None, language: str = "auto") 
 VISUAL_SPEECH_COVERAGE = 0.5
 VISUAL_MIN_SECONDS = 1.0       # plus court : pas un plan exploitable
 VISUAL_MAX_SECONDS = 8.0       # plan plus long : decoupe en morceaux
-VISUAL_LABEL = "[plan sans parole]"
 
 
 def build_candidates(segments: list, min_duration: float = 1.5,
                      max_count: int = prompts.MAX_CANDIDATES,
-                     duration: float = 0.0, scenes: list = None) -> list:
-    """Transforme les segments de transcription en candidats numerotes S1, S2...
+                     duration: float = 0.0, scenes: list = None,
+                     words: list = None) -> list:
+    """Candidats au plan de coupe, numerotes S1, S2... dans l'ordre.
 
-    Les segments trop courts sont fusionnes avec le suivant : moins de candidats
-    = prompt plus court = reponse plus rapide et plus fiable.
+    Avec les mots (transcription recente) : une proposition par candidat et
+    les regles sures deja appliquees (cutting.speech_candidates : champ
+    "rule"). Sans les mots (ancien projet) : segments whisper, les trop
+    courts fusionnes avec le suivant.
 
     Video peu parlee (musique, plans de coupe, sans voix) : les intervalles
     sans parole sont decoupes aux changements de plan (scenes) et proposes
     comme candidats "visuels", pour que l'IA puisse aussi les monter.
     """
-    merged = []
-    for seg in segments or []:
-        seg_duration = float(seg["end"]) - float(seg["start"])
-        if seg_duration < min_duration and merged:
-            merged[-1]["end"] = seg["end"]
-            merged[-1]["text"] = (merged[-1]["text"] + " " + seg["text"]).strip()
-        else:
-            merged.append({
-                "start": float(seg["start"]),
-                "end": float(seg["end"]),
-                "text": seg.get("text", ""),
-                "kind": "parole",
-            })
+    if words:
+        merged = cutting.speech_candidates(words)
+    else:
+        merged = []
+        for seg in segments or []:
+            seg_duration = float(seg["end"]) - float(seg["start"])
+            if seg_duration < min_duration and merged:
+                merged[-1]["end"] = seg["end"]
+                merged[-1]["text"] = (merged[-1]["text"] + " " + seg["text"]).strip()
+            else:
+                merged.append({"start": float(seg["start"]), "end": float(seg["end"]),
+                               "text": seg.get("text", ""), "kind": "parole",
+                               "rule": None})
+        if len(merged) > max_count:
+            merged = _compact(merged, max_count)
 
-    speech = sum(m["end"] - m["start"] for m in merged)
+    speech = sum(m["end"] - m["start"] for m in merged if m.get("rule") != "hesitation")
     if duration and speech < VISUAL_SPEECH_COVERAGE * duration:
         merged = sorted(merged + visual_candidates(merged, duration, scenes or []),
                         key=lambda m: m["start"])
-
-    if len(merged) > max_count:
-        step = len(merged) / float(max_count)
-        compact = []
-        for i in range(max_count):
-            lo = int(i * step)
-            hi = int((i + 1) * step) or lo + 1
-            chunk = merged[lo:hi]
-            if not chunk:
-                continue
-            spoken = [c for c in chunk if c["kind"] == "parole"]
-            compact.append({
-                "start": chunk[0]["start"],
-                "end": chunk[-1]["end"],
-                "text": " ".join(c["text"] for c in spoken),
-                "kind": "parole" if spoken else "visuel",
-            })
-        merged = compact
 
     out = []
     for idx, seg in enumerate(merged, start=1):
@@ -157,9 +143,25 @@ def build_candidates(segments: list, min_duration: float = 1.5,
             "end": round(seg["end"], 3),
             "text": seg["text"],
             "kind": seg["kind"],
+            "rule": seg.get("rule"),
             "duration": round(seg["end"] - seg["start"], 3),
         })
     return out
+
+
+def _compact(merged: list, max_count: int) -> list:
+    """Regroupe des segments voisins pour ne pas depasser max_count."""
+    step = len(merged) / float(max_count)
+    compact = []
+    for i in range(max_count):
+        lo = int(i * step)
+        hi = int((i + 1) * step) or lo + 1
+        chunk = merged[lo:hi]
+        if chunk:
+            compact.append({"start": chunk[0]["start"], "end": chunk[-1]["end"],
+                            "text": " ".join(c["text"] for c in chunk),
+                            "kind": "parole", "rule": None})
+    return compact
 
 
 def visual_candidates(speech: list, duration: float, scenes: list) -> list:
@@ -226,31 +228,103 @@ def resolve_selection(selection: list, candidates: list) -> list:
 # Etape 3 : taches IA
 # --------------------------------------------------------------------------
 
-def ai_cut_plan(job, candidates: list, duration: float, transcript: str,
+CUT_BATCH = 40     # passages classes par appel (contexte borne a 4096 tokens)
+
+
+def ai_cut_plan(job, candidates: list, duration: float, transcript: str = "",
                 instruction: str = "", style: str = "") -> dict:
-    job.set_progress(0.1, "Analyse IA du plan de coupe")
-    system = prompts.system_message(transcript, prompts.SYS_EDITOR)
-    user = prompts.build_cut_plan_prompt(candidates, duration, instruction, style)
-    payload = {"candidates": [[c["id"], c["start"], c["end"]] for c in candidates],
-               "duration": duration, "instruction": instruction, "style": style,
-               "transcript": transcript[:prompts.CONTEXT_CHARS]}
+    """Plan de coupe : regles sures (deja dans candidates[i]["rule"]), puis
+    l'IA classe chaque passage restant ; on garde contenu / introduction /
+    conclusion / illustration (cutting.KEEP_TYPES).
 
-    def compute():
-        return ai.chat_json(system, user, prompts.SCHEMA_CUT_PLAN, temperature=0.25)
+    Le LLM ne donne jamais de temps : il classe des identifiants, et les
+    timecodes viennent des candidats (calcules par le code).
+    """
+    if not candidates:
+        raise RuntimeError("Aucun passage a monter : transcrivez d'abord la video.")
+    for index, cand in enumerate(candidates):
+        cand["_index"] = index
+    decisions = {}
+    for cand in candidates:
+        if cand.get("rule"):
+            decisions[cand["id"]] = {"type": cand["rule"], "by": "regle"}
 
-    result = cached_ai("cutplan", payload, compute)
-    job.set_progress(0.85, "Application du plan de coupe")
-    segments = resolve_selection(result.get("segments", []), candidates)
+    batches = [candidates[i:i + CUT_BATCH] for i in range(0, len(candidates), CUT_BATCH)]
+    for number, batch in enumerate(batches, start=1):
+        todo = [c["id"] for c in batch if c["id"] not in decisions]
+        if not todo:
+            continue
+        job.set_progress(0.1 + 0.75 * (number - 1) / len(batches),
+                         "Classement des passages par l'IA (%d/%d)" % (number, len(batches)))
+        ruled = [(c["id"], cutting.RULE_LABELS.get(c["rule"], c["rule"]))
+                 for c in batch if c.get("rule")]
+        system = prompts.system_message(prompts.numbered_passages(batch), prompts.SYS_EDITOR)
+        user = prompts.build_decision_prompt(todo, ruled, duration, instruction, style)
+        payload = {"passages": [[c["id"], c["kind"], c.get("text", ""), c.get("rule")]
+                                for c in batch],
+                   "duration": duration, "instruction": instruction, "style": style,
+                   "model": config.LLM_MODEL}
+
+        def compute(system=system, user=user, todo=todo):
+            return ai.chat_json(system, user, prompts.SCHEMA_DECISIONS, temperature=0.1,
+                                num_predict=60 + 16 * len(todo))
+
+        result = cached_ai("cutplan", payload, compute)
+        allowed = {c["id"]: c for c in batch if c["id"] in todo}
+        for item in result.get("decisions") or []:
+            cid = str((item or {}).get("id", "")).strip().upper()
+            kind = str((item or {}).get("type", "")).strip()
+            if cid not in allowed or kind not in prompts.CUT_TYPES or cid in decisions:
+                continue
+            if allowed[cid]["kind"] == "parole" and kind in ("illustration", "remplissage"):
+                kind = "contenu"            # categories reservees aux plans sans parole
+            decisions[cid] = {"type": kind, "by": "ia"}
+
+    # Passage que l'IA n'a pas classe : garde (on ne coupe pas a l'aveugle).
+    for cand in candidates:
+        decisions.setdefault(cand["id"], {"type": "contenu", "by": "defaut"})
+    keep = {cid: d["type"] in cutting.KEEP_TYPES for cid, d in decisions.items()}
+
+    job.set_progress(0.9, "Application du plan de coupe")
+    segments = cutting.merge_kept(candidates, keep)
+    for cand in candidates:
+        cand.pop("_index", None)
     if not segments:
-        raise RuntimeError("L'IA n'a selectionne aucun segment valide.")
+        raise RuntimeError("Tous les passages ont ete coupes : precisez la consigne.")
+
+    rationale = _cut_summary(candidates, decisions, keep, segments, duration)
     job.set_progress(1.0, "Plan de coupe pret")
     return {
         "segments": segments,
-        "rationale": result.get("rationale", ""),
-        "style": result.get("style", style),
+        "rationale": rationale,
+        "style": style,
+        "decisions": [dict(id=c["id"], keep=keep[c["id"]], **decisions[c["id"]])
+                      for c in candidates],
         "kept_duration": round(sum(s["end"] - s["start"] for s in segments), 2),
         "source_duration": round(duration, 2),
     }
+
+
+def _cut_summary(candidates, decisions, keep, segments, duration) -> str:
+    """Justification FACTUELLE du plan (calculee, pas redigee par l'IA, qui
+    decrivait parfois l'inverse de ce qu'elle avait fait)."""
+    kept = sum(s["end"] - s["start"] for s in segments)
+    by_source = {"regle": {}, "ia": {}}
+    for cand in candidates:
+        d = decisions[cand["id"]]
+        if not keep[cand["id"]] and d["by"] in by_source:
+            counts = by_source[d["by"]]
+            counts[d["type"]] = counts.get(d["type"], 0) + 1
+    parts = []
+    for source, label in (("regle", "regles"), ("ia", "IA")):
+        if by_source[source]:
+            parts.append("%s par %s" % (", ".join(
+                "%d %s" % (n, t.replace("_", " "))
+                for t, n in sorted(by_source[source].items())), label))
+    text = "Garde %.1f s sur %.1f s." % (kept, duration)
+    if parts:
+        text += " Coupe : %s." % " ; ".join(parts)
+    return text
 
 
 def ai_trailer(job, candidates: list, duration: float, transcript: str,

@@ -1,0 +1,491 @@
+{
+"source": "voix de synthese macOS (say -v Thomas), whisper.cpp base + VAD, -ml 1 -sow, 15/11/2026",
+"duration": 47.6,
+"words": [
+{
+"start": 0.0,
+"end": 0.1,
+"text": ""
+},
+{
+"start": 0.03,
+"end": 0.51,
+"text": " Bonjour"
+},
+{
+"start": 0.51,
+"end": 0.61,
+"text": " à"
+},
+{
+"start": 0.58,
+"end": 0.87,
+"text": " tous"
+},
+{
+"start": 0.87,
+"end": 1.01,
+"text": " et"
+},
+{
+"start": 1.01,
+"end": 1.66,
+"text": " bienvenue"
+},
+{
+"start": 1.66,
+"end": 1.88,
+"text": " sur"
+},
+{
+"start": 1.88,
+"end": 2.02,
+"text": " la"
+},
+{
+"start": 2.02,
+"end": 3.97,
+"text": " chaîne."
+},
+{
+"start": 3.97,
+"end": 4.77,
+"text": " Attendez,"
+},
+{
+"start": 4.77,
+"end": 4.93,
+"text": " je"
+},
+{
+"start": 4.93,
+"end": 5.99,
+"text": " recommence."
+},
+{
+"start": 5.99,
+"end": 7.29,
+"text": " Bonjour"
+},
+{
+"start": 7.29,
+"end": 7.39,
+"text": " à"
+},
+{
+"start": 7.36,
+"end": 7.65,
+"text": " tous"
+},
+{
+"start": 7.65,
+"end": 7.79,
+"text": " et"
+},
+{
+"start": 7.79,
+"end": 8.44,
+"text": " bienvenue"
+},
+{
+"start": 8.44,
+"end": 8.65,
+"text": " sur"
+},
+{
+"start": 8.65,
+"end": 8.78,
+"text": " la"
+},
+{
+"start": 8.78,
+"end": 9.48,
+"text": " chaîne."
+},
+{
+"start": 9.48,
+"end": 10.06,
+"text": " Aujourd'hui"
+},
+{
+"start": 10.06,
+"end": 10.18,
+"text": " je"
+},
+{
+"start": 10.18,
+"end": 10.37,
+"text": " vais"
+},
+{
+"start": 10.37,
+"end": 10.58,
+"text": " vous"
+},
+{
+"start": 10.58,
+"end": 10.95,
+"text": " montrer"
+},
+{
+"start": 10.95,
+"end": 11.32,
+"text": " comment"
+},
+{
+"start": 11.32,
+"end": 11.73,
+"text": " préparer"
+},
+{
+"start": 11.73,
+"end": 12.08,
+"text": " un"
+},
+{
+"start": 12.08,
+"end": 12.18,
+"text": " bon"
+},
+{
+"start": 12.16,
+"end": 12.59,
+"text": " café"
+},
+{
+"start": 12.59,
+"end": 12.81,
+"text": " filtre"
+},
+{
+"start": 12.81,
+"end": 12.91,
+"text": " à"
+},
+{
+"start": 12.88,
+"end": 13.02,
+"text": " la"
+},
+{
+"start": 13.02,
+"end": 15.37,
+"text": " maison."
+},
+{
+"start": 15.37,
+"end": 15.77,
+"text": " Heu,"
+},
+{
+"start": 15.77,
+"end": 16.33,
+"text": " alors,"
+},
+{
+"start": 16.33,
+"end": 16.73,
+"text": " heu,"
+},
+{
+"start": 16.73,
+"end": 18.27,
+"text": " première"
+},
+{
+"start": 18.27,
+"end": 18.95,
+"text": " étape,"
+},
+{
+"start": 18.95,
+"end": 19.63,
+"text": " choisissez"
+},
+{
+"start": 19.63,
+"end": 19.79,
+"text": " un"
+},
+{
+"start": 19.79,
+"end": 20.16,
+"text": " café"
+},
+{
+"start": 20.16,
+"end": 20.82,
+"text": " fraîchement"
+},
+{
+"start": 20.82,
+"end": 21.5,
+"text": " moulu,"
+},
+{
+"start": 21.5,
+"end": 21.6,
+"text": " avec"
+},
+{
+"start": 21.57,
+"end": 21.79,
+"text": " une"
+},
+{
+"start": 21.79,
+"end": 22.18,
+"text": " mouture"
+},
+{
+"start": 22.18,
+"end": 22.79,
+"text": " moyenne."
+},
+{
+"start": 22.79,
+"end": 22.89,
+"text": " Au"
+},
+{
+"start": 22.88,
+"end": 24.16,
+"text": " fait,"
+},
+{
+"start": 24.16,
+"end": 24.42,
+"text": " hier"
+},
+{
+"start": 24.42,
+"end": 24.58,
+"text": " je"
+},
+{
+"start": 24.58,
+"end": 24.9,
+"text": " suis"
+},
+{
+"start": 24.9,
+"end": 25.22,
+"text": " allé"
+},
+{
+"start": 25.22,
+"end": 25.38,
+"text": " et"
+},
+{
+"start": 25.38,
+"end": 26.19,
+"text": " accentégué"
+},
+{
+"start": 26.19,
+"end": 26.58,
+"text": " au"
+},
+{
+"start": 26.58,
+"end": 26.84,
+"text": " marché"
+},
+{
+"start": 26.84,
+"end": 27.0,
+"text": " et"
+},
+{
+"start": 27.0,
+"end": 27.35,
+"text": " il"
+},
+{
+"start": 27.35,
+"end": 27.8,
+"text": " pleuvait"
+},
+{
+"start": 27.8,
+"end": 28.69,
+"text": " beaucoup,"
+},
+{
+"start": 28.69,
+"end": 30.3,
+"text": " bref,"
+},
+{
+"start": 30.3,
+"end": 30.66,
+"text": " deuxième"
+},
+{
+"start": 30.66,
+"end": 30.76,
+"text": ""
+},
+{
+"start": 30.7,
+"end": 31.25,
+"text": " étape,"
+},
+{
+"start": 31.25,
+"end": 31.93,
+"text": " chauffez"
+},
+{
+"start": 31.93,
+"end": 32.03,
+"text": " à"
+},
+{
+"start": 32.01,
+"end": 32.42,
+"text": " l'eau"
+},
+{
+"start": 32.42,
+"end": 32.52,
+"text": " à"
+},
+{
+"start": 32.5,
+"end": 33.34,
+"text": " 90°,"
+},
+{
+"start": 33.34,
+"end": 33.51,
+"text": " pas"
+},
+{
+"start": 33.51,
+"end": 34.02,
+"text": " plus,"
+},
+{
+"start": 34.02,
+"end": 35.38,
+"text": " troisième"
+},
+{
+"start": 35.38,
+"end": 35.96,
+"text": " étape,"
+},
+{
+"start": 35.96,
+"end": 36.49,
+"text": " versez"
+},
+{
+"start": 36.49,
+"end": 36.59,
+"text": " à"
+},
+{
+"start": 36.55,
+"end": 37.06,
+"text": " l'eau"
+},
+{
+"start": 37.06,
+"end": 37.9,
+"text": " lentement,"
+},
+{
+"start": 37.9,
+"end": 38.04,
+"text": " en"
+},
+{
+"start": 38.04,
+"end": 38.62,
+"text": " cercle,"
+},
+{
+"start": 38.62,
+"end": 39.13,
+"text": " pendant"
+},
+{
+"start": 39.13,
+"end": 39.48,
+"text": " trois"
+},
+{
+"start": 39.48,
+"end": 40.19,
+"text": " minutes."
+},
+{
+"start": 40.19,
+"end": 41.81,
+"text": " Et"
+},
+{
+"start": 41.81,
+"end": 42.36,
+"text": " voilà,"
+},
+{
+"start": 42.36,
+"end": 42.74,
+"text": " votre"
+},
+{
+"start": 42.74,
+"end": 43.05,
+"text": " café"
+},
+{
+"start": 43.05,
+"end": 43.27,
+"text": " est"
+},
+{
+"start": 43.27,
+"end": 43.74,
+"text": " prêt,"
+},
+{
+"start": 43.74,
+"end": 44.2,
+"text": " merci"
+},
+{
+"start": 44.2,
+"end": 44.79,
+"text": " d'avoir"
+},
+{
+"start": 44.79,
+"end": 45.51,
+"text": " regardé,"
+},
+{
+"start": 45.51,
+"end": 46.27,
+"text": " abonnez-vous"
+},
+{
+"start": 46.27,
+"end": 46.42,
+"text": " et"
+},
+{
+"start": 46.42,
+"end": 46.52,
+"text": " à"
+},
+{
+"start": 46.49,
+"end": 47.23,
+"text": " bientôt."
+}
+]
+}

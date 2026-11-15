@@ -13,7 +13,8 @@ import time
 import uuid
 
 _FIELDS = ("name", "path", "created_at", "updated_at", "info", "silences",
-           "speech_segments", "scenes", "transcript_segments", "candidates",
+           "speech_segments", "scenes", "transcript_segments", "transcript_words",
+           "candidates",
            "transcript", "plan", "srt_path", "language", "model", "results",
            "exports")
 
@@ -29,7 +30,8 @@ class Project(object):
         self.silences = []
         self.speech_segments = []
         self.scenes = []                  # changements de plan (secondes)
-        self.transcript_segments = []     # segments whisper
+        self.transcript_segments = []     # lignes de sous-titres
+        self.transcript_words = []        # mots horodates (plan de coupe)
         self.candidates = []              # segments numerotes S1, S2...
         self.transcript = ""              # texte continu
         self.plan = []                    # plan de coupe retenu (timecodes reels)

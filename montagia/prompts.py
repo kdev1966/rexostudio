@@ -21,32 +21,36 @@ MAX_CANDIDATES = 60
 
 # Version des prompts : incrémenter quand un prompt change, pour invalider
 # le cache disque des résultats IA (sinon on ressort l'ancienne réponse).
-PROMPT_VERSION = "v2"   # v2 : candidats visuels [plan sans parole]
+PROMPT_VERSION = "v3"   # v3 : classification passage par passage
 
 # --------------------------------------------------------------------------
 # Schemas JSON
 # --------------------------------------------------------------------------
 
-SCHEMA_CUT_PLAN = {
+# Plan de coupe : l'IA CLASSE chaque passage (une categorie par id) ; garder
+# ou couper en decoule (cutting.KEEP_TYPES). Un modele 3B a qui l'on demande
+# "la liste des passages a garder" les recopie tous ; classer un a un est
+# nettement plus fiable, et la sortie est courte (id + type).
+CUT_TYPES = ["contenu", "introduction", "conclusion", "illustration",
+             "digression", "hors_sujet", "repetition", "hesitation",
+             "phrase_inachevee", "remplissage"]
+
+SCHEMA_DECISIONS = {
     "type": "object",
     "properties": {
-        "segments": {
+        "decisions": {
             "type": "array",
             "items": {
                 "type": "object",
                 "properties": {
                     "id": {"type": "string"},
-                    "reason": {"type": "string"},
-                    "trim_start": {"type": "number"},
-                    "trim_end": {"type": "number"},
+                    "type": {"type": "string", "enum": CUT_TYPES},
                 },
-                "required": ["id", "reason"],
+                "required": ["id", "type"],
             },
         },
-        "rationale": {"type": "string"},
-        "style": {"type": "string"},
     },
-    "required": ["segments", "rationale"],
+    "required": ["decisions"],
 }
 
 SCHEMA_TRAILER = {
@@ -192,33 +196,45 @@ def candidate_lines(candidates: list, preview: int = CANDIDATE_PREVIEW) -> str:
     return "\n".join(lines)
 
 
-def build_cut_plan_prompt(candidates: list, duration: float, instruction: str = "",
-                          style: str = "") -> str:
-    style_txt = style or "standard"
+def numbered_passages(candidates: list, preview: int = 220) -> str:
+    """Transcription en passages numerotes (contexte du plan de coupe)."""
+    lines = []
+    for cand in candidates:
+        if cand.get("kind") == "visuel":
+            text = "[plan sans parole, %.0f s]" % (cand["end"] - cand["start"])
+        else:
+            text = (cand.get("text") or "").strip()
+            if len(text) > preview:
+                text = text[:preview] + "..."
+        lines.append("%s : %s" % (cand["id"], text))
+    return "\n".join(lines)
+
+
+def build_decision_prompt(todo: list, ruled: list, duration: float,
+                          instruction: str = "", style: str = "") -> str:
+    """Demande une categorie pour chaque passage de todo (ids)."""
+    ruled_txt = ", ".join("%s (%s)" % (cid, why) for cid, why in ruled) or "aucun"
     return (
-        "Duree totale de la video : %.1f secondes.\n"
-        "Voici les %d segments de parole detectes (identifiant [debut -> fin] texte) :\n\n%s\n\n"
-        "Tache : selectionne les segments a KEEPER pour un montage propre de type \"%s\".\n"
+        "Video de %.0f secondes, montage de type \"%s\". La transcription ci-dessus est "
+        "decoupee en passages numerotes.\n\n"
+        "Classe CHAQUE passage de cette liste, dans l'ordre : %s\n\n"
+        "Categories :\n"
+        "- contenu : information utile au sujet de la video\n"
+        "- introduction / conclusion : ouverture ou cloture de la video\n"
+        "- illustration : [plan sans parole] qui sert le propos\n"
+        "- digression : anecdote ou aparte sans rapport avec le sujet\n"
+        "- hors_sujet : ne concerne pas le sujet\n"
+        "- repetition : redit ce qu'un autre passage dit deja\n"
+        "- hesitation : mots de remplissage, recherche de mots\n"
+        "- phrase_inachevee : phrase abandonnee en cours de route\n"
+        "- remplissage : [plan sans parole] inutile\n\n"
+        "Deja coupes automatiquement (ne pas classer) : %s.\n"
         "%s"
-        "Regles :\n"
-        "- Conserve l'ordre chronologique.\n"
-        "- Supprime les repetitions, les faux departs, les digressions et les silences.\n"
-        "- Garde au moins 3 segments si la video en contient plus de 3.\n"
-        "- N'invente jamais d'identifiant : utilise uniquement ceux listes ci-dessus.\n"
-        "- [plan sans parole] = plan visuel (musique, ambiance, illustration). Dans une "
-        "video parlee, garde-les seulement s'ils illustrent le propos ; dans une video "
-        "sans voix, choisis-les pour le rythme et la duree demandee.\n"
-        "- trim_start / trim_end : facultatifs, en secondes, pour rogner un debut ou "
-        "une fin de segment (mets 0 si tu ne rognes pas).\n"
-        "- reason : 3 a 5 mots maximum decrivant le CONTENU du segment garde "
-        "(ex: 'accroche sur l ocean', 'question d ouverture'). N'ecris jamais les regles "
-        "ni la consigne dans reason.\n"
-        "- rationale : 1 phrase expliquant le choix de l'ensemble.\n\n"
+        "Sois exigeant : un bon montage coupe les digressions meme courtes.\n"
         "Reponds avec le schema JSON demande."
     ) % (
-        duration, len(candidates), candidate_lines(candidates),
-        style_txt,
-        ("Consigne specifique de l'utilisateur : %s\n" % instruction) if instruction else "",
+        duration, style or "standard", ", ".join(todo), ruled_txt,
+        ("Consigne de l'utilisateur (prioritaire) : %s\n" % instruction) if instruction else "",
     )
 
 

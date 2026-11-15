@@ -31,7 +31,7 @@ def _candidates(proj) -> list:
     """Candidats au plan de coupe : parole, plus plans visuels si peu parle."""
     return pipeline.build_candidates(
         proj.transcript_segments, duration=(proj.info or {}).get("duration") or 0.0,
-        scenes=proj.scenes)
+        scenes=proj.scenes, words=proj.transcript_words)
 
 
 def _parse_range(header, size: int):
@@ -422,6 +422,7 @@ class StudioHandler(BaseHTTPRequestHandler):
                 j, proj.path, data.get("model") or None,
                 data.get("language") or "auto")
             proj.transcript_segments = result["segments"]
+            proj.transcript_words = result.get("words") or []
             proj.transcript = transcribe.transcript_text(result["segments"])
             proj.language = result.get("language", "")
             proj.model = result.get("model", "")
@@ -453,6 +454,7 @@ class StudioHandler(BaseHTTPRequestHandler):
                 data.get("instruction", ""), data.get("style", ""))
             proj.plan = result["segments"]
             proj.results["plan_rationale"] = result.get("rationale", "")
+            proj.results["plan_decisions"] = result.get("decisions", [])
             proj.results["plan_style"] = result.get("style", "")
             return result
 

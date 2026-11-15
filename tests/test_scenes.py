@@ -49,8 +49,8 @@ class VisualCandidatesTest(unittest.TestCase):
 
     def test_prompt_labels_visual_candidates(self):
         cands = pipeline.build_candidates([], duration=6.0, scenes=[3.0])
-        prompt = prompts.build_cut_plan_prompt(cands, 6.0)
-        self.assertIn("S1 [0.0s -> 3.0s] [plan sans parole]", prompt)
+        context = prompts.numbered_passages(cands)
+        self.assertEqual(context.splitlines()[0], "S1 : [plan sans parole, 3 s]")
 
 
 @unittest.skipUnless(config.ffmpeg_bin(), "ffmpeg absent")
