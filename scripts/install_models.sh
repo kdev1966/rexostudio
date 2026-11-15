@@ -8,8 +8,7 @@
 # Tout est verifie : somme SHA-256 de CMake et des modeles, commit Git de
 # whisper.cpp. Relancable sans risque : ce qui est deja en place est garde.
 #
-#   ./scripts/install_models.sh            base + VAD
-#   ./scripts/install_models.sh small      ajoute le modele small (488 Mo)
+#   ./scripts/install_models.sh            base + small (arabe) + VAD + ffmpeg
 # ---------------------------------------------------------------------------
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -98,10 +97,9 @@ fetch "$MODELS_DIR/ggml-base.bin" "$HF/ggerganov/whisper.cpp/resolve/main/ggml-b
   60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe
 fetch "$MODELS_DIR/ggml-silero-v6.2.0.bin" "$HF/ggml-org/whisper-vad/resolve/main/ggml-silero-v6.2.0.bin" \
   2aa269b785eeb53a82983a20501ddf7c1d9c48e33ab63a41391ac6c9f7fb6987
-if [ "${1:-}" = "small" ]; then
-  fetch "$MODELS_DIR/ggml-small.bin" "$HF/ggerganov/whisper.cpp/resolve/main/ggml-small.bin" \
-    1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b
-fi
+# small : modele du profil arabe (config.WHISPER_PROFILES), installe d'office.
+fetch "$MODELS_DIR/ggml-small.bin" "$HF/ggerganov/whisper.cpp/resolve/main/ggml-small.bin" \
+  1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b
 
 # --------------------------------------------------------------------------
 echo "== 3/3  ffmpeg / ffprobe =="

@@ -63,6 +63,20 @@ WHISPER_MODEL_PREFERENCE = ["base", "small", "tiny", "medium"]
 # pour le reactiver sur une machine ou le GPU est plus rapide.
 WHISPER_USE_GPU = os.environ.get("MONTAGIA_WHISPER_GPU", "0") == "1"
 
+# Profil de transcription par langue (mesures sur l'iMac, 15/11/2026, sur
+# 2 min de podcast en arabe tunisien melange d'anglais et de francais) :
+#   base                 x5,7  mots tres deformes, boucles
+#   small + -mc 0        x2,2  fidele au dialecte, anglais garde en latin,
+#                              ponctuation ; -mc 0 supprime les boucles
+#   medium-q5_0          x0,4  reecrit le dialecte en arabe standard
+#   large-v3-turbo-q5_0  x0,9  traduit les passages anglais en arabe
+# "no_context" = option -mc 0 (le modele ne s'appuie pas sur son texte
+# precedent : evite les boucles de repetition).
+WHISPER_PROFILES = {
+    "ar": {"model": "small", "no_context": True},
+}
+WHISPER_DEFAULT_PROFILE = {"model": "", "no_context": False}
+
 WHISPER_LANGUAGES = {
     "auto": "auto", "fr": "fr", "en": "en", "ar": "ar", "es": "es",
     "de": "de", "it": "it", "pt": "pt", "nl": "nl", "ru": "ru", "zh": "zh",

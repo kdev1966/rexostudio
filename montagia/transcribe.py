@@ -137,6 +137,38 @@ def _wav_seconds(path: str) -> float:
         return 0.0
 
 
+def choose_profile(lang: str, model: str = None) -> tuple:
+    """(modele, profil) pour une langue : choix explicite de l'utilisateur,
+    sinon le modele du profil de la langue s'il est installe, sinon le
+    meilleur modele disponible."""
+    profile = config.WHISPER_PROFILES.get(lang, config.WHISPER_DEFAULT_PROFILE)
+    if not model and profile.get("model") and config.whisper_model_path(profile["model"]):
+        model = profile["model"]
+    return model or config.best_whisper_model() or "base", profile
+
+
+_DETECTED = re.compile(r"auto-detected language:\s*([a-z]{2,3})")
+
+
+def detect_language(audio: str) -> str:
+    """Langue parlee (code whisper, ex. "fr", "ar") sur les 30 premieres
+    secondes, avec le plus petit modele installe (~1 s). "" si echec."""
+    whisper = config.whisper_bin()
+    small = next((m for m in ("base", "tiny", "small") if config.whisper_model_path(m)), "")
+    if not whisper or not small:
+        return ""
+    cmd = [whisper, "-m", config.whisper_model_path(small), "-f", audio, "-l", "auto",
+           "-dl", "-t", str(max(1, os.cpu_count() or 4))]
+    if not config.WHISPER_USE_GPU:
+        cmd += ["-ng"]
+    try:
+        out = tools.run_streaming(cmd, on_line=None, timeout=300)
+    except tools.CommandError:
+        return ""
+    m = _DETECTED.search(out)
+    return m.group(1) if m else ""
+
+
 def extract_audio(source: str, dest: str) -> str:
     """Extrait l'audio en WAV 16 kHz mono (format attendu par whisper.cpp)."""
     ffmpeg = config.ffmpeg_bin()
@@ -162,11 +194,6 @@ def transcribe(source: str, model: str = None, language: str = "auto",
     """
     log = on_log or (lambda _msg: None)
 
-    model = model or config.best_whisper_model() or "base"
-    model_path = config.whisper_model_path(model)
-    if not model_path:
-        raise RuntimeError(
-            "Modele whisper '%s' introuvable. Lancez scripts/install_models.sh" % model)
     whisper = config.whisper_bin()
     if not whisper:
         raise RuntimeError("whisper-cli introuvable (voir scripts/install_models.sh)")
@@ -182,6 +209,17 @@ def transcribe(source: str, model: str = None, language: str = "auto",
     extract_audio(source, audio)
 
     lang = config.WHISPER_LANGUAGES.get(language, language or "auto")
+    if lang == "auto":
+        detected = detect_language(audio)
+        if detected:
+            log("Langue detectee : %s" % detected)
+            lang = detected
+    model, profile = choose_profile(lang, model)
+    log("Modele whisper : %s%s" % (model, " (sans contexte, -mc 0)" if profile.get("no_context") else ""))
+    model_path = config.whisper_model_path(model)
+    if not model_path:
+        raise RuntimeError(
+            "Modele whisper '%s' introuvable. Lancez scripts/install_models.sh" % model)
     vad = config.whisper_vad_model()
 
     def build_cmd(use_vad: bool) -> list:
@@ -204,6 +242,8 @@ def transcribe(source: str, model: str = None, language: str = "auto",
             cmd += ["-bs", "1", "-bo", "1"]
         if not config.WHISPER_USE_GPU:
             cmd += ["-ng"]                  # voir config.WHISPER_USE_GPU (mesure)
+        if profile.get("no_context"):
+            cmd += ["-mc", "0"]             # voir config.WHISPER_PROFILES (boucles)
         if use_vad and vad:
             cmd += ["--vad", "-vm", vad, "-vt", "0.5", "-vspd", "200", "-vsd", "300"]
         return cmd
@@ -315,6 +355,7 @@ def transcribe(source: str, model: str = None, language: str = "auto",
 # Mots -> lignes de sous-titres
 # --------------------------------------------------------------------------
 
+_STRETCHED = re.compile(r"([^\W\d_])\1{3,}")    # lettres seulement (pas 10000)
 _NOISE = re.compile(r"^[\[(].*[\])]$")          # [Musique], (rires), [BLANK_AUDIO]
 _SENTENCE_END = (".", "!", "?", "\u2026", "\u061f")     # + point d'interrogation arabe
 _CLAUSE_END = (",", ";", ":", "\u060c", "\u061b")       # + virgule et point-virgule arabes
@@ -325,7 +366,9 @@ def clean_words(raw: list) -> list:
     mot precedent, temps croissants."""
     words = []
     for item in raw or []:
-        text = str(item.get("text", "")).strip()
+        text = str(item.get("text", "")).strip().strip('"\u00ab\u00bb\u201c\u201d')
+        # Lettre etiree (rire "hhhhhhh", "ahhhhh") : 3 repetitions au plus.
+        text = _STRETCHED.sub(r"\1\1\1", text)
         if not text or _NOISE.match(text):
             continue
         start, end = float(item.get("start", 0)), float(item.get("end", 0))
