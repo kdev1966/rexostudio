@@ -231,6 +231,8 @@ def transcribe(source: str, model: str = None, language: str = "auto",
         tools.run_streaming(build_cmd(bool(vad)),
                             on_line=lambda ln: log(ln) if ln.strip() else None,
                             timeout=7200)
+    except tools.CommandTimeout:
+        raise                               # bloque : relancer doublerait l'attente
     except tools.CommandError:
         if not vad:
             raise

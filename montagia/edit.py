@@ -182,7 +182,7 @@ def export(source: str, segments: list, out_path: str,
             secs = int(m.group(1)) * 3600 + int(m.group(2)) * 60 + float(m.group(3))
             on_progress(min(0.99, secs / total_dur), "Encodage %.1f%%" % (100 * secs / total_dur))
 
-    tools.run_streaming(cmd, on_line=on_line, timeout=14400)
+    tools.run_streaming(cmd, on_line=on_line, timeout=14400, keep_lines=300)
 
     if on_progress:
         on_progress(1.0, "Rendu termine")

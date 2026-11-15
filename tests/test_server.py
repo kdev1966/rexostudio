@@ -6,6 +6,7 @@ import http.client
 import json
 import os
 import socket
+import tempfile
 import sys
 import threading
 import time
@@ -163,6 +164,27 @@ class ServerTest(unittest.TestCase):
                                      {"target": "filmcraft", "path": "/etc/hosts"})
         self.assertEqual(status, 403)
         opener.assert_not_called()
+
+    def test_same_name_uploads_do_not_overwrite(self):
+        media_dir = tempfile.mkdtemp()
+        info = {"duration": 1.0, "width": 16, "height": 16}
+        paths = []
+        with mock.patch.object(app.config, "MEDIA_DIR", media_dir), \
+                mock.patch.object(app.media, "probe", return_value=info):
+            for payload in (b"premier", b"second"):
+                conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=TIMEOUT)
+                conn.request("POST", "/api/upload?name=rush.mp4", body=payload,
+                             headers={"Content-Type": "video/mp4"})
+                resp = conn.getresponse()
+                paths.append(json.loads(resp.read())["project"]["path"])
+                conn.close()
+        self.assertNotEqual(paths[0], paths[1])
+        with open(paths[0], "rb") as fh:
+            self.assertEqual(fh.read(), b"premier")
+        with open(paths[1], "rb") as fh:
+            self.assertEqual(fh.read(), b"second")
+        self.assertFalse([f for f in os.listdir(os.path.dirname(paths[0]))
+                          if f.endswith(".part")])
 
     def test_foreign_upload_is_rejected(self):
         status, _ = self.request(

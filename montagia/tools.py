@@ -1,10 +1,12 @@
 """Utilitaires systeme : execution de processus, chemins, logs."""
 from __future__ import annotations
 
+import collections
 import os
 import re
 import shutil
 import subprocess
+import threading
 import time
 import unicodedata
 
@@ -71,24 +73,50 @@ def run(cmd, timeout=1800, cwd=None, env=None):
     return proc.stdout
 
 
-def run_streaming(cmd, on_line, timeout=3600, cwd=None, env=None):
-    """Execute une commande en flux, on_line est appele a chaque ligne."""
+class CommandTimeout(CommandError):
+    """Le processus a depasse son delai et a ete arrete."""
+
+
+def run_streaming(cmd, on_line, timeout=3600, cwd=None, env=None, keep_lines=None):
+    """Execute une commande en flux, on_line est appele a chaque ligne.
+
+    Le delai est REEL : un minuteur tue le processus a l'echeance, meme s'il
+    est bloque sans rien ecrire (la lecture de stdout, elle, bloquerait
+    indefiniment). keep_lines borne la sortie gardee en memoire (un rendu
+    ffmpeg ecrit des milliers de lignes) ; None = tout garder, necessaire
+    quand l'appelant analyse toute la sortie (detection de silences).
+    """
     proc = subprocess.Popen(
         cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         text=True, bufsize=1, cwd=cwd, env=env, errors="replace")
-    lines = []
+    expired = threading.Event()
+
+    def _expire():
+        if proc.poll() is None:
+            expired.set()
+            proc.kill()
+
+    timer = threading.Timer(timeout, _expire)
+    timer.daemon = True
+    timer.start()
+    lines = collections.deque(maxlen=keep_lines)
     try:
         for raw in proc.stdout:
             line = raw.rstrip("\n")
             lines.append(line)
             if on_line:
                 on_line(line)
-        proc.wait(timeout=max(1, timeout - 60))
+        proc.wait()
     finally:
+        timer.cancel()
         if proc.poll() is None:
             proc.kill()
+            proc.wait()
     out = "\n".join(lines)
-    if proc.returncode not in (0, None):
+    if expired.is_set():
+        raise CommandTimeout(cmd, "timeout",
+                             "arrete apres %d s sans se terminer\n%s" % (timeout, out[-600:]))
+    if proc.returncode != 0:
         raise CommandError(cmd, proc.returncode, out)
     return out
 
@@ -100,6 +128,23 @@ def which(name: str) -> str:
 def ensure_parent(path: str) -> str:
     os.makedirs(os.path.dirname(path), exist_ok=True)
     return path
+
+
+def unique_path(path: str) -> str:
+    """Chemin libre : video.mp4, sinon video-2.mp4, video-3.mp4...
+
+    Reserve le nom de facon atomique (O_EXCL) : deux uploads simultanes du
+    meme fichier ne peuvent pas obtenir le meme chemin.
+    """
+    stem, ext = os.path.splitext(path)
+    candidate, n = path, 1
+    while True:
+        try:
+            os.close(os.open(candidate, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644))
+            return candidate
+        except FileExistsError:
+            n += 1
+            candidate = "%s-%d%s" % (stem, n, ext)
 
 
 def is_within(base: str, target: str) -> bool:

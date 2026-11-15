@@ -22,7 +22,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from montagia import ai, config, filmcraft, media, pipeline, project, tools, transcribe  # noqa: E402
 from montagia.jobs import MANAGER  # noqa: E402
 
-MAX_BODY = 8 * 1024 ** 3
+MAX_BODY = config.MAX_UPLOAD_BYTES
 
 _FINAL_STATUSES = ("done", "error", "cancelled")
 
@@ -266,27 +266,40 @@ class StudioHandler(BaseHTTPRequestHandler):
         stem, ext = os.path.splitext(name)
         if ext.lower() not in config.VIDEO_EXTENSIONS:
             return self._error("Format non supporte : %s" % ext)
+        length = int(self.headers.get("Content-Length") or 0)
+        if length <= 0:
+            return self._error("Aucun fichier recu")
+        if length > MAX_BODY:
+            self.close_connection = True        # corps non lu
+            return self._error("Fichier trop volumineux (max %s)" % tools.human_size(MAX_BODY))
+
         safe = tools.safe_component(stem, "media") + ext.lower()
         target_dir = os.path.join(config.MEDIA_DIR, time.strftime("%Y%m%d"))
         os.makedirs(target_dir, exist_ok=True)
-        target = os.path.join(target_dir, safe)
-
-        length = int(self.headers.get("Content-Length") or 0)
-        if length <= 0:
-            return self._error("Aucun recu")
-        if length > MAX_BODY:
-            return self._error("Fichier trop volumineux")
+        # Nom reserve de facon unique : un 2e upload du meme nom le meme jour
+        # ecrasait le fichier, parfois en cours d'utilisation par un projet.
+        target = tools.unique_path(os.path.join(target_dir, safe))
+        partial = target + ".part"
 
         written = 0
-        with open(target, "wb") as fh:
-            while written < length:
-                chunk = self.rfile.read(min(1024 * 1024, length - written))
-                if not chunk:
-                    break
-                fh.write(chunk)
-                written += len(chunk)
-        if written < length:
-            os.remove(target)
+        try:
+            with open(partial, "wb") as fh:
+                while written < length:
+                    chunk = self.rfile.read(min(1024 * 1024, length - written))
+                    if not chunk:
+                        break
+                    fh.write(chunk)
+                    written += len(chunk)
+            if written < length:
+                raise OSError("transfert interrompu")
+            os.replace(partial, target)         # fichier complet ou rien
+        except OSError:
+            for leftover in (partial, target):
+                try:
+                    os.remove(leftover)
+                except OSError:
+                    pass
+            self.close_connection = True
             return self._error("Transfert interrompu")
 
         try:

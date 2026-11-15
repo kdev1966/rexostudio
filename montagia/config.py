@@ -96,7 +96,7 @@ VIDEO_EXTENSIONS = {
     ".mpg", ".mpeg", ".wmv", ".flv", ".3gp", ".ts", ".mts",
 }
 
-MAX_UPLOAD_BYTES = 4 * 1024 ** 3   # 4 Go
+MAX_UPLOAD_BYTES = 8 * 1024 ** 3   # 8 Go (rushs longs)
 
 # --------------------------------------------------------------------------
 # FilmCraft (editeur video pilote en direct, voir montagia/filmcraft.py)
