@@ -175,7 +175,11 @@ Test de non-régression : `tests/fixtures/cafe_words.json` (vrais mots de cette 
 - Plan de coupe : 179 s pour 7 min (335 s avant le prompt v6). L'IA reste peu fiable en
   tunisien (annonce du sujet coupée comme « digression ») ; whisper `small` hallucine parfois
   une boucle en arabe standard (film002, 359-380 s) que les règles coupent comme « répétition ».
-  → Décision produit en attente : mode « suggestions » (coupes IA proposées, non appliquées) ?
+  → **Décidé par l'utilisateur** : en arabe (`config.SUGGEST_ONLY_LANGUAGES`), les coupes de l'IA
+    sont seulement **proposées** (orange dans « Passages et décisions », case à cocher) ; les règles
+    restent appliquées. Toutes langues : chaque passage se bascule garder/couper (`/api/plan/keep`).
+  → Interface : modèle whisper « Automatique (selon la langue) » par défaut (sinon `base` était
+    imposé et le profil arabe ignoré). Interface vérifiée dans Chrome (15/11/2026).
 - Évaluer tout changement de prompt avec `scripts/eval_plan.py` (2 références FR).
 
 ### À faire (par ordre de priorité)
