@@ -21,7 +21,7 @@ MAX_CANDIDATES = 60
 
 # Version des prompts : incrémenter quand un prompt change, pour invalider
 # le cache disque des résultats IA (sinon on ressort l'ancienne réponse).
-PROMPT_VERSION = "v3"   # v3 : classification passage par passage
+PROMPT_VERSION = "v4"   # v4 : en cas de doute = contenu ; categories des regles retirees
 
 # --------------------------------------------------------------------------
 # Schemas JSON
@@ -31,9 +31,12 @@ PROMPT_VERSION = "v3"   # v3 : classification passage par passage
 # ou couper en decoule (cutting.KEEP_TYPES). Un modele 3B a qui l'on demande
 # "la liste des passages a garder" les recopie tous ; classer un a un est
 # nettement plus fiable, et la sortie est courte (id + type).
+#
+# Les hesitations, faux departs et repetitions sont traites par des REGLES
+# (cutting.py) : ces categories ne sont pas proposees a l'IA, qui les
+# employait a tort (une question d'un recit classee "repetition").
 CUT_TYPES = ["contenu", "introduction", "conclusion", "illustration",
-             "digression", "hors_sujet", "repetition", "hesitation",
-             "phrase_inachevee", "remplissage"]
+             "digression", "hors_sujet", "remplissage"]
 
 SCHEMA_DECISIONS = {
     "type": "object",
@@ -219,18 +222,18 @@ def build_decision_prompt(todo: list, ruled: list, duration: float,
         "decoupee en passages numerotes.\n\n"
         "Classe CHAQUE passage de cette liste, dans l'ordre : %s\n\n"
         "Categories :\n"
-        "- contenu : information utile au sujet de la video\n"
+        "- contenu : fait avancer le propos (information, etape, explication, recit)\n"
         "- introduction / conclusion : ouverture ou cloture de la video\n"
+        "- digression : aparte qui QUITTE le sujet puis y revient (ex. une anecdote "
+        "personnelle au milieu d'une recette)\n"
+        "- hors_sujet : ne concerne pas du tout le sujet de la video\n"
         "- illustration : [plan sans parole] qui sert le propos\n"
-        "- digression : anecdote ou aparte sans rapport avec le sujet\n"
-        "- hors_sujet : ne concerne pas le sujet\n"
-        "- repetition : redit ce qu'un autre passage dit deja\n"
-        "- hesitation : mots de remplissage, recherche de mots\n"
-        "- phrase_inachevee : phrase abandonnee en cours de route\n"
         "- remplissage : [plan sans parole] inutile\n\n"
-        "Deja coupes automatiquement (ne pas classer) : %s.\n"
+        "Important : un recit, une explication ou une demonstration qui se suit ne "
+        "contient PAS de digression, chaque passage sert l'ensemble. Ne coupe que ce "
+        "qui s'ecarte nettement du sujet. En cas de doute : contenu.\n"
+        "Deja coupes automatiquement (hesitations, reprises ; ne pas classer) : %s.\n"
         "%s"
-        "Sois exigeant : un bon montage coupe les digressions meme courtes.\n"
         "Reponds avec le schema JSON demande."
     ) % (
         duration, style or "standard", ", ".join(todo), ruled_txt,

@@ -202,6 +202,14 @@ class CutPlanTest(unittest.TestCase):
         keep = {d["id"]: d["keep"] for d in result["decisions"]}
         self.assertEqual(keep, {"S1": True, "S2": False, "S3": True})
 
+    def test_ai_cannot_use_rule_categories(self):
+        # "repetition" / "hesitation" sont reserves aux regles : l'IA les
+        # employait a tort (question d'un recit classee "repetition").
+        cands, result, _ = self.plan(lambda cands: {"decisions": [
+            {"id": c["id"], "type": "repetition"} for c in cands if not c["rule"]]})
+        by_ia = [d for d in result["decisions"] if d["by"] != "regle"]
+        self.assertTrue(all(d["keep"] for d in by_ia))
+
     def test_truncated_reply_is_salvaged(self):
         # Reponse coupee au plafond de tokens (cas reel sur film001.mp4).
         raw = ('{\n  "decisions" : [\n    {\n      "id" : "S3",\n      "type" : "contenu"\n'
