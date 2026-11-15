@@ -179,11 +179,23 @@ def chat_stream(system: str, user: str, model: str = None,
                 break
 
 
-def unload(model: str = None) -> bool:
-    """Decharge le modele de la RAM (utile avant un rendu video)."""
-    payload = {"model": model or config.LLM_MODEL, "keep_alive": 0}
+def loaded_models() -> list:
+    """Modeles actuellement en memoire (noms)."""
     try:
-        _post("/api/generate", payload, timeout=30)
+        return [m.get("name", "") for m in _get("/api/ps", timeout=3).get("models", [])]
+    except Exception:
+        return []
+
+
+def unload(model: str = None) -> bool:
+    """Decharge le modele de la RAM (bouton Quitter, avant un rendu...).
+    Rien a faire s'il n'est pas charge : une requete keep_alive=0 sur un
+    modele absent le chargerait d'abord (2,4 Go lus pour rien)."""
+    model = model or config.LLM_MODEL
+    if model not in loaded_models():
+        return True
+    try:
+        _post("/api/generate", {"model": model, "keep_alive": 0}, timeout=30)
         return True
     except Exception:
         return False

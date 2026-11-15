@@ -150,6 +150,12 @@ class JobManager(object):
             ids = list(self._order)
         return [self._jobs[i].summary() for i in ids if i in self._jobs][::-1]
 
+    def busy(self) -> bool:
+        """Un traitement est en cours ou en attente."""
+        with self._lock:
+            jobs = [self._jobs[i] for i in self._order if i in self._jobs]
+        return any(j.status in ("queued", "running") for j in jobs)
+
     def waiting(self) -> int:
         """Nombre de jobs lourds en attente d'un creneau."""
         with self._lock:

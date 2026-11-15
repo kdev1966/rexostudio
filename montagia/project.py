@@ -58,6 +58,7 @@ class Project(object):
             "planned": bool(self.plan),
             "exports": len(self.exports),
             "media_missing": not os.path.isfile(self.path),
+            "size": (self.info or {}).get("size", 0),
         }
 
     @classmethod
@@ -139,6 +140,30 @@ class ProjectStore(object):
 
     def get(self, project_id: str):
         return self._items.get(project_id)
+
+    def delete(self, project_id: str, media_dir: str = "") -> bool:
+        """Retire un projet (et son fichier JSON). La video televersee est
+        supprimee si elle est dans media_dir et qu'aucun autre projet ne
+        l'utilise ; les exports (fichiers de l'utilisateur) sont gardes."""
+        with self._lock:
+            project = self._items.pop(project_id, None)
+            if project is None:
+                return False
+            self._order = [i for i in self._order if i != project_id]
+            shared = any(p.path == project.path for p in self._items.values())
+        if self._dir:
+            try:
+                os.remove(self._file(project_id))
+            except OSError:
+                pass
+        if media_dir and not shared and os.path.isfile(project.path):
+            root = os.path.realpath(media_dir) + os.sep
+            if os.path.realpath(project.path).startswith(root):
+                try:
+                    os.remove(project.path)
+                except OSError:
+                    pass
+        return True
 
     def list(self) -> list:
         """Projets, le plus recemment modifie en premier."""

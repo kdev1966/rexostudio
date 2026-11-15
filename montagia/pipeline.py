@@ -51,24 +51,24 @@ def cached_ai(task: str, payload: dict, compute):
 def analyze_media(job, path: str, noise_db: float = None,
                   min_dur: float = None) -> dict:
     """Silences + changements de plan + metadonnees + segments de parole."""
-    job.set_progress(0.05, "Analyse du media")
+    job.set_progress(0.05, "Analyse de la vidéo")
     info = media.probe(path)
     job.add_log("Media : %s | %dx%d | %.1f fps | %s | %s"
                 % (os.path.basename(path), info["width"], info["height"],
                    info["fps"], info["vcodec"], info["acodec"]))
     silences = []
     if info.get("has_audio"):
-        job.set_progress(0.2, "Detection des silences")
+        job.set_progress(0.2, "Détection des silences")
         silences = media.detect_silence(path, noise_db, min_dur)
         job.add_log("Silences detectes : %d (total %.1f s)"
                     % (len(silences), sum(s["duration"] for s in silences)))
     scenes = []
     if info.get("has_video"):
-        job.set_progress(0.45, "Detection des changements de plan")
+        job.set_progress(0.45, "Détection des changements de plan")
         scenes = media.detect_scenes(path)
         job.add_log("Changements de plan : %d" % len(scenes))
     segments = media.speech_segments(info["duration"], silences)
-    job.set_progress(1.0, "Analyse terminee")
+    job.set_progress(1.0, "Analyse terminée")
     return {"info": info, "silences": silences, "speech_segments": segments,
             "scenes": scenes}
 
@@ -83,7 +83,7 @@ def transcribe_media(job, path: str, model: str = None, language: str = "auto") 
         path, model=model, language=language,
         workdir=os.path.join(config.CACHE_DIR, "audio"),
         on_log=lambda m: job.add_log(m))
-    job.set_progress(1.0, "Transcription terminee")
+    job.set_progress(1.0, "Transcription terminée")
     return result
 
 
@@ -242,7 +242,7 @@ def ai_cut_plan(job, candidates: list, duration: float, transcript: str = "",
     timecodes viennent des candidats (calcules par le code).
     """
     if not candidates:
-        raise RuntimeError("Aucun passage a monter : transcrivez d'abord la video.")
+        raise RuntimeError("Aucun passage à monter : transcrivez d'abord la vidéo.")
     for index, cand in enumerate(candidates):
         cand["_index"] = index
     decisions = {}
@@ -256,7 +256,7 @@ def ai_cut_plan(job, candidates: list, duration: float, transcript: str = "",
         if not todo:
             continue
         job.set_progress(0.1 + 0.75 * (number - 1) / len(batches),
-                         "Classement des passages par l'IA (%d/%d)" % (number, len(batches)))
+                         "Tri des passages par l'IA (%d/%d)" % (number, len(batches)))
         # Une boucle de transcription n'est ni classee par l'IA (le texte est
         # invente) ni annoncee comme coupee : elle est gardee et signalee.
         ruled = [(c["id"], cutting.RULE_LABELS.get(c["rule"], c["rule"]))
@@ -322,8 +322,8 @@ def ai_cut_plan(job, candidates: list, duration: float, transcript: str = "",
     job.set_progress(0.9, "Application du plan de coupe")
     result = plan_from_decisions(candidates, rows, duration)
     if not result["segments"]:
-        raise RuntimeError("Tous les passages ont ete coupes : precisez la consigne.")
-    job.set_progress(1.0, "Plan de coupe pret")
+        raise RuntimeError("Tous les passages ont été coupés : précisez la consigne.")
+    job.set_progress(1.0, "Plan de coupe prêt")
     result["style"] = style
     return result
 
@@ -363,6 +363,29 @@ def _forget_cache(task: str, payload: dict) -> None:
         pass
 
 
+# Noms lisibles des raisons de coupe (singulier, pluriel).
+TYPE_NAMES = {
+    "hesitation": ("hésitation", "hésitations"),
+    "faux_depart": ("faux départ", "faux départs"),
+    "repetition": ("répétition", "répétitions"),
+    "digression": ("digression", "digressions"),
+    "hors_sujet": ("passage hors sujet", "passages hors sujet"),
+    "remplissage": ("plan de remplissage", "plans de remplissage"),
+}
+
+
+def _plural(count: int, singular: str, plural: str = "") -> str:
+    return "%d %s" % (count, singular if count < 2 else (plural or singular + "s"))
+
+
+def _duration_text(seconds: float) -> str:
+    """6 min 52 s, ou 32,5 s sous la minute."""
+    if seconds < 60:
+        return ("%.1f s" % seconds).replace(".", ",")
+    minutes, rest = divmod(int(round(seconds)), 60)
+    return "%d min %02d s" % (minutes, rest)
+
+
 def _cut_summary(candidates, decisions, keep, segments, duration) -> str:
     """Justification FACTUELLE du plan (calculee, pas redigee par l'IA, qui
     decrivait parfois l'inverse de ce qu'elle avait fait)."""
@@ -374,27 +397,28 @@ def _cut_summary(candidates, decisions, keep, segments, duration) -> str:
             counts = by_source[d["by"]]
             counts[d["type"]] = counts.get(d["type"], 0) + 1
     parts = []
-    for source, label in (("regle", "regles"), ("ia", "IA")):
+    for source, label in (("regle", "règles"), ("ia", "l'IA")):
         if by_source[source]:
             parts.append("%s par %s" % (", ".join(
-                "%d %s" % (n, t.replace("_", " "))
+                _plural(n, *TYPE_NAMES.get(t, (t.replace("_", " "),)))
                 for t, n in sorted(by_source[source].items())), label))
-    text = "Garde %.1f s sur %.1f s." % (kept, duration)
+    text = "Gardé : %s sur %s." % (_duration_text(kept), _duration_text(duration))
     if parts:
-        text += " Coupe : %s." % " ; ".join(parts)
+        text += " Coupé : %s." % " ; ".join(parts)
     suggested = sum(1 for c in candidates if decisions[c["id"]].get("suggested")
                     and keep[c["id"]])
     if suggested:
-        text += (" %d coupe%s proposee%s par l'IA, a valider."
-                 % (suggested, "s" if suggested > 1 else "", "s" if suggested > 1 else ""))
+        text += " %s par l'IA, à valider." % _plural(suggested, "coupe proposée",
+                                                     "coupes proposées")
     doubts = sum(1 for c in candidates if decisions[c["id"]].get("doubt")
                  and keep[c["id"]] and not decisions[c["id"]].get("by_user"))
     if doubts:
-        text += (" %d passage%s a la transcription douteuse (boucle), garde%s : a verifier."
-                 % (doubts, "s" if doubts > 1 else "", "s" if doubts > 1 else ""))
+        text += " %s (boucle), gardé%s : à vérifier." % (
+            _plural(doubts, "passage à la transcription douteuse",
+                    "passages à la transcription douteuse"), "s" if doubts > 1 else "")
     manual = sum(1 for c in candidates if decisions[c["id"]].get("by_user"))
     if manual:
-        text += " %d choix manuel%s." % (manual, "s" if manual > 1 else "")
+        text += " %s." % _plural(manual, "choix manuel", "choix manuels")
     return text
 
 
@@ -411,16 +435,16 @@ def ai_trailer(job, candidates: list, duration: float, transcript: str,
         return ai.chat_json(system, user, prompts.SCHEMA_TRAILER, temperature=0.35)
 
     result = cached_ai("trailer", payload, compute)
-    job.set_progress(0.85, "Selection des moments")
+    job.set_progress(0.85, "Sélection des moments")
     segments = resolve_selection(result.get("segments", []), candidates)
     segments.sort(key=lambda s: s["start"])
-    job.set_progress(1.0, "Trailer selectionne")
+    job.set_progress(1.0, "Meilleurs moments sélectionnés")
     return {"segments": segments, "rationale": result.get("rationale", "")}
 
 
 def ai_pack(job, transcript: str, segments: list, duration: float,
             tone: str = "", extra: str = "") -> dict:
-    job.set_progress(0.1, "Redaction du pack de publication")
+    job.set_progress(0.1, "Rédaction du pack de publication")
     system = prompts.system_message(transcript, prompts.SYS_MARKETING)
     user = prompts.build_pack_prompt(segments, duration, tone, extra)
     payload = {"tone": tone, "extra": extra, "duration": duration,
@@ -430,12 +454,12 @@ def ai_pack(job, transcript: str, segments: list, duration: float,
         return ai.chat_json(system, user, prompts.SCHEMA_PACK, temperature=0.7)
 
     result = cached_ai("pack", payload, compute)
-    job.set_progress(1.0, "Pack pret")
+    job.set_progress(1.0, "Pack prêt")
     return result
 
 
 def ai_summary(job, transcript: str, duration: float) -> dict:
-    job.set_progress(0.1, "Resume de la video")
+    job.set_progress(0.1, "Résumé de la vidéo")
     system = prompts.system_message(transcript, prompts.SYS_ANALYST)
     user = prompts.build_summary_prompt(duration)
     payload = {"duration": duration, "transcript": transcript[:prompts.CONTEXT_CHARS]}
@@ -444,7 +468,7 @@ def ai_summary(job, transcript: str, duration: float) -> dict:
         return ai.chat_json(system, user, prompts.SCHEMA_SUMMARY, temperature=0.3)
 
     result = cached_ai("summary", payload, compute)
-    job.set_progress(1.0, "Resume pret")
+    job.set_progress(1.0, "Résumé prêt")
     return result
 
 
@@ -482,7 +506,7 @@ def ai_fix_subtitles(job, segments: list, chunk_size: int = 25) -> dict:
             else:
                 fixed.append(seg)
         done += len(chunk)
-    job.set_progress(1.0, "Sous-titres corriges")
+    job.set_progress(1.0, "Sous-titres corrigés")
     return {"segments": fixed, "fixed": done}
 
 
@@ -507,7 +531,7 @@ def prepare_plan(source: str, segments: list) -> list:
     """Plan de coupe normalise (tri, bornes, fusion des chevauchements)."""
     plan = edit.normalize_segments(segments, media.probe(source)["duration"])
     if not plan:
-        raise RuntimeError("Plan de coupe vide : rien a exporter.")
+        raise RuntimeError("Plan de coupe vide : rien à exporter.")
     return plan
 
 
@@ -516,7 +540,7 @@ def render_video(job, source: str, segments: list, out_path: str, fmt: str = "16
                  subtitles: str = "", burn_subtitles: bool = False,
                  focus_x: float = 0.5, normalize_audio: bool = False,
                  subtitle_segments: list = None, subtitle_words: list = None) -> dict:
-    job.set_progress(0.02, "Preparation du rendu")
+    job.set_progress(0.02, "Préparation du rendu")
     # Plan normalise UNE fois : le rendu et les sous-titres recales doivent
     # utiliser exactement la meme timeline (sinon decalage des sous-titres
     # des qu'un segment est en double ou chevauche le precedent).
@@ -540,7 +564,7 @@ def render_video(job, source: str, segments: list, out_path: str, fmt: str = "16
             on_progress=lambda v, s: job.set_progress(v, s))
     finally:
         _remove(temp_srt)
-    job.set_progress(1.0, "Export termine")
+    job.set_progress(1.0, "Export terminé")
     return result
 
 
@@ -549,7 +573,7 @@ def build_filmcraft_job(job, source: str, segments: list, out_path: str,
                         notes: str = "", subtitle_segments: list = None,
                         subtitle_words: list = None) -> dict:
     """Envoie le plan de coupe dans FilmCraft et enregistre le projet .fcproj."""
-    job.set_progress(0.05, "Preparation du projet FilmCraft")
+    job.set_progress(0.05, "Préparation du projet FilmCraft")
     info = media.probe(source)
     segments = edit.normalize_segments(segments, info["duration"])
     fps = filmcraft.fps_fraction(info.get("fps") or 0)
@@ -557,7 +581,7 @@ def build_filmcraft_job(job, source: str, segments: list, out_path: str,
     # et donc celle sur laquelle les sous-titres doivent etre recales.
     plan = filmcraft.frame_plan(segments, fps)
     if not plan:
-        raise RuntimeError("Plan de coupe vide : rien a envoyer a FilmCraft.")
+        raise RuntimeError("Plan de coupe vide : rien à envoyer à FilmCraft.")
 
     temp_srt = ""
     if subtitle_words or subtitle_segments:
@@ -565,7 +589,7 @@ def build_filmcraft_job(job, source: str, segments: list, out_path: str,
         temp_srt = _temp_srt(remapped, "filmcraft")
         job.add_log("Sous-titres recales sur la timeline (%d lignes)" % len(remapped))
     try:
-        job.set_progress(0.15, "Connexion a FilmCraft")
+        job.set_progress(0.15, "Connexion à FilmCraft")
         client = filmcraft.connect(log=job.add_log)
         job.set_progress(0.3, "Construction de la timeline dans FilmCraft")
         result = filmcraft.build_project(
@@ -574,7 +598,7 @@ def build_filmcraft_job(job, source: str, segments: list, out_path: str,
     finally:
         _remove(temp_srt)
 
-    job.set_progress(0.9, "Verification du projet enregistre")
+    job.set_progress(0.9, "Vérification du projet enregistré")
     summary = filmcraft.read_project(result["path"])
     expected = round(sum(p["frames"] for p in plan) / float(fps), 3)
     seq = next((s for s in summary["sequences"] if s["clips"] == len(plan)), None)
@@ -583,7 +607,7 @@ def build_filmcraft_job(job, source: str, segments: list, out_path: str,
                % (seq["clips"], seq["duration"], seq["captions"], seq["markers"])
                if valid else "Le projet enregistre ne correspond pas au plan de coupe")
     job.add_log(message)
-    job.set_progress(1.0, "Projet FilmCraft pret")
+    job.set_progress(1.0, "Projet FilmCraft prêt")
     return {"path": result["path"], "valid": valid, "message": message,
             "clips": result["clips"], "captions": result["captions"]}
 

@@ -250,6 +250,93 @@ class ServerTest(unittest.TestCase):
                 "Origin": "https://evil.example", "Content-Type": "video/mp4"})
         self.assertEqual(status, 403)
 
+    # -- preparer en un clic, supprimer, quitter ------------------------
+    def wait_job(self, job_id):
+        for _ in range(100):
+            if MANAGER.get(job_id).status in ("done", "error"):
+                break
+            time.sleep(0.02)
+        return MANAGER.get(job_id)
+
+    def test_prepare_chains_analyze_transcribe_plan(self):
+        proj = project.STORE.create("/tmp/inexistant.mp4", "prep.mp4")
+        proj.language = "ar"
+        calls, progress = [], []
+
+        def analyze(j, path, *_a):
+            calls.append("analyse")
+            j.set_progress(1.0, "a")
+            return {"info": {"duration": 6.0}, "silences": [], "speech_segments": [],
+                    "scenes": []}
+
+        def transcribe_media(j, path, model, language):
+            calls.append(("transcription", language))
+            return {"segments": [{"start": 0, "end": 6, "text": "salut"}],
+                    "words": [], "language": "ar", "model": "small"}
+
+        def cut_plan(j, cands, duration, transcript, instruction, style, suggest_only):
+            calls.append(("plan", duration, suggest_only))
+            j.set_progress(1.0, "fin")
+            return {"segments": [{"start": 0, "end": 6}], "rationale": "r", "decisions": []}
+
+        with mock.patch.object(app.pipeline, "analyze_media", side_effect=analyze), \
+                mock.patch.object(app.pipeline, "transcribe_media", side_effect=transcribe_media), \
+                mock.patch.object(app.pipeline, "ai_cut_plan", side_effect=cut_plan), \
+                mock.patch.object(app.transcribe, "write_srt"):
+            status, body = self.request("POST", "/api/prepare",
+                                        {"project_id": proj.id, "language": "auto"})
+            job = self.wait_job(json.loads(body)["job_id"])
+            progress = job.progress
+        self.assertEqual(status, 200)
+        self.assertEqual(job.status, "done", job.error)
+        self.assertEqual(calls, ["analyse", ("transcription", "auto"), ("plan", 6.0, True)])
+        self.assertEqual(progress, 1.0)
+        self.assertEqual(proj.plan, [{"start": 0, "end": 6}])
+
+    def test_delete_project_removes_uploaded_media_only(self):
+        media_dir = tempfile.mkdtemp()
+        inside = os.path.join(media_dir, "rush.mp4")
+        outside = os.path.join(tempfile.mkdtemp(), "autre.mp4")
+        for path in (inside, outside):
+            with open(path, "wb") as fh:
+                fh.write(b"x")
+        a = project.STORE.create(inside, "rush.mp4")
+        b = project.STORE.create(outside, "autre.mp4")
+        with mock.patch.object(app.config, "MEDIA_DIR", media_dir):
+            self.assertEqual(self.request("POST", "/api/project/delete",
+                                          {"project_id": a.id})[0], 200)
+            self.assertEqual(self.request("POST", "/api/project/delete",
+                                          {"project_id": b.id})[0], 200)
+            self.assertEqual(self.request("POST", "/api/project/delete",
+                                          {"project_id": b.id})[0], 404)
+        self.assertFalse(os.path.exists(inside))
+        self.assertTrue(os.path.exists(outside))       # hors du dossier des videos
+        self.assertIsNone(project.STORE.get(a.id))
+        os.remove(outside)
+
+    def test_quit_unloads_model_then_stops(self):
+        stopped = threading.Event()
+        with mock.patch.object(app.ai, "unload") as unload, \
+                mock.patch.object(self.httpd, "shutdown", side_effect=stopped.set):
+            status, _ = self.request("POST", "/api/quit", {})
+            self.assertTrue(stopped.wait(2))
+        self.assertEqual(status, 200)
+        unload.assert_called_once()
+
+    def test_quit_refused_while_a_job_runs(self):
+        release = threading.Event()
+        job = MANAGER.create("test")
+        MANAGER.run_async(job, lambda _j: release.wait(5))
+        try:
+            with mock.patch.object(self.httpd, "shutdown") as shutdown:
+                status, body = self.request("POST", "/api/quit", {})
+            self.assertEqual(status, 409)
+            self.assertIn("en cours", body)
+            shutdown.assert_not_called()
+        finally:
+            release.set()
+            self.wait_job(job.id)
+
 
 if __name__ == "__main__":
     unittest.main()

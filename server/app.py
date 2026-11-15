@@ -12,6 +12,7 @@ import posixpath
 import queue
 import subprocess
 import sys
+import threading
 import time
 import urllib.parse
 import webbrowser
@@ -32,6 +33,68 @@ def _candidates(proj) -> list:
     return pipeline.build_candidates(
         proj.transcript_segments, duration=(proj.info or {}).get("duration") or 0.0,
         scenes=proj.scenes, words=proj.transcript_words)
+
+
+class _Stage(object):
+    """Etape d'un traitement enchaine : sa progression 0..1 occupe la
+    tranche [low, high] de la barre du traitement complet."""
+
+    def __init__(self, job, low: float, high: float):
+        self.job, self.low, self.high = job, low, high
+
+    def set_progress(self, value: float, step: str = "") -> None:
+        self.job.set_progress(self.low + (self.high - self.low) * (value or 0.0), step)
+
+    def add_log(self, message: str) -> None:
+        self.job.add_log(message)
+
+
+def _do_analyze(j, proj, data: dict) -> dict:
+    result = pipeline.analyze_media(j, proj.path, data.get("noise_db"), data.get("min_dur"))
+    proj.info = result["info"]
+    proj.silences = result["silences"]
+    proj.speech_segments = result["speech_segments"]
+    proj.scenes = result["scenes"]
+    if proj.transcript_segments:
+        # Analyse faite apres la transcription : les plans detectes
+        # completent les candidats (videos peu parlees).
+        proj.candidates = _candidates(proj)
+    return result
+
+
+def _do_transcribe(j, proj, data: dict) -> dict:
+    result = pipeline.transcribe_media(
+        j, proj.path, data.get("model") or None, data.get("language") or "auto")
+    proj.transcript_segments = result["segments"]
+    proj.transcript_words = result.get("words") or []
+    proj.transcript = transcribe.transcript_text(result["segments"])
+    proj.language = result.get("language", "")
+    proj.model = result.get("model", "")
+    proj.candidates = _candidates(proj)
+    srt_path = os.path.join(
+        config.EXPORTS_DIR,
+        "%s.srt" % tools.safe_component(proj.name.rsplit(".", 1)[0], "sous-titres"))
+    transcribe.write_srt(result["segments"], srt_path)
+    proj.srt_path = srt_path
+    j.add_log("Sous-titres : %s" % srt_path)
+    return result
+
+
+def _do_plan(j, proj, data: dict) -> dict:
+    if proj.transcript_words:
+        # Reconstruits a chaque plan depuis les mots (deterministe, quasi
+        # instantane) : un projet ancien profite du decoupage a jour.
+        proj.candidates = _candidates(proj)
+    candidates = proj.candidates or _candidates(proj)
+    result = pipeline.ai_cut_plan(
+        j, candidates, (proj.info or {}).get("duration") or 0.0, proj.transcript,
+        data.get("instruction", ""), data.get("style", ""),
+        suggest_only=proj.language in config.SUGGEST_ONLY_LANGUAGES)
+    proj.plan = result["segments"]
+    proj.results["plan_rationale"] = result.get("rationale", "")
+    proj.results["plan_decisions"] = result.get("decisions", [])
+    proj.results["plan_style"] = result.get("style", "")
+    return result
 
 
 def _parse_range(header, size: int):
@@ -127,7 +190,7 @@ class StudioHandler(BaseHTTPRequestHandler):
 
     def _reject(self):
         self.close_connection = True       # le corps eventuel n'a pas ete lu
-        return self._error("Requete refusee (origine non autorisee)", 403)
+        return self._error("Requête refusée (origine non autorisée)", 403)
 
     def _start_sse(self):
         """En-tetes d'un flux SSE. La connexion est fermee a la fin du flux :
@@ -207,6 +270,12 @@ class StudioHandler(BaseHTTPRequestHandler):
                 return self._api_transcribe()
             if route == "/api/plan":
                 return self._api_plan()
+            if route == "/api/prepare":
+                return self._api_prepare()
+            if route == "/api/project/delete":
+                return self._api_project_delete()
+            if route == "/api/quit":
+                return self._api_quit()
             if route == "/api/plan/keep":
                 return self._api_plan_keep()
             if route == "/api/pack":
@@ -253,7 +322,7 @@ class StudioHandler(BaseHTTPRequestHandler):
             return self._error("Chemin manquant")
         target = os.path.abspath(target)
         if not tools.is_within(config.WORKSPACE, target):
-            return self._error("Acces refuse (hors espace de travail)", 403)
+            return self._error("Accès refusé (hors espace de travail)", 403)
         if not os.path.isfile(target):
             return self._error("Fichier introuvable", 404)
         ctype = mimetypes.guess_type(target)[0] or "application/octet-stream"
@@ -321,10 +390,10 @@ class StudioHandler(BaseHTTPRequestHandler):
         name = os.path.basename(name)
         stem, ext = os.path.splitext(name)
         if ext.lower() not in config.VIDEO_EXTENSIONS:
-            return self._error("Format non supporte : %s" % ext)
+            return self._error("Format non supporté : %s" % ext)
         length = int(self.headers.get("Content-Length") or 0)
         if length <= 0:
-            return self._error("Aucun fichier recu")
+            return self._error("Aucun fichier reçu")
         if length > MAX_BODY:
             self.close_connection = True        # corps non lu
             return self._error("Fichier trop volumineux (max %s)" % tools.human_size(MAX_BODY))
@@ -389,84 +458,55 @@ class StudioHandler(BaseHTTPRequestHandler):
         pid = data.get("project_id") or ""
         proj = project.STORE.get(pid)
         if not proj:
-            raise ValueError("Projet introuvable (reexploitez le fichier)")
+            raise ValueError("Projet introuvable : rouvrez la vidéo")
         return proj
 
     def _api_analyze(self):
-        data = self._body_json()
-        proj = self._get_project(data)
-        job = MANAGER.create("analyze", "Analyse de %s" % proj.name)
-
-        def run(j):
-            result = pipeline.analyze_media(j, proj.path,
-                                            data.get("noise_db"),
-                                            data.get("min_dur"))
-            proj.info = result["info"]
-            proj.silences = result["silences"]
-            proj.speech_segments = result["speech_segments"]
-            proj.scenes = result["scenes"]
-            if proj.transcript_segments:
-                # Analyse faite apres la transcription : les plans detectes
-                # completent les candidats (videos peu parlees).
-                proj.candidates = _candidates(proj)
-            return result
-
-        self._run_job(job, proj, run)
-        return self._json({"job_id": job.id})
+        return self._project_job("analyze", "Analyse", lambda j, p, d: _do_analyze(j, p, d))
 
     def _api_transcribe(self):
-        data = self._body_json()
-        proj = self._get_project(data)
-        job = MANAGER.create("transcribe", "Transcription de %s" % proj.name)
-
-        def run(j):
-            result = pipeline.transcribe_media(
-                j, proj.path, data.get("model") or None,
-                data.get("language") or "auto")
-            proj.transcript_segments = result["segments"]
-            proj.transcript_words = result.get("words") or []
-            proj.transcript = transcribe.transcript_text(result["segments"])
-            proj.language = result.get("language", "")
-            proj.model = result.get("model", "")
-            proj.candidates = _candidates(proj)
-            srt_path = os.path.join(
-                config.EXPORTS_DIR,
-                "%s.srt" % tools.safe_component(proj.name.rsplit(".", 1)[0], "sous-titres"))
-            transcribe.write_srt(result["segments"], srt_path)
-            proj.srt_path = srt_path
-            j.add_log("Sous-titres : %s" % srt_path)
-            return result
-
-        self._run_job(job, proj, run)
-        return self._json({"job_id": job.id})
+        return self._project_job("transcribe", "Transcription",
+                                 lambda j, p, d: _do_transcribe(j, p, d))
 
     def _api_plan(self):
+        return self._project_job("plan", "Plan de coupe IA", lambda j, p, d: _do_plan(j, p, d))
+
+    def _api_prepare(self):
+        """Analyse + transcription + plan de coupe en un seul traitement."""
+        def run(j, proj, data):
+            _do_analyze(_Stage(j, 0.0, 0.05), proj, data)
+            _do_transcribe(_Stage(j, 0.05, 0.6), proj, data)
+            return _do_plan(_Stage(j, 0.6, 1.0), proj, data)
+        return self._project_job("prepare", "Préparation du montage", run)
+
+    def _project_job(self, kind: str, title: str, func):
         data = self._body_json()
         proj = self._get_project(data)
-        candidates = data.get("candidates")
-        if not candidates and proj.transcript_words:
-            # Reconstruits a chaque plan depuis les mots (deterministe, quasi
-            # instantane) : un projet ancien profite du decoupage a jour.
-            candidates = proj.candidates = _candidates(proj)
-        candidates = candidates or proj.candidates or _candidates(proj)
-        transcript = data.get("transcript") or proj.transcript
-        duration = (proj.info or {}).get("duration") or 0.0
-        job = MANAGER.create("plan", "Plan de coupe IA")
-
-        suggest = proj.language in config.SUGGEST_ONLY_LANGUAGES
-
-        def run(j):
-            result = pipeline.ai_cut_plan(
-                j, candidates, duration, transcript,
-                data.get("instruction", ""), data.get("style", ""), suggest_only=suggest)
-            proj.plan = result["segments"]
-            proj.results["plan_rationale"] = result.get("rationale", "")
-            proj.results["plan_decisions"] = result.get("decisions", [])
-            proj.results["plan_style"] = result.get("style", "")
-            return result
-
-        self._run_job(job, proj, run)
+        job = MANAGER.create(kind, "%s de %s" % (title, proj.name))
+        self._run_job(job, proj, lambda j: func(j, proj, data))
         return self._json({"job_id": job.id})
+
+    def _api_project_delete(self):
+        data = self._body_json()
+        pid = str(data.get("project_id") or "")
+        if MANAGER.busy():
+            return self._error("Un traitement est en cours : attendez la fin", 409)
+        if not project.STORE.delete(pid, media_dir=config.MEDIA_DIR):
+            return self._error("Projet introuvable", 404)
+        return self._json({"ok": True})
+
+    def _api_quit(self):
+        """Decharge le modele IA puis arrete le serveur (bouton Quitter)."""
+        if MANAGER.busy():
+            return self._error("Un traitement est en cours : attendez la fin avant de quitter", 409)
+        self._json({"ok": True})
+        server = self.server
+
+        def stop():
+            ai.unload()
+            server.shutdown()
+        threading.Thread(target=stop, daemon=True).start()
+        return None
 
     def _api_plan_keep(self):
         """Bascule un passage entre garder et couper ; le plan est recalcule."""
@@ -483,7 +523,7 @@ class StudioHandler(BaseHTTPRequestHandler):
             proj.candidates, rows, (proj.info or {}).get("duration") or 0.0)
         if not result["segments"]:
             row["keep"] = True
-            return self._error("Au moins un passage doit etre garde")
+            return self._error("Au moins un passage doit être gardé")
         proj.plan = result["segments"]
         proj.results["plan_rationale"] = result["rationale"]
         project.STORE.save(proj)
@@ -509,7 +549,7 @@ class StudioHandler(BaseHTTPRequestHandler):
     def _api_summary(self):
         data = self._body_json()
         proj = self._get_project(data)
-        job = MANAGER.create("summary", "Resume de la video")
+        job = MANAGER.create("summary", "Résumé de la vidéo")
 
         def run(j):
             result = pipeline.ai_summary(
@@ -582,7 +622,7 @@ class StudioHandler(BaseHTTPRequestHandler):
         proj = self._get_project(data)
         segments = data.get("segments") or proj.plan
         if not segments:
-            return self._error("Aucun segment a rendre")
+            return self._error("Aucun passage à rendre")
         fmt = data.get("format", "16:9")
         base = tools.safe_component(proj.name.rsplit(".", 1)[0], "montage")
         suffix = {"16:9": "16x9", "9:16": "9x16"}.get(fmt, fmt)
@@ -614,7 +654,7 @@ class StudioHandler(BaseHTTPRequestHandler):
         proj = self._get_project(data)
         segments = data.get("segments") or proj.plan
         if not segments:
-            return self._error("Aucun segment : rien a mettre dans le projet")
+            return self._error("Aucun passage : rien à mettre dans le projet")
         base = tools.safe_component(proj.name.rsplit(".", 1)[0], "projet")
         out_path = os.path.join(config.EXPORTS_DIR, base + ".fcproj")
         job = MANAGER.create("filmcraft", "Projet FilmCraft")
@@ -661,7 +701,7 @@ class StudioHandler(BaseHTTPRequestHandler):
             return self._error("Chemin manquant")
         # Uniquement l'espace de travail (is_within resout les liens et les "..").
         if not tools.is_within(config.WORKSPACE, path):
-            return self._error("Acces refuse", 403)
+            return self._error("Accès refusé", 403)
         if target == "filmcraft":
             if not path.endswith(".fcproj") or not os.path.isfile(path):
                 return self._error("Projet FilmCraft introuvable", 404)
@@ -677,13 +717,13 @@ class StudioHandler(BaseHTTPRequestHandler):
     def _job_status(self, job_id):
         job = MANAGER.get(job_id)
         if not job:
-            return self._error("Job introuvable", 404)
+            return self._error("Traitement introuvable", 404)
         return self._json(job.summary())
 
     def _job_events(self, job_id):
         job = MANAGER.get(job_id)
         if not job:
-            return self._error("Job introuvable", 404)
+            return self._error("Traitement introuvable", 404)
         self._start_sse()
         q = job.subscribe()
         try:
@@ -748,8 +788,9 @@ def main():
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
+        ai.unload()
         print("\n  Arret.")
-        httpd.shutdown()
+    httpd.server_close()
 
 
 if __name__ == "__main__":

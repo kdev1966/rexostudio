@@ -45,8 +45,9 @@ OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434")
 LLM_MODEL = os.environ.get("MONTAGIA_MODEL", "qwen2.5:3b")
 # 4096 suffit largement et evite d'exploser la RAM (16 Go) avec le cache KV.
 LLM_NUM_CTX = int(os.environ.get("MONTAGIA_NUM_CTX", "4096"))
-# On garde le modele en memoire 15 min : reponse instantanee sur les enchainements.
-LLM_KEEP_ALIVE = os.environ.get("MONTAGIA_KEEP_ALIVE", "15m")
+# Modele garde en memoire 5 min apres sa derniere utilisation (enchainements
+# rapides), puis decharge par Ollama : ~2,4 Go rendus au systeme.
+LLM_KEEP_ALIVE = os.environ.get("MONTAGIA_KEEP_ALIVE", "5m")
 LLM_TIMEOUT = 600
 
 # --------------------------------------------------------------------------

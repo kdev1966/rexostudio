@@ -255,7 +255,7 @@ class CutPlanTest(unittest.TestCase):
         self.assertNotIn("marché", kept)
         self.assertNotIn("Heu", kept)
         self.assertIn("deuxième étape", kept)
-        self.assertIn("1 digression par IA", result["rationale"])
+        self.assertIn("1 digression par l'IA", result["rationale"])
         self.assertLess(result["kept_duration"], 35)
 
     def test_unclassified_passages_are_kept(self):
@@ -306,7 +306,7 @@ class CutPlanTest(unittest.TestCase):
         self.assertTrue(rows[digression]["suggested"])
         ruled = [c["id"] for c in cands if c["rule"]]
         self.assertTrue(all(not rows[cid]["keep"] for cid in ruled))
-        self.assertIn("1 coupe proposee par l'IA, a valider", result["rationale"])
+        self.assertIn("1 coupe proposée par l'IA, à valider", result["rationale"])
 
         # La personne valide la suggestion : le plan est recalcule sans la digression.
         rows[digression]["keep"] = False
