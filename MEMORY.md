@@ -138,10 +138,29 @@ Tests : `python3 -m unittest discover -s tests` (stdlib, sans Ollama ni ffmpeg).
   durée, les trous sont proposés à l'IA comme `[plan sans parole]` (PROMPT_VERSION v2).
   Les vidéos parlées gardent le comportement précédent.
 
+### Plan de coupe refait (15/11/2026, mesuré sur l'iMac)
+
+L'ancien plan (« liste des segments à garder ») gardait **47,2 s sur 47,6 s** d'une vidéo
+pleine de défauts, avec une justification contraire. Nouveau fonctionnement :
+- whisper **mot par mot** (`-ml 1 -sow` : temps recalés même avec le VAD — les temps des
+  *tokens* `-ojf`, eux, restent sur la timeline compressée par le VAD, piège) ;
+- `montagia/cutting.py` : propositions + règles sûres (hésitations seules, « je recommence »
+  + prise ratée, prise redite → la dernière gardée) ;
+- l'IA **classe** chaque passage restant (`prompts.SCHEMA_DECISIONS`), par lots de 40 ;
+  garder/couper découle de la catégorie ; non classé = gardé ;
+- justification **calculée** (le résumé de l'IA décrivait l'inverse de ses choix) ;
+- sous-titres du montage reconstruits **mot par mot** (`transcribe.remap_words`).
+
+Mesure, vidéo `cafe_filtre.mp4` 47,6 s, sans consigne : **32,5 s gardées**, faux départ +
+4 hésitations (règles) + digression (IA) coupés, plan en **25 s au lieu de 87 s**.
+Test de non-régression : `tests/fixtures/cafe_words.json` (vrais mots de cette vidéo).
+
 ### À faire (par ordre de priorité)
 
-1. **Déployer la branche sur l'iMac** et tester le parcours complet par l'interface
-   (upload → analyse → transcription → plan IA → rendu → FilmCraft), puis mesurer.
+1. ~~Déployer sur l'iMac + parcours complet~~ ✅ fait (par l'API) : upload, analyse 1,6 s,
+   transcription 6 s, plan 25 s, rendu 16:9 3,5 s, 9:16 5,2 s, FilmCraft 0,5 s.
+   Déploiement : `git push imac fix/plan-sse-origin:refs/heads/deploy-incoming` puis, sur
+   l'iMac, `git merge --ff-only deploy-incoming` et redémarrage de `start.sh`.
 2. **Tester le mode terminal** `./start.sh --cli` sur l'iMac (`plan`, `render`, `filmcraft`, `chat`).
 3. **Test du plan de coupe sur une vidéo française parlée** (vraie vidéo, pas une voix de synthèse).
 4. **Mesurer `detect_scenes` sur l'iMac** (décode toute la vidéo) et le plan IA d'une vidéo sans voix.
