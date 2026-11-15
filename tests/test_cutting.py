@@ -152,6 +152,66 @@ class RulesTest(unittest.TestCase):
                          [(0, 4, "S1-S2"), (6.1, 8, "S4")])
 
 
+def loop_words():
+    """Boucle reelle de whisper small sur film002.mp4 (358-378 s), entre
+    deux phrases normales."""
+    words, t = [], 0.0
+    text = ("مرحبا بيكم في الحلقة هذي. نحكيو اليوم على تعلم اللغات. "
+            + "لا يجب أن تتعلم بشكل مهمة و " * 3
+            + "يجب أن تتعلم معك. ان شاء الله الحلقة الجاية نشوفو كيفاش نخدمو.")
+    for token in text.split():
+        words.append(w(token, t, t + 0.4))
+        t += 0.5
+    return words
+
+
+class LoopTest(unittest.TestCase):
+    def test_transcription_loop_is_flagged_not_cut(self):
+        cands = cutting.speech_candidates(loop_words())
+        rules = [c["rule"] for c in cands]
+        self.assertIn(cutting.DOUBT_RULE, rules)
+        self.assertNotIn("repetition", rules)
+        flagged = " ".join(c["text"] for c in cands if c["rule"] == cutting.DOUBT_RULE)
+        self.assertIn("يجب أن تتعلم", flagged)
+        self.assertNotIn("مرحبا", flagged)
+        self.assertNotIn("الجاية", flagged)
+
+    def test_real_speech_has_no_loop(self):
+        words, _ = load_cafe()
+        self.assertEqual(cutting.find_loops(words), [])
+        with open(os.path.join(HERE, "fixtures", "recit_words.json"), encoding="utf-8") as fh:
+            recit = transcribe.clean_words(json.load(fh)["words"])
+        self.assertEqual(cutting.find_loops(recit), [])
+
+    def test_laughter_and_one_retake_are_not_loops(self):
+        text = "ha ha ha ha ha ha ha ha ha alors on commence alors on commence par le debut"
+        words = [w(t, i * 0.5, i * 0.5 + 0.4) for i, t in enumerate(text.split())]
+        self.assertEqual(cutting.find_loops(words), [])
+
+    def test_loop_is_kept_and_not_sent_to_ai(self):
+        words = loop_words()
+        cands = pipeline.build_candidates(transcribe.build_lines(words),
+                                          duration=40.0, words=words)
+        sent = []
+
+        def fake_chat(system, user, schema, **kwargs):
+            sent.append(user)
+            return {"decisions": [{"id": c["id"], "type": "digression"} for c in cands]}
+
+        with mock.patch.object(pipeline.ai, "chat_json", side_effect=fake_chat), \
+                mock.patch.object(pipeline, "cached_ai", lambda _t, _p, compute: compute()):
+            result = pipeline.ai_cut_plan(Job(), cands, 40.0, suggest_only=True)
+        doubts = [r for r in result["decisions"] if r.get("doubt")]
+        self.assertTrue(doubts)
+        self.assertTrue(all(r["keep"] and not r["suggested"] for r in doubts))
+        todo_line = [ln for ln in sent[0].splitlines() if ln.startswith("Classe CHAQUE")][0]
+        ruled_line = [ln for ln in sent[0].splitlines() if ln.startswith("Deja coupes")][0]
+        for r in doubts:
+            self.assertNotIn(r["id"] + ",", todo_line + ",")
+            self.assertNotIn(r["id"] + " ", ruled_line)
+        self.assertIn("transcription douteuse (boucle)", result["rationale"])
+
+
 class CutPlanTest(unittest.TestCase):
     def plan(self, answer, instruction=""):
         words, duration = load_cafe()

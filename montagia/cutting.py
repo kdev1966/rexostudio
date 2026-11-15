@@ -43,6 +43,13 @@ RESTART_ALONE = {("attendez",), ("attends",), ("pardon",), ("excusez", "moi"),
 KEEP_TYPES = ("contenu", "introduction", "conclusion", "illustration")
 RULE_LABELS = {"hesitation": "hesitation", "faux_depart": "faux depart",
                "repetition": "repetition"}
+# Boucle de transcription : Whisper repete parfois en boucle une phrase
+# inventee (vu en arabe : 4 fois la meme phrase en 20 s). On ne sait pas ce
+# qui est vraiment dit : le passage est garde et signale, jamais coupe.
+DOUBT_RULE = "boucle"
+LOOP_MIN_WORDS = 3         # suite repetee d'au moins 3 mots ...
+LOOP_MIN_REPEATS = 3       # ... au moins 3 fois ...
+LOOP_SLACK_WORDS = 6       # ... a moins de (2 x longueur + 6) mots d'ecart
 
 
 def normalize(text: str) -> list:
@@ -161,12 +168,61 @@ def _retaken(a: list, b: list) -> bool:
         and len(b) > len(a)
 
 
+def find_loops(words: list, max_len: int = 6) -> list:
+    """Intervalles (debut, fin) ou une meme suite de mots revient en boucle."""
+    tokens, owner = [], []
+    for index, word in enumerate(words):
+        for token in normalize(word["text"]):
+            tokens.append(token)
+            owner.append(index)
+    spans = []
+    for n in range(LOOP_MIN_WORDS, max_len + 1):
+        limit = 2 * n + LOOP_SLACK_WORDS
+        positions = {}
+        for i in range(len(tokens) - n + 1):
+            gram = tuple(tokens[i:i + n])
+            if len(set(gram)) >= LOOP_MIN_WORDS:       # pas "ha ha ha"
+                positions.setdefault(gram, []).append(i)
+        for found in positions.values():
+            chain = [found[0]]
+            for pos in found[1:] + [None]:
+                if pos is not None and pos - chain[-1] < n:
+                    continue                           # chevauche l'occurrence precedente
+                if pos is not None and pos - chain[-1] <= limit:
+                    chain.append(pos)
+                    continue
+                if len(chain) >= LOOP_MIN_REPEATS:
+                    spans.append((words[owner[chain[0]]]["start"],
+                                  words[owner[chain[-1] + n - 1]]["end"]))
+                if pos is not None:
+                    chain = [pos]
+    spans.sort()
+    merged = []
+    for start, end in spans:
+        if merged and start <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+        else:
+            merged.append((start, end))
+    return merged
+
+
+def _in_loop(clause: list, loops: list) -> bool:
+    """La proposition est pour moitie (au moins) dans une boucle."""
+    start, end = clause[0]["start"], clause[-1]["end"]
+    inside = sum(max(0.0, min(end, b) - max(start, a)) for a, b in loops)
+    return inside >= 0.5 * max(end - start, 1e-6)
+
+
 def apply_rules(clauses: list) -> list:
-    """Retourne, pour chaque proposition, la regle qui la coupe (ou None)."""
+    """Retourne, pour chaque proposition, la regle qui la coupe (ou None ;
+    DOUBT_RULE signale une transcription douteuse, gardee)."""
     rules = [None] * len(clauses)
     norm = [normalize(_text(c)) for c in clauses]
+    loops = find_loops([w for c in clauses for w in c])
     for i, clause in enumerate(clauses):
-        if _is_filler(clause):
+        if loops and _in_loop(clause, loops):
+            rules[i] = DOUBT_RULE
+        elif _is_filler(clause):
             rules[i] = "hesitation"
         elif _is_restart(clause):
             rules[i] = "faux_depart"

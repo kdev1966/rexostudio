@@ -503,13 +503,14 @@ const TYPE_LABELS = {
   contenu: 'contenu', introduction: 'introduction', conclusion: 'conclusion',
   illustration: 'illustration', digression: 'digression', hors_sujet: 'hors sujet',
   remplissage: 'remplissage', hesitation: 'hésitation', faux_depart: 'faux départ',
-  repetition: 'répétition',
+  repetition: 'répétition', boucle: 'transcription douteuse',
 };
 
 function decisionLabel(d) {
   if (!d) return '';
   const t = TYPE_LABELS[d.type] || d.type || '';
   if (d.by_user) return 'choix manuel';
+  if (d.doubt) return 'à vérifier : transcription douteuse';
   if (d.suggested) return 'suggestion IA : ' + t;
   if (d.by === 'regle') return 'règle : ' + t;
   if (d.by === 'ia') return 'IA : ' + t;
@@ -524,15 +525,16 @@ function renderCandidates() {
   const decisions = {};
   ((S.project && S.project.results && S.project.results.plan_decisions) || [])
     .forEach((d) => { decisions[d.id] = d; });
-  const pending = Object.values(decisions).filter((d) => d.suggested && d.keep && !d.by_user).length;
-  $('#suggest-count').textContent = pending + ' suggestion' + (pending > 1 ? 's' : '') + ' à valider';
+  const toCheck = (d) => d && (d.suggested || d.doubt) && d.keep && !d.by_user;
+  const pending = Object.values(decisions).filter(toCheck).length;
+  $('#suggest-count').textContent = pending + ' passage' + (pending > 1 ? 's' : '') + ' à valider';
   $('#suggest-count').classList.toggle('hidden', !pending);
   if (pending) $('#cand-details').open = true;
   const tbody = $('#cand-table tbody');
   tbody.innerHTML = S.candidates.map((c) => {
     const d = decisions[c.id];
     const kept = d ? d.keep : true;
-    const suggest = d && d.suggested && d.keep && !d.by_user;
+    const suggest = toCheck(d);
     const cls = (kept ? '' : 'cut') + (suggest ? ' suggest' : '');
     const text = c.kind === 'visuel' ? '<em class="muted">plan sans parole</em>'
                                      : escapeHtml((c.text || '').slice(0, 160));

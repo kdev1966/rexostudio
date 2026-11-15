@@ -257,8 +257,10 @@ def ai_cut_plan(job, candidates: list, duration: float, transcript: str = "",
             continue
         job.set_progress(0.1 + 0.75 * (number - 1) / len(batches),
                          "Classement des passages par l'IA (%d/%d)" % (number, len(batches)))
+        # Une boucle de transcription n'est ni classee par l'IA (le texte est
+        # invente) ni annoncee comme coupee : elle est gardee et signalee.
         ruled = [(c["id"], cutting.RULE_LABELS.get(c["rule"], c["rule"]))
-                 for c in batch if c.get("rule")]
+                 for c in batch if c.get("rule") and c["rule"] != cutting.DOUBT_RULE]
         system = prompts.SYS_CUT
         user = prompts.build_decision_prompt(prompts.numbered_passages(batch), todo, ruled,
                                              duration, instruction, style)
@@ -308,10 +310,14 @@ def ai_cut_plan(job, candidates: list, duration: float, transcript: str = "",
     rows = []
     for cand in candidates:
         d = decisions[cand["id"]]
-        keep = d["type"] in cutting.KEEP_TYPES
+        doubt = d["type"] == cutting.DOUBT_RULE
+        keep = d["type"] in cutting.KEEP_TYPES or doubt
         # Mode suggestions : la coupe de l'IA est proposee, pas appliquee.
         suggested = suggest_only and d["by"] == "ia" and not keep
-        rows.append(dict(id=cand["id"], keep=keep or suggested, suggested=suggested, **d))
+        row = dict(id=cand["id"], keep=keep or suggested, suggested=suggested, **d)
+        if doubt:
+            row["doubt"] = True
+        rows.append(row)
 
     job.set_progress(0.9, "Application du plan de coupe")
     result = plan_from_decisions(candidates, rows, duration)
@@ -381,6 +387,11 @@ def _cut_summary(candidates, decisions, keep, segments, duration) -> str:
     if suggested:
         text += (" %d coupe%s proposee%s par l'IA, a valider."
                  % (suggested, "s" if suggested > 1 else "", "s" if suggested > 1 else ""))
+    doubts = sum(1 for c in candidates if decisions[c["id"]].get("doubt")
+                 and keep[c["id"]] and not decisions[c["id"]].get("by_user"))
+    if doubts:
+        text += (" %d passage%s a la transcription douteuse (boucle), garde%s : a verifier."
+                 % (doubts, "s" if doubts > 1 else "", "s" if doubts > 1 else ""))
     manual = sum(1 for c in candidates if decisions[c["id"]].get("by_user"))
     if manual:
         text += " %d choix manuel%s." % (manual, "s" if manual > 1 else "")
