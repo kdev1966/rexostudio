@@ -9,7 +9,7 @@ import shutil
 import time
 import wave
 
-from . import config, tools
+from . import config, cutting, tools
 
 _SRT_TIME = re.compile(
     r"(\d{2}):(\d{2}):(\d{2})[,.](\d{1,3})\s*-->\s*(\d{2}):(\d{2}):(\d{2})[,.](\d{1,3})")
@@ -327,7 +327,9 @@ def transcribe(source: str, model: str = None, language: str = "auto",
         os.remove(audio)
 
     words = clean_words(segments)
-    clean = build_lines(words)
+    # Sous-titres et texte sans les boucles inventees par whisper ; les mots
+    # restent (le plan de coupe les montre, signales "a verifier").
+    clean = build_lines(drop_loops(words))
 
     write_srt(clean, srt_path)
     write_vtt(clean, base + ".vtt")
@@ -430,11 +432,22 @@ MIN_FRAGMENT_SECONDS = 0.4
 MIN_FRAGMENT_RATIO = 0.5
 
 
+def drop_loops(words: list) -> list:
+    """Mots hors des boucles de transcription (cutting.find_loops) : le
+    texte invente n'apparait pas dans les sous-titres."""
+    loops = cutting.find_loops(words)
+    if not loops:
+        return list(words)
+    return [w for w in words
+            if not any(a <= (w["start"] + w["end"]) / 2.0 <= b for a, b in loops)]
+
+
 def remap_words(words: list, plan: list) -> list:
     """Sous-titres du montage reconstruits MOT PAR MOT : seuls les mots
     gardes a l'image apparaissent (une ligne a cheval sur une coupe ne
     garde plus le mot coupe, ex. "bref,"). Un mot est garde si au moins la
     moitie de sa duree est dans un segment du plan."""
+    words = drop_loops(words)
     kept, offset = [], 0.0
     for cut in plan:
         cut_start, cut_end = float(cut["start"]), float(cut["end"])

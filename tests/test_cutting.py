@@ -176,6 +176,16 @@ class LoopTest(unittest.TestCase):
         self.assertNotIn("مرحبا", flagged)
         self.assertNotIn("الجاية", flagged)
 
+    def test_loop_text_is_not_in_subtitles(self):
+        words = loop_words()
+        subs = " ".join(s["text"] for s in transcribe.remap_words(
+            words, [{"start": 0.0, "end": words[-1]["end"]}]))
+        self.assertNotIn("تتعلم بشكل", subs)
+        self.assertIn("مرحبا", subs)
+        self.assertIn("الجاية", subs)
+        lines = transcribe.build_lines(transcribe.drop_loops(words))
+        self.assertNotIn("تتعلم بشكل", " ".join(s["text"] for s in lines))
+
     def test_real_speech_has_no_loop(self):
         words, _ = load_cafe()
         self.assertEqual(cutting.find_loops(words), [])
