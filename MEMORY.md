@@ -155,6 +155,19 @@ Mesure, vidéo `cafe_filtre.mp4` 47,6 s, sans consigne : **32,5 s gardées**, fa
 4 hésitations (règles) + digression (IA) coupés, plan en **25 s au lieu de 87 s**.
 Test de non-régression : `tests/fixtures/cafe_words.json` (vrais mots de cette vidéo).
 
+### Essais sur de vraies vidéos (15/11/2026, iMac)
+
+- `film001.mp4` (23 s, vertical) : **en anglais** (réaction à une bande-annonce Avengers),
+  pas en français. Langue forcée « fr » → charabia ; en « auto » → anglais détecté.
+  Dialogue sous musique : transcription pauvre. Type de contenu hors cible (pas de parole « montable »).
+- `film002.mp4` (7 min, arabe tunisien + anglais/français) : transcription `base` très
+  approximative ; plan de coupe en **230 s** (l'arabe coûte beaucoup de tokens) ;
+  au moins une erreur nette (annonce du sujet coupée comme « digression »).
+  → Pour l'arabe dialectal : tester whisper `small`/`medium`, et/ou un mode de coupe prudent.
+- Bugs trouvés et corrigés grâce à ces vidéos : réponse IA tronquée (plafond de tokens),
+  passages de 351 s (pas de ponctuation en arabe → passages bornés à 12 s), ponctuation arabe,
+  plans visuels coupés en « digression », VAD qui jette la voix sous la musique.
+
 ### À faire (par ordre de priorité)
 
 1. ~~Déployer sur l'iMac + parcours complet~~ ✅ fait (par l'API) : upload, analyse 1,6 s,
