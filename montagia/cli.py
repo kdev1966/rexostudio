@@ -53,6 +53,7 @@ class Assistant(object):
         self.cut_plan = []
         self.duration = 0.0
         self.scenes = []
+        self.language = ""
 
     def _build_candidates(self):
         return pipeline.build_candidates(self.segments, duration=self.duration,
@@ -90,6 +91,7 @@ class Assistant(object):
                                        workdir=os.path.join(config.CACHE_DIR, "audio"))
         self.segments = result["segments"]
         self.words = result.get("words") or []
+        self.language = result.get("language") or ""
         self.transcript = transcribe.transcript_text(self.segments)
         self.candidates = self._build_candidates()
         ok("%d segments en %.1f s (langue: %s)" % (
@@ -101,9 +103,12 @@ class Assistant(object):
         self.ensure_analyzed()
         self.ensure_transcribed()
         t0 = time.time()
+        # Meme regle que l'interface : dans ces langues, les coupes de l'IA
+        # sont seulement proposees (listees ci-dessous), pas appliquees.
+        suggest = self.language in config.SUGGEST_ONLY_LANGUAGES
         result = pipeline.ai_cut_plan(
             _FakeJob(), self.candidates, self.duration, self.transcript,
-            instruction, style)
+            instruction, style, suggest_only=suggest)
         self.cut_plan = result["segments"]
         kept = result["kept_duration"]
         ok("%d segments retenus - %.1f s sur %.1f s (%.0f%%) en %.1f s" % (
@@ -114,7 +119,15 @@ class Assistant(object):
             say("    %6.1f -> %6.1f  %s" % (seg["start"], seg["end"],
                                            seg.get("reason", "")[:60]))
         if result.get("rationale"):
-            say("    %s%s%s" % (DIM, result["rationale"][:220], RESET))
+            say("    %s%s%s" % (DIM, result["rationale"], RESET))
+        texts = {c["id"]: c for c in self.candidates}
+        for d in result.get("decisions", []):
+            if d.get("keep") and (d.get("suggested") or d.get("doubt")):
+                cand = texts.get(d["id"], {})
+                why = "transcription douteuse" if d.get("doubt") else "suggestion IA : " + d["type"]
+                say("    %sa verifier%s %s %6.1f s  %s - %s" % (
+                    ORANGE, RESET, d["id"], cand.get("start", 0.0), why,
+                    (cand.get("text") or "")[:50]))
         return result
 
     def render(self, fmt="16:9", encoder=None, quality="standard", subtitles=""):
