@@ -128,6 +128,42 @@ class ServerTest(unittest.TestCase):
         self.assertEqual(status, 403)
         popen.assert_not_called()
 
+    def test_filmcraft_route_runs_pipeline_job(self):
+        proj = project.STORE.create("/tmp/inexistant.mp4", "clip.mp4")
+        proj.plan = [{"start": 0, "end": 2}]
+        calls = []
+
+        def fake_job(job, source, segments, out_path, **kwargs):
+            calls.append((source, segments, out_path, kwargs.get("profile")))
+            return {"path": out_path, "valid": True}
+
+        with mock.patch.object(app.pipeline, "build_filmcraft_job", side_effect=fake_job):
+            status, body = self.request("POST", "/api/filmcraft",
+                                        {"project_id": proj.id, "profile": "9:16"})
+            job_id = json.loads(body)["job_id"]
+            for _ in range(50):
+                if MANAGER.get(job_id).status == "done":
+                    break
+                time.sleep(0.02)
+        self.assertEqual(status, 200)
+        self.assertEqual(MANAGER.get(job_id).status, "done")
+        source, segments, out_path, profile = calls[0]
+        self.assertEqual((source, segments, profile), ("/tmp/inexistant.mp4", proj.plan, "9:16"))
+        self.assertTrue(out_path.endswith("clip.fcproj"))
+        self.assertIn(out_path, proj.exports)
+
+    def test_filmcraft_route_requires_a_plan(self):
+        proj = project.STORE.create("/tmp/inexistant.mp4", "vide.mp4")
+        status, _ = self.request("POST", "/api/filmcraft", {"project_id": proj.id})
+        self.assertEqual(status, 400)
+
+    def test_open_filmcraft_only_fcproj_in_workspace(self):
+        with mock.patch.object(app.filmcraft, "open_project") as opener:
+            status, _ = self.request("POST", "/api/open",
+                                     {"target": "filmcraft", "path": "/etc/hosts"})
+        self.assertEqual(status, 403)
+        opener.assert_not_called()
+
     def test_foreign_upload_is_rejected(self):
         status, _ = self.request(
             "POST", "/api/upload?name=a.mp4", headers={
