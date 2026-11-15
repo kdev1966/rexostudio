@@ -21,7 +21,7 @@ MAX_CANDIDATES = 60
 
 # Version des prompts : incrémenter quand un prompt change, pour invalider
 # le cache disque des résultats IA (sinon on ressort l'ancienne réponse).
-PROMPT_VERSION = "v4"   # v4 : en cas de doute = contenu ; categories des regles retirees
+PROMPT_VERSION = "v6"   # v6 : instructions constantes en tete (cache Ollama), JSON compact
 
 # --------------------------------------------------------------------------
 # Schemas JSON
@@ -213,31 +213,45 @@ def numbered_passages(candidates: list, preview: int = 220) -> str:
     return "\n".join(lines)
 
 
-def build_decision_prompt(todo: list, ruled: list, duration: float,
+# Message systeme du plan de coupe : CONSTANT (identique pour toutes les
+# videos et tous les lots). Ollama garde en cache le debut du dernier prompt :
+# place en tete, ce bloc d'instructions n'est lu qu'une fois, puis reutilise
+# (le prefill coute ~23 tokens/s sur l'iMac 2015).
+SYS_CUT = (
+    SYS_EDITOR + "\n\n"
+    "Tu classes chaque passage numerote d'une transcription dans une categorie :\n"
+    "- contenu : fait avancer le propos (information, etape, explication, recit)\n"
+    "- introduction / conclusion : ouverture ou cloture de la video\n"
+    "- digression : aparte qui QUITTE le sujet puis y revient (ex. une anecdote "
+    "personnelle au milieu d'une recette)\n"
+    "- hors_sujet : ne concerne pas du tout le sujet de la video\n"
+    "- illustration : [plan sans parole] qui sert le propos\n"
+    "- remplissage : [plan sans parole] inutile\n\n"
+    "Important : un recit, une explication ou une demonstration qui se suit ne "
+    "contient PAS de digression, chaque passage sert l'ensemble. Ne coupe que ce "
+    "qui s'ecarte nettement du sujet. En cas de doute : contenu. La transcription "
+    "peut etre dans une autre langue (arabe, anglais...) : classe-la de la meme facon.\n"
+    "Reponds avec le schema JSON demande, en JSON COMPACT sur une seule ligne "
+    "(aucun espace ni retour a la ligne)."
+)
+
+
+def build_decision_prompt(passages: str, todo: list, ruled: list, duration: float,
                           instruction: str = "", style: str = "") -> str:
-    """Demande une categorie pour chaque passage de todo (ids)."""
+    """Message utilisateur : les passages du lot, puis les ids a classer."""
     ruled_txt = ", ".join("%s (%s)" % (cid, why) for cid, why in ruled) or "aucun"
     return (
-        "Video de %.0f secondes, montage de type \"%s\". La transcription ci-dessus est "
-        "decoupee en passages numerotes.\n\n"
-        "Classe CHAQUE passage de cette liste, dans l'ordre : %s\n\n"
-        "Categories :\n"
-        "- contenu : fait avancer le propos (information, etape, explication, recit)\n"
-        "- introduction / conclusion : ouverture ou cloture de la video\n"
-        "- digression : aparte qui QUITTE le sujet puis y revient (ex. une anecdote "
-        "personnelle au milieu d'une recette)\n"
-        "- hors_sujet : ne concerne pas du tout le sujet de la video\n"
-        "- illustration : [plan sans parole] qui sert le propos\n"
-        "- remplissage : [plan sans parole] inutile\n\n"
-        "Important : un recit, une explication ou une demonstration qui se suit ne "
-        "contient PAS de digression, chaque passage sert l'ensemble. Ne coupe que ce "
-        "qui s'ecarte nettement du sujet. En cas de doute : contenu.\n"
+        "Video de %.0f secondes, montage de type \"%s\". Passages numerotes :\n\n"
+        "%s\n\n"
         "Deja coupes automatiquement (hesitations, reprises ; ne pas classer) : %s.\n"
         "%s"
-        "Reponds avec le schema JSON demande."
+        "Rappel : un recit ou une explication qui se suit = contenu ; en cas de doute : "
+        "contenu.\n"
+        "Classe CHAQUE passage de cette liste, dans l'ordre : %s"
     ) % (
-        duration, style or "standard", ", ".join(todo), ruled_txt,
+        duration, style or "standard", passages, ruled_txt,
         ("Consigne de l'utilisateur (prioritaire) : %s\n" % instruction) if instruction else "",
+        ", ".join(todo),
     )
 
 

@@ -259,8 +259,9 @@ def ai_cut_plan(job, candidates: list, duration: float, transcript: str = "",
                          "Classement des passages par l'IA (%d/%d)" % (number, len(batches)))
         ruled = [(c["id"], cutting.RULE_LABELS.get(c["rule"], c["rule"]))
                  for c in batch if c.get("rule")]
-        system = prompts.system_message(prompts.numbered_passages(batch), prompts.SYS_EDITOR)
-        user = prompts.build_decision_prompt(todo, ruled, duration, instruction, style)
+        system = prompts.SYS_CUT
+        user = prompts.build_decision_prompt(prompts.numbered_passages(batch), todo, ruled,
+                                             duration, instruction, style)
         payload = {"passages": [[c["id"], c["kind"], c.get("text", ""), c.get("rule")]
                                 for c in batch],
                    "duration": duration, "instruction": instruction, "style": style,

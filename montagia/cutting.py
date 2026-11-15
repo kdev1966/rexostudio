@@ -34,7 +34,9 @@ FILLERS = {"euh", "heu", "hum", "hmm", "bah", "ben", "eh", "alors", "bref",
            "bon", "enfin", "donc", "voila", "quoi", "genre"}
 RESTART_PHRASES = ("je recommence", "on recommence", "je reprends", "on reprend",
                    "je refais", "on refait", "reprenons", "je me suis trompe",
-                   "je me suis trompee", "on la refait", "je la refais")
+                   "je me suis trompee", "on la refait", "je la refais",
+                   # tunisien : "je recommence", "on recommence"
+                   "\u0646\u0639\u0627\u0648\u062f", "\u0646\u0639\u0627\u0648\u062f\u0648")
 RESTART_ALONE = {("attendez",), ("attends",), ("pardon",), ("excusez", "moi"),
                  ("non", "non")}
 
@@ -44,10 +46,13 @@ RULE_LABELS = {"hesitation": "hesitation", "faux_depart": "faux depart",
 
 
 def normalize(text: str) -> list:
-    """Mots en minuscules, sans accents ni ponctuation."""
+    """Mots en minuscules, sans accents, voyelles courtes arabes ni
+    ponctuation - pour TOUTES les ecritures. (Une premiere version ne gardait
+    que [a-z0-9] : un texte arabe se reduisait a ses mots anglais, et deux
+    phrases differentes passaient pour une reprise.)"""
     text = unicodedata.normalize("NFKD", text.lower())
     text = "".join(ch for ch in text if not unicodedata.combining(ch))
-    return re.findall(r"[a-z0-9]+", text)
+    return re.findall(r"[^\W_]+", text)
 
 
 def _text(words: list) -> str:
