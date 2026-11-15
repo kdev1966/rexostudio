@@ -135,11 +135,16 @@ def resolve_selection(selection: list, candidates: list) -> list:
     """Recalcule les vrais timecodes a partir des identifiants renvoyes par l'IA."""
     by_id = {c["id"]: c for c in candidates}
     resolved = []
+    seen = set()
     for item in selection or []:
+        if not isinstance(item, dict):
+            continue
         cid = str(item.get("id", "")).strip().upper()
         cand = by_id.get(cid)
-        if not cand:
+        # Le modele 3B repete parfois un identifiant : on ne le garde qu'une fois.
+        if not cand or cid in seen:
             continue
+        seen.add(cid)
         start = float(cand["start"])
         end = float(cand["end"])
         try:
@@ -298,12 +303,24 @@ def ai_chat(job, question: str, transcript: str, duration: float):
 # Etape 4 : rendu et export
 # --------------------------------------------------------------------------
 
+def prepare_plan(source: str, segments: list) -> list:
+    """Plan de coupe normalise (tri, bornes, fusion des chevauchements)."""
+    plan = edit.normalize_segments(segments, media.probe(source)["duration"])
+    if not plan:
+        raise RuntimeError("Plan de coupe vide : rien a exporter.")
+    return plan
+
+
 def render_video(job, source: str, segments: list, out_path: str, fmt: str = "16:9",
                  encoder: str = None, quality: str = "standard",
                  subtitles: str = "", burn_subtitles: bool = False,
                  focus_x: float = 0.5, normalize_audio: bool = False,
                  subtitle_segments: list = None) -> dict:
     job.set_progress(0.02, "Preparation du rendu")
+    # Plan normalise UNE fois : le rendu et les sous-titres recales doivent
+    # utiliser exactement la meme timeline (sinon decalage des sous-titres
+    # des qu'un segment est en double ou chevauche le precedent).
+    segments = prepare_plan(source, segments)
 
     # Les sous-titres doivent suivre la timeline du montage, pas celle de la
     # source : on les regenere sur les timecodes re-calcules.
@@ -331,6 +348,7 @@ def build_kdenlive_job(job, source: str, segments: list, out_path: str,
                         title: str = "Projet MontageIA", notes: str = "",
                         subtitle_segments: list = None) -> dict:
     job.set_progress(0.3, "Ecriture du projet Kdenlive")
+    segments = prepare_plan(source, segments)
     # La piste de sous-titres doit suivre la timeline du montage.
     if subtitle_segments:
         remapped = transcribe.remap_segments(subtitle_segments, segments)

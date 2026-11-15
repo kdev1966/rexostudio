@@ -24,6 +24,20 @@ from montagia.jobs import MANAGER  # noqa: E402
 
 MAX_BODY = 8 * 1024 ** 3
 
+_FINAL_STATUSES = ("done", "error", "cancelled")
+
+
+def _final_event(summary: dict):
+    """Evenement terminal equivalent a l'etat d'un job deja fini, sinon None."""
+    status = summary.get("status")
+    if status == "done":
+        return {"type": "done", "result": summary.get("result"), "status": status}
+    if status == "error":
+        return {"type": "error", "error": summary.get("error"), "status": status}
+    if status == "cancelled":
+        return {"type": "status", "status": status}
+    return None
+
 
 class StudioHandler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"       # necessaire pour le streaming SSE
@@ -56,6 +70,48 @@ class StudioHandler(BaseHTTPRequestHandler):
     def _error(self, message, code=400):
         self._json({"error": str(message)}, code)
 
+    def _request_allowed(self, route: str = "", post: bool = False) -> bool:
+        """Refuse les requetes envoyees par un autre site (CSRF) ou via DNS rebinding.
+
+        Le serveur ecoute sur 127.0.0.1, mais n'importe quelle page ouverte dans
+        le navigateur peut y envoyer des requetes : sans ce controle, un site
+        externe pouvait lancer /api/open ou remplir le disque via /api/upload.
+        """
+        port = self.server.server_address[1]
+        hosts = {"127.0.0.1:%d" % port, "localhost:%d" % port}
+        if (self.headers.get("Host") or "") not in hosts:
+            return False
+        origin = self.headers.get("Origin")
+        if origin is not None and origin not in {"http://" + h for h in hosts}:
+            return False
+        if post and route != "/api/upload":
+            # application/json impose une requete de pre-verification (CORS) au
+            # navigateur : un formulaire d'un autre site ne peut pas l'envoyer.
+            ctype = (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+            if ctype != "application/json":
+                return False
+        return True
+
+    def _reject(self):
+        self.close_connection = True       # le corps eventuel n'a pas ete lu
+        return self._error("Requete refusee (origine non autorisee)", 403)
+
+    def _start_sse(self):
+        """En-tetes d'un flux SSE. La connexion est fermee a la fin du flux :
+        sans Content-Length, c'est le seul moyen pour le client de savoir que
+        la reponse est terminee (sinon fetch/EventSource attendent sans fin)."""
+        self.close_connection = True
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "close")
+        self.end_headers()
+
+    def _sse(self, data):
+        self.wfile.write(("data: %s\n\n" % json.dumps(
+            data, ensure_ascii=False)).encode("utf-8"))
+        self.wfile.flush()
+
     def _body_json(self):
         length = int(self.headers.get("Content-Length") or 0)
         if length <= 0:
@@ -71,6 +127,8 @@ class StudioHandler(BaseHTTPRequestHandler):
         parsed = urllib.parse.urlparse(self.path)
         route = parsed.path
         query = urllib.parse.parse_qs(parsed.query)
+        if not self._request_allowed(route):
+            return self._reject()
         try:
             if route == "/":
                 return self._serve_static("index.html")
@@ -105,6 +163,8 @@ class StudioHandler(BaseHTTPRequestHandler):
         parsed = urllib.parse.urlparse(self.path)
         route = parsed.path
         query = urllib.parse.parse_qs(parsed.query)
+        if not self._request_allowed(route, post=True):
+            return self._reject()
         try:
             if route == "/api/upload":
                 return self._api_upload(query)
@@ -388,23 +448,17 @@ class StudioHandler(BaseHTTPRequestHandler):
         question = (data.get("question") or "").strip()
         if not question:
             return self._error("Question vide")
-        self.send_response(200)
-        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
-        self.send_header("Cache-Control", "no-cache")
-        self.send_header("Connection", "keep-alive")
-        self.end_headers()
+        self._start_sse()
         try:
             for piece in pipeline.ai_chat(None, question, proj.transcript,
                                          (proj.info or {}).get("duration", 0)):
-                self.wfile.write(("data: %s\n\n" % json.dumps(
-                    {"token": piece}, ensure_ascii=False)).encode("utf-8"))
-                self.wfile.flush()
-            self.wfile.write(b"data: {\"done\": true}\n\n")
-            self.wfile.flush()
+                self._sse({"token": piece})
+            self._sse({"done": True})
+        except (BrokenPipeError, ConnectionResetError):
+            return None
         except Exception as exc:           # noqa: BLE001
-            self.wfile.write(("data: %s\n\n" % json.dumps(
-                {"error": str(exc)}, ensure_ascii=False)).encode("utf-8"))
-            self.wfile.flush()
+            self._sse({"error": str(exc)})
+        return None
 
     def _api_render(self):
         data = self._body_json()
@@ -483,7 +537,9 @@ class StudioHandler(BaseHTTPRequestHandler):
         path = os.path.abspath(data.get("path") or "")
         if not path:
             return self._error("Chemin manquant")
-        if not (tools.is_within(config.WORKSPACE, path) or path.startswith("/Applications")):
+        # is_within et non startswith : "/ApplicationsXYZ" passait le filtre.
+        if not (tools.is_within(config.WORKSPACE, path)
+                or tools.is_within("/Applications", path)):
             return self._error("Acces refuse", 403)
         if target == "kdenlive":
             if not os.path.isdir(config.KDENLIVE_APP):
@@ -510,17 +566,17 @@ class StudioHandler(BaseHTTPRequestHandler):
         job = MANAGER.get(job_id)
         if not job:
             return self._error("Job introuvable", 404)
-        self.send_response(200)
-        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
-        self.send_header("Cache-Control", "no-cache")
-        self.send_header("Connection", "keep-alive")
-        self.end_headers()
+        self._start_sse()
         q = job.subscribe()
         try:
             snapshot = job.summary()
-            self.wfile.write(("data: %s\n\n" % json.dumps(
-                {"type": "snapshot", "job": snapshot}, ensure_ascii=False)).encode("utf-8"))
-            self.wfile.flush()
+            self._sse({"type": "snapshot", "job": snapshot})
+            # Job deja termine avant l'abonnement (analyse d'une video courte :
+            # ~0,3 s) : aucun evenement ne viendra plus, on envoie l'etat final.
+            final = _final_event(snapshot)
+            if final:
+                self._sse(final)
+                return None
             deadline = time.time() + 3600
             while time.time() < deadline:
                 try:
@@ -529,10 +585,12 @@ class StudioHandler(BaseHTTPRequestHandler):
                     self.wfile.write(b": ping\n\n")     # garde la connexion ouverte
                     self.wfile.flush()
                     continue
-                self.wfile.write(("data: %s\n\n" % json.dumps(
-                    event, ensure_ascii=False)).encode("utf-8"))
-                self.wfile.flush()
-                if event.get("type") in ("done", "error", "status"):
+                self._sse(event)
+                # Un evenement "status" n'est terminal que s'il annule le job
+                # ("running" en est un aussi, et ne doit pas couper le flux).
+                if event.get("type") in ("done", "error") or (
+                        event.get("type") == "status"
+                        and event.get("status") in _FINAL_STATUSES):
                     break
         except (BrokenPipeError, ConnectionResetError):
             pass

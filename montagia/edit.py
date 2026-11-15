@@ -52,9 +52,16 @@ def _fmt(value: float) -> str:
 
 
 def normalize_segments(segments: list, duration: float = 0.0) -> list:
-    """Nettoie le plan de coupe : ordre, bornes, chevauchements, minimums."""
+    """Nettoie le plan de coupe : ordre, bornes, chevauchements, minimums.
+
+    Les champs annexes (id, reason...) sont conserves : le meme plan normalise
+    sert au rendu, au recalage des sous-titres et au projet Kdenlive, qui
+    doivent tous partager exactement la meme timeline. Idempotente.
+    """
     clean = []
     for seg in segments or []:
+        if not isinstance(seg, dict):
+            continue
         try:
             start = float(seg.get("start", 0))
             end = float(seg.get("end", 0))
@@ -66,7 +73,7 @@ def normalize_segments(segments: list, duration: float = 0.0) -> list:
             end = duration
         if end - start < 0.15:
             continue
-        clean.append({"start": round(start, 3), "end": round(end, 3)})
+        clean.append(dict(seg, start=round(start, 3), end=round(end, 3)))
     clean.sort(key=lambda s: s["start"])
     merged = []
     for seg in clean:

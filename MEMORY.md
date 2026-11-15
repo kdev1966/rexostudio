@@ -78,6 +78,15 @@ iMac 27" 2015 · i5-5575R **4 cœurs** · 16 Go RAM · Iris Pro 6200 · macOS 12
 6. **Double lancement du job "analyze"** dans `_api_analyze` → corrigé.
 7. **Expression cassée dans `prompts.build_cut_plan_prompt`** → bloc réécrit.
 8. **`config.VIDEO_EXTENSIONS and ""`** (code mort) dans `_api_render` → corrigé.
+9. **Sous-titres décalés si le plan a des doublons/chevauchements** → le plan est
+   normalisé UNE fois (`pipeline.prepare_plan`) puis partagé par rendu, remappage et
+   Kdenlive ; `resolve_selection` ignore les identifiants répétés.
+10. **Flux SSE jamais terminés** (chat + événements de job) → `Connection: close` ;
+    un job déjà fini à l'abonnement renvoie directement son état final.
+11. **Requêtes d'autres sites acceptées** (`/api/open`, `/api/upload`) → contrôle
+    `Host` / `Origin` + `Content-Type: application/json` obligatoire sur les POST.
+
+Tests : `python3 -m unittest discover -s tests` (stdlib, sans Ollama ni ffmpeg).
 
 ---
 

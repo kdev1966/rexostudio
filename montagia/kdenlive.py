@@ -12,7 +12,7 @@ import time
 import uuid
 from xml.sax.saxutils import escape
 
-from . import config, media, tools
+from . import config, edit, media, tools
 
 PROFILES = {
     "16:9": {
@@ -55,7 +55,8 @@ def build_project(source: str, segments: list, out_path: str,
                   notes: str = "") -> str:
     """Ecrit un projet .kdenlive."""
     info = media.probe(source)
-    segments = [s for s in (segments or []) if float(s["end"]) > float(s["start"])]
+    # Meme normalisation que le rendu : pas de clip en double ni de chevauchement.
+    segments = edit.normalize_segments(segments, info.get("duration") or 0.0)
     if not segments:
         raise RuntimeError("Aucun segment : rien a mettre dans le projet.")
 
