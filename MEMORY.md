@@ -168,6 +168,16 @@ Test de non-régression : `tests/fixtures/cafe_words.json` (vrais mots de cette 
   passages de 351 s (pas de ponctuation en arabe → passages bornés à 12 s), ponctuation arabe,
   plans visuels coupés en « digression », VAD qui jette la voix sous la musique.
 
+### Arabe tunisien (cible confirmée par l'utilisateur, 15/11/2026)
+
+- Transcription : profil `config.WHISPER_PROFILES["ar"]` = `small` + `-mc 0` (comparatif dans
+  `config.py`). film002 (7 min) : 3 min 24 s de transcription, texte nettement plus fidèle.
+- Plan de coupe : 179 s pour 7 min (335 s avant le prompt v6). L'IA reste peu fiable en
+  tunisien (annonce du sujet coupée comme « digression ») ; whisper `small` hallucine parfois
+  une boucle en arabe standard (film002, 359-380 s) que les règles coupent comme « répétition ».
+  → Décision produit en attente : mode « suggestions » (coupes IA proposées, non appliquées) ?
+- Évaluer tout changement de prompt avec `scripts/eval_plan.py` (2 références FR).
+
 ### À faire (par ordre de priorité)
 
 1. ~~Déployer sur l'iMac + parcours complet~~ ✅ fait (par l'API) : upload, analyse 1,6 s,
