@@ -19,6 +19,10 @@ CONTEXT_CHARS = 6000
 CANDIDATE_PREVIEW = 140
 MAX_CANDIDATES = 60
 
+# Version des prompts : incrémenter quand un prompt change, pour invalider
+# le cache disque des résultats IA (sinon on ressort l'ancienne réponse).
+PROMPT_VERSION = "v1"
+
 # --------------------------------------------------------------------------
 # Schemas JSON
 # --------------------------------------------------------------------------

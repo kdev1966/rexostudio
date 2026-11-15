@@ -16,8 +16,11 @@ AI_CACHE_DIR = os.path.join(config.CACHE_DIR, "ai")
 # --------------------------------------------------------------------------
 
 def _cache_key(task: str, payload: dict) -> str:
+    # La version des prompts entre dans la cle : changer un prompt invalide
+    # les résultats mis en cache (sinon on ressortait l'ancienne reponse).
     blob = json.dumps(payload, sort_keys=True, ensure_ascii=False)
-    return hashlib.sha1(("%s|%s" % (task, blob)).encode("utf-8")).hexdigest()
+    return hashlib.sha1(
+        ("%s|%s|%s" % (task, prompts.PROMPT_VERSION, blob)).encode("utf-8")).hexdigest()
 
 
 def cached_ai(task: str, payload: dict, compute):
