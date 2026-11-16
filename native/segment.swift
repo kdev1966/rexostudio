@@ -10,6 +10,14 @@
 //   blur     personnes nettes, fond flou (JPEG)
 //   orient   copie redressee (orientation EXIF appliquee) et reduite a --max px
 //            de grand cote (JPEG) : l'image que voit Vision, a donner a PhotoCraft
+//   uni      personnes sur une couleur unie (--color r,g,b de 0 a 255)
+//   style    rendu de couleur sur toute l'image, sans detourage (--name : chaud,
+//            froid, vintage-chaud, noir-et-blanc, lumineux, contraste, doux)
+//   crop     recadrage au format --ratio L:H (4:5, 9:16, 1:1, 16:9), le plus grand
+//            possible, centre sur les personnes trouvees par Vision
+//
+// Pour style et crop, la sortie est en PNG si son nom finit par .png (la
+// transparence d'un detourage est gardee), en JPEG sinon.
 //
 // --add-mask : la transparence d'un PNG detoure ailleurs (PhotoCraft, Selection
 // d'objet dans un cadre) est ajoutee au masque des personnes. Vision trouve les
@@ -46,12 +54,12 @@ func atOrigin(_ image: CIImage) -> CIImage {
 
 let args = CommandLine.arguments
 guard args.count >= 4 else {
-    fail("usage : rexo-segment cutout|mask|bw|blur|orient <entree> <sortie> [options]")
+    fail("usage : rexo-segment cutout|mask|bw|blur|uni|style|crop|orient <entree> <sortie> [options]")
 }
 let effect = args[1]
 let input = URL(fileURLWithPath: args[2])
 let output = URL(fileURLWithPath: args[3])
-guard ["cutout", "mask", "bw", "blur", "orient"].contains(effect) else {
+guard ["cutout", "mask", "bw", "blur", "uni", "style", "crop", "orient"].contains(effect) else {
     fail("effet inconnu : \(effect)")
 }
 var quality = VNGeneratePersonSegmentationRequest.QualityLevel.accurate
@@ -76,6 +84,8 @@ let context = CIContext(options: [.workingColorSpace: srgb])
 let jpegQuality = CIImageRepresentationOption(
     rawValue: kCGImageDestinationLossyCompressionQuality as String)
 
+let pngOutput = output.pathExtension.lowercased() == "png"
+
 func finish(_ result: CIImage, png: Bool, coverage: Double) -> Never {
     do {
         try FileManager.default.createDirectory(at: output.deletingLastPathComponent(),
@@ -92,6 +102,7 @@ func finish(_ result: CIImage, png: Bool, coverage: Double) -> Never {
     }
     let info: [String: Any] = [
         "ok": true, "width": Int(extent.width), "height": Int(extent.height),
+        "out_width": Int(result.extent.width), "out_height": Int(result.extent.height),
         "coverage": NSDecimalNumber(string: String(format: "%.3f", coverage)),
         "ms": Int(Date().timeIntervalSince(start) * 1000)]
     print(String(data: try! JSONSerialization.data(withJSONObject: info), encoding: .utf8)!)
@@ -112,6 +123,51 @@ if effect == "orient" {
                                            height: floor(result.extent.height)))
     }
     finish(result, png: false, coverage: 0)
+}
+
+// Rendu de couleur sur toute l'image (pas de detourage) ; l'alpha est garde
+if effect == "style" {
+    let name = option("--name") ?? "chaud"
+    var r = image
+    func warm(_ img: CIImage, _ kelvin: Double) -> CIImage {
+        // Neutre plus froid que la cible = image rechauffee, et inversement
+        img.applyingFilter("CITemperatureAndTint", parameters: [
+            "inputNeutral": CIVector(x: 6500, y: 0),
+            "inputTargetNeutral": CIVector(x: CGFloat(kelvin), y: 0)])
+    }
+    switch name {
+    case "chaud":
+        r = warm(r, 7600).applyingFilter("CIColorControls", parameters: [
+            kCIInputSaturationKey: 1.06, kCIInputContrastKey: 1.03])
+    case "froid":
+        r = warm(r, 5400).applyingFilter("CIColorControls", parameters: [
+            kCIInputSaturationKey: 0.95])
+    case "vintage-chaud":
+        r = warm(r, 8000).applyingFilter("CIPhotoEffectTransfer")
+            .applyingFilter("CIColorControls", parameters: [
+                kCIInputSaturationKey: 0.85, kCIInputContrastKey: 0.92,
+                kCIInputBrightnessKey: 0.02])
+            .applyingFilter("CIVignette", parameters: [
+                kCIInputIntensityKey: 0.7, kCIInputRadiusKey: 1.6])
+    case "noir-et-blanc":
+        r = r.applyingFilter("CIPhotoEffectMono")
+    case "lumineux":
+        r = r.applyingFilter("CIHighlightShadowAdjust", parameters: [
+            "inputShadowAmount": 0.45, "inputHighlightAmount": 0.95])
+            .applyingFilter("CIColorControls", parameters: [kCIInputBrightnessKey: 0.04])
+    case "contraste":
+        r = r.applyingFilter("CIColorControls", parameters: [
+            kCIInputContrastKey: 1.15, kCIInputSaturationKey: 1.08])
+    case "doux":
+        r = r.applyingFilter("CIColorControls", parameters: [
+            kCIInputContrastKey: 0.9, kCIInputSaturationKey: 0.92, kCIInputBrightnessKey: 0.02])
+            .applyingFilter("CIBloom", parameters: [
+                kCIInputRadiusKey: Double(max(extent.width, extent.height)) / 300.0,
+                kCIInputIntensityKey: 0.35])
+    default:
+        fail("style inconnu : \(name)")
+    }
+    finish(r.cropped(to: extent), png: pngOutput, coverage: 0)
 }
 
 // 1. Masque des personnes (resolution de Vision, en general plus petite que l'image)
@@ -166,8 +222,52 @@ context.render(avg, toBitmap: &pixel, rowBytes: 4,
                format: .RGBA8, colorSpace: nil)
 let coverage = Double(pixel[0]) / 255.0
 
+// Cadre des personnes, sur une version reduite du masque (seuil 50 %)
+func personBox() -> CGRect? {
+    let side = 256.0
+    let scale = side / Double(max(extent.width, extent.height))
+    let w = Int((Double(extent.width) * scale).rounded()), h = Int((Double(extent.height) * scale).rounded())
+    let small = mask.applyingFilter("CILanczosScaleTransform",
+                                    parameters: [kCIInputScaleKey: scale, kCIInputAspectRatioKey: 1.0])
+    var px = [UInt8](repeating: 0, count: w * h * 4)
+    context.render(atOrigin(small), toBitmap: &px, rowBytes: w * 4,
+                   bounds: CGRect(x: 0, y: 0, width: w, height: h), format: .RGBA8, colorSpace: nil)
+    var x0 = w, y0 = h, x1 = -1, y1 = -1
+    for y in 0..<h { for x in 0..<w where px[(y * w + x) * 4] > 127 {
+        x0 = min(x0, x); x1 = max(x1, x); y0 = min(y0, y); y1 = max(y1, y)
+    } }
+    if x1 < 0 { return nil }
+    // Lignes du bitmap de haut en bas ; Core Image compte y depuis le bas
+    return CGRect(x: Double(x0) / scale, y: Double(h - 1 - y1) / scale,
+                  width: Double(x1 - x0 + 1) / scale, height: Double(y1 - y0 + 1) / scale)
+}
+
 // 3. Effet
 switch effect {
+case "uni":
+    let parts = (option("--color") ?? "255,255,255").split(separator: ",").compactMap { Double($0) }
+    guard parts.count == 3 else { fail("couleur invalide (r,g,b)") }
+    let color = CIImage(color: CIColor(red: parts[0] / 255, green: parts[1] / 255, blue: parts[2] / 255))
+        .cropped(to: extent)
+    finish(image.applyingFilter("CIBlendWithMask", parameters: [
+        kCIInputBackgroundImageKey: color, kCIInputMaskImageKey: mask]),
+           png: false, coverage: coverage)
+case "crop":
+    let parts = (option("--ratio") ?? "4:5").split(separator: ":").compactMap { Double($0) }
+    guard parts.count == 2, parts[0] > 0, parts[1] > 0 else { fail("format invalide (L:H)") }
+    let ratio = parts[0] / parts[1]
+    let W = Double(extent.width), H = Double(extent.height)
+    let cw = min(W, H * ratio), ch = cw / ratio
+    // Centre : milieu des personnes en largeur ; en hauteur, les visages (haut du cadre)
+    // plutot que le milieu du corps ; sans personne, le centre de l'image
+    var cx = W / 2, cy = H / 2
+    if let box = personBox() {
+        cx = Double(box.midX)
+        cy = Double(box.maxY) - min(Double(box.height), ch) * 0.45
+    }
+    let x = min(max(0, cx - cw / 2), W - cw), y = min(max(0, cy - ch / 2), H - ch)
+    let rect = CGRect(x: x.rounded(), y: y.rounded(), width: cw.rounded(.down), height: ch.rounded(.down))
+    finish(atOrigin(image.cropped(to: rect)), png: pngOutput, coverage: coverage)
 case "mask":
     finish(mask, png: true, coverage: coverage)
 case "cutout":

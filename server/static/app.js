@@ -1409,12 +1409,44 @@ $('#evd-folders').addEventListener('click', (ev) => {
 /* ------------------------------------------------------------------ */
 
 const FX = { photo: null, effect: 'detourage', framing: false, box: null, drag: null,
-  result: null, saved: '', busy: false, view: 'orig' };
+  result: null, saved: '', busy: false, view: 'orig', plan: null, boxes: {}, target: null };
+
+const TOOL_LABELS = {
+  detourer: 'Détourer les personnes (fond transparent)',
+  cadre_maries: 'Cadre autour des mariés (robe et traîne)',
+  fond_noir_et_blanc: 'Mariés en couleur, fond noir et blanc',
+  fond_flou: 'Arrière-plan flou',
+  fond_uni: 'Fond uni',
+  effacer_objet: 'Effacer',
+  style: 'Style',
+  recadrer: 'Recadrer',
+};
+
+function stepLabel(s) {
+  const param = s.cible || s.couleur || s.style || s.format;
+  return (TOOL_LABELS[s.outil] || s.outil) + (param ? ' : ' + param : '');
+}
+
+/* Suit une tache de fond ; handlers : log(message), done(resultat), error(message) */
+function followJob(jobId, h) {
+  const es = new EventSource('/api/jobs/' + jobId + '/events');
+  es.onmessage = (m) => {
+    let e;
+    try { e = JSON.parse(m.data); } catch (err) { return; }
+    if (e.type === 'log' && h.log) h.log(e.message);
+    else if (e.type === 'progress' && h.log && e.step) h.log(e.step);
+    else if (e.type === 'done') { es.close(); h.done(e.result || {}); }
+    else if (e.type === 'error') { es.close(); h.error(e.error || 'Échec'); }
+  };
+  es.onerror = () => { es.close(); h.error('Connexion au suivi perdue'); };
+}
 
 function openFx(rel) {
   const p = EVD.photos.find((x) => x.rel === rel);
   if (!p) return;
-  Object.assign(FX, { photo: p, framing: false, box: null, drag: null, result: null, saved: '', view: 'orig' });
+  Object.assign(FX, { photo: p, framing: false, box: null, drag: null, result: null, saved: '', view: 'orig',
+    plan: null, boxes: {}, target: null });
+  $('#fx-plan').classList.add('hidden');
   $('#fx-name').textContent = p.name;
   if (!fxSpec()) FX.effect = 'detourage';
   $('#fx-effects').innerHTML = EVD.effects.map((e) =>
@@ -1466,8 +1498,14 @@ function fxRender() {
     : 'Glissez sur la photo pour entourer les mariés, robe et traîne comprises. PhotoCraft complète alors le détourage.';
   $('#fx-frame-hint').classList.toggle('hidden', !FX.framing);
   const box = $('#fx-box');
-  const b = FX.drag || FX.box;
+  const b = FX.drag || (FX.plan ? null : FX.box);
   box.classList.toggle('hidden', !b || !!showResult);
+  $('#fx-boxes').innerHTML = (!FX.plan || showResult) ? '' : Object.keys(FX.boxes).map((i) => {
+    const r = FX.boxes[i];
+    return '<div class="fx-box" style="left:' + r[0] * 100 + '%;top:' + r[1] * 100 + '%;width:' + r[2] * 100 +
+      '%;height:' + r[3] * 100 + '%"><span>' + (+i + 1) + '</span></div>';
+  }).join('');
+  fxRenderPlan();
   if (b) {
     box.style.left = (b[0] * 100) + '%';
     box.style.top = (b[1] * 100) + '%';
@@ -1509,7 +1547,11 @@ $('#fx-stage').addEventListener('mousedown', (ev) => {
     window.removeEventListener('mouseup', up);
     const d = FX.drag;
     FX.drag = null;
-    if (d && d[2] > 0.03 && d[3] > 0.03) {
+    if (FX.target !== null) {
+      if (d && d[2] > 0.01 && d[3] > 0.01) { FX.boxes[FX.target] = d; FX.result = null; FX.saved = ''; }
+      FX.target = null;
+      FX.framing = false;
+    } else if (d && d[2] > 0.03 && d[3] > 0.03) {
       FX.box = d;
       FX.framing = false;
       fxInvalidate();
@@ -1589,8 +1631,10 @@ $('#fx-run').addEventListener('click', async () => {
 $('#fx-save').addEventListener('click', async () => {
   if (!FX.result || FX.busy) return;
   try {
-    const r = await post('/api/events/effect/save',
-      { id: EVD.id, rel: FX.photo.rel, effect: FX.result.effect, framed: FX.result.framed });
+    const r = FX.result.kind === 'assistant'
+      ? await post('/api/events/assistant/save', { id: EVD.id, rel: FX.photo.rel })
+      : await post('/api/events/effect/save',
+        { id: EVD.id, rel: FX.photo.rel, effect: FX.result.effect, framed: FX.result.framed });
     FX.saved = r.rel;
     toast('Enregistré : ' + r.rel);
     loadDerush();
@@ -1604,6 +1648,122 @@ $('#fx-photocraft').addEventListener('click', async () => {
     await post('/api/events/photocraft', { id: EVD.id, rel: FX.saved || FX.photo.rel });
     toast('Ouverture dans PhotoCraft…');
   } catch (err) { toast(err.message, true); }
+});
+
+/* -- assistant dans la fenetre d'une photo -- */
+
+function planHtml(plan, boxes, withBoxes) {
+  if (!plan.faisable) return '<p class="msg err">' + escapeHtml(plan.message) + '</p>';
+  return '<p class="msg">' + escapeHtml(plan.message) + ' <span class="tiny">(' +
+    String(plan.secondes).replace('.', ',') + ' s)</span></p><ol>' +
+    plan.etapes.map((s, i) => '<li class="' + (boxes[i] ? 'ok' : '') + '">' + escapeHtml(stepLabel(s)) +
+      (s.cadre && withBoxes ? '<button class="btn btn-mini" data-box="' + i + '">' +
+        (boxes[i] ? '✓ cadre (refaire)' : '▭ tracer le cadre') + '</button>' : '') + '</li>').join('') + '</ol>';
+}
+
+function fxRenderPlan() {
+  const box = $('#fx-plan');
+  if (!FX.plan) { box.classList.add('hidden'); return; }
+  box.classList.remove('hidden');
+  const missing = FX.plan.etapes.some((s, i) => s.cadre && !FX.boxes[i]);
+  box.innerHTML = planHtml(FX.plan, FX.boxes, true) + (FX.plan.faisable
+    ? '<button class="btn btn-primary" id="fx-plan-run"' + (missing || FX.busy ? ' disabled' : '') + '>' +
+      (FX.busy ? 'Exécution…' : missing ? 'Tracez les cadres demandés' : 'Exécuter le plan') + '</button>' : '');
+  if (FX.target !== null) {
+    $('#fx-frame-hint').classList.remove('hidden');
+    $('#fx-frame-hint').textContent = 'Étape ' + (FX.target + 1) + ' : glissez sur la photo pour entourer ' +
+      (FX.plan.etapes[FX.target].cible || 'les mariés, robe et traîne comprises') + '.';
+  }
+}
+
+$('#fx-ask-go').addEventListener('click', async () => {
+  const text = $('#fx-ask').value.trim();
+  if (!text || FX.busy) return;
+  const info = $('#fx-info');
+  info.className = 'tiny muted';
+  info.textContent = 'L’IA lit la consigne…';
+  $('#fx-ask-go').disabled = true;
+  try {
+    FX.plan = await post('/api/events/assistant/plan', { text: text });
+    FX.boxes = {};
+    FX.target = null;
+    info.textContent = '';
+  } catch (err) {
+    info.className = 'tiny err';
+    info.textContent = err.message;
+  }
+  $('#fx-ask-go').disabled = false;
+  fxRender();
+});
+
+$('#fx-plan').addEventListener('click', (ev) => {
+  const b = ev.target.closest('[data-box]');
+  if (b && !FX.busy) {
+    FX.target = +b.dataset.box;
+    FX.framing = true;
+    FX.view = 'orig';
+    fxRender();
+    return;
+  }
+  if (ev.target.id !== 'fx-plan-run' || FX.busy) return;
+  const info = $('#fx-info');
+  FX.busy = true;
+  info.className = 'tiny muted';
+  info.textContent = 'Exécution en tâche de fond…';
+  fxRender();
+  const fail = (msg) => { FX.busy = false; info.className = 'tiny err'; info.textContent = msg; fxRender(); };
+  post('/api/events/assistant/run', { id: EVD.id, rel: FX.photo.rel, steps: FX.plan.etapes, boxes: FX.boxes })
+    .then((data) => followJob(data.job_id, {
+      log: (m) => { info.textContent = m; },
+      done: (r) => {
+        FX.busy = false;
+        FX.result = { path: r.path, stamp: Date.now(), kind: 'assistant' };
+        FX.saved = '';
+        FX.view = 'result';
+        info.className = 'tiny muted';
+        info.textContent = 'Plan exécuté en ' + String(r.secondes).replace('.', ',') +
+          ' s. Comparez avec l’original, puis enregistrez.';
+        fxRender();
+      },
+      error: fail,
+    }))
+    .catch((err) => fail(err.message));
+});
+
+/* -- assistant pour toute la serie -- */
+
+const SERIES = { plan: null };
+
+$('#evd-ask-go').addEventListener('click', async () => {
+  const text = $('#evd-ask').value.trim();
+  if (!text) return;
+  const box = $('#evd-plan');
+  box.classList.remove('hidden');
+  box.innerHTML = '<p class="msg">L’IA lit la consigne…</p>';
+  try {
+    SERIES.plan = await post('/api/events/assistant/plan', { text: text });
+  } catch (err) {
+    box.innerHTML = '<p class="msg err">' + escapeHtml(err.message) + '</p>';
+    return;
+  }
+  const plan = SERIES.plan;
+  const n = EVD.photos.length;
+  const needsBox = plan.faisable && plan.etapes.some((s) => s.cadre);
+  box.innerHTML = planHtml(plan, {}, false) + (!plan.faisable ? ''
+    : needsBox ? '<p class="msg err">Ce plan demande de tracer un cadre : ouvrez une photo (✨) pour l’appliquer.</p>'
+      : '<button class="btn btn-primary" id="evd-plan-run"' + (n ? '' : ' disabled') + '>Appliquer à ' +
+        plural(n, 'photo') + '</button> <span class="tiny muted">Résultats dans 06_Rendus/Photos_effets, originaux intacts.</span>');
+});
+
+$('#evd-ask').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#evd-ask-go').click(); });
+
+$('#evd-plan').addEventListener('click', (ev) => {
+  if (ev.target.id !== 'evd-plan-run' || !SERIES.plan) return;
+  derushJob('/api/events/assistant/run', { all: true, steps: SERIES.plan.etapes }, (r) => {
+    toast(plural(r.done, 'photo') + ' traitée' + (r.done > 1 ? 's' : '') + ' → ' + r.folder +
+      (r.failed && r.failed.length ? ' (' + r.failed.length + ' en échec)' : ''), r.failed && r.failed.length > 0);
+    $('#evd-plan').classList.add('hidden');
+  });
 });
 
 $('#fx-close').addEventListener('click', closeFx);

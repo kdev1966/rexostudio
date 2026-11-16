@@ -20,8 +20,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from montagia import (ai, config, effects, events, filmcraft, media, photocraft,  # noqa: E402
-                      pipeline, project, rushes, tools, transcribe, trash)
+from montagia import (ai, assistant, config, effects, events, filmcraft, media,  # noqa: E402
+                      photocraft, pipeline, project, rushes, tools, transcribe, trash)
 from montagia.jobs import MANAGER  # noqa: E402
 
 MAX_BODY = config.MAX_UPLOAD_BYTES
@@ -324,6 +324,12 @@ class StudioHandler(BaseHTTPRequestHandler):
                 return self._api_event_effect_save()
             if route == "/api/events/photocraft":
                 return self._api_event_photocraft()
+            if route == "/api/events/assistant/plan":
+                return self._api_assistant_plan()
+            if route == "/api/events/assistant/run":
+                return self._api_assistant_run()
+            if route == "/api/events/assistant/save":
+                return self._api_assistant_save()
             if route == "/api/project/delete":
                 return self._api_project_delete()
             if route == "/api/quit":
@@ -863,6 +869,50 @@ class StudioHandler(BaseHTTPRequestHandler):
         except photocraft.PhotoCraftError as exc:
             return self._error(exc, 500)
         return self._json({"ok": True})
+
+    # -- assistant a consigne (M5) --------------------------------------------
+    def _api_assistant_plan(self):
+        """Consigne -> plan d'etapes (IA locale, quelques secondes)."""
+        data = self._body_json()
+        try:
+            return self._json(assistant.plan(str(data.get("text") or "")))
+        except assistant.AssistantError as exc:
+            return self._error(exc, 400)
+
+    def _api_assistant_run(self):
+        """Execute un plan sur une photo (apercu) ou sur toute la serie (en tache de fond)."""
+        data = self._body_json()
+        try:
+            event_dir = self._event_dir(data.get("id"))
+            steps = assistant.check_plan(data.get("steps") or [], data.get("boxes") or {})
+            if data.get("all"):
+                photos = [p["path"] for p in rushes.photo_list(event_dir)]
+                if not photos:
+                    return self._error("Aucune photo dans l'événement", 400)
+                title = "Assistant : %d photos" % len(photos)
+                func = lambda j: assistant.run_all(event_dir, photos, steps, j)  # noqa: E731
+            else:
+                _event_dir, src = self._event_photo(data)
+                title = "Assistant : %s" % os.path.basename(src)
+                func = lambda j: assistant.run_photo(event_dir, src, steps, j)  # noqa: E731
+        except events.EventError as exc:
+            return self._error(exc, 404)
+        except assistant.AssistantError as exc:
+            return self._error(exc, 400)
+        job = MANAGER.create("assistant", title)
+        MANAGER.run_async(job, func)
+        return self._json({"job_id": job.id})
+
+    def _api_assistant_save(self):
+        data = self._body_json()
+        try:
+            event_dir, src = self._event_photo(data)
+            rel = assistant.save(event_dir, src)
+        except events.EventError as exc:
+            return self._error(exc, 404)
+        except assistant.AssistantError as exc:
+            return self._error(exc, 400)
+        return self._json({"ok": True, "rel": rel, "path": os.path.join(event_dir, rel)})
 
     def _event_job(self, kind: str, title: str, func):
         """Traitement de fond sur un evenement : func(job, dossier, donnees)."""

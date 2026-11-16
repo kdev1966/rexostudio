@@ -126,6 +126,11 @@
   <div id="evd-clips" class="rush-grid"></div>
 
   <h2 class="evd-section">Photos <span id="evd-photo-count" class="muted"></span></h2>
+  <div id="evd-assist" class="evd-assist">
+    <input type="text" id="evd-ask" maxlength="500" placeholder="Assistant pour toute la série : ex. « rendu chaud et vintage sur toutes les photos »">
+    <button class="btn btn-sec" id="evd-ask-go">Comprendre</button>
+    <div id="evd-plan" class="fx-plan hidden"></div>
+  </div>
   <div id="evd-photos" class="photo-grid"></div>
 </section>
 
@@ -355,6 +360,7 @@
         <div id="fx-stage" class="fx-stage">
           <img id="fx-img" alt="">
           <div id="fx-box" class="fx-box hidden"></div>
+          <div id="fx-boxes" class="fx-boxes"></div>
         </div>
         <div class="fx-view">
           <button class="filter active" data-view="orig">Original</button>
@@ -362,7 +368,13 @@
         </div>
       </div>
       <div class="fx-side">
-        <p class="tiny muted">Effet</p>
+        <div class="fx-assist">
+          <p class="tiny muted">Assistant : écrivez ce que vous voulez (français ou tunisien)</p>
+          <textarea id="fx-ask" rows="2" maxlength="500" placeholder="ex. efface la voiture derrière la mariée · a3mel el fond k7al w byadh"></textarea>
+          <button class="btn btn-sec" id="fx-ask-go">Comprendre la consigne</button>
+          <div id="fx-plan" class="fx-plan hidden"></div>
+        </div>
+        <p class="tiny muted">Ou un effet direct</p>
         <div id="fx-effects" class="fx-effects"></div>
         <p class="tiny muted" id="fx-frame-label">La robe ou la traîne est coupée ?</p>
         <button class="btn btn-sec" id="fx-frame">▭ Tracer un cadre autour des mariés</button>

@@ -174,6 +174,39 @@ def _erase(src: str, out: str, box, folder: str, key: str) -> dict:
             os.remove(tmp)
 
 
+def couple_mask(src: str, box, out_png: str):
+    """Masque complementaire du cadre autour des maries : PhotoCraft fait une
+    Selection d'objet dans le cadre (proportions de l'image redressee), sur une
+    copie redressee et reduite. Ecrit out_png (a donner a rexo-segment --add-mask)
+    et retourne le cadre de l'objet trouve, en pixels de l'image."""
+    if not photocraft.installed():
+        raise EffectError("PhotoCraft introuvable : le cadre a besoin de PhotoCraft")
+    small = os.path.splitext(out_png)[0] + "_copie.jpg"
+    try:
+        info = _segment(["orient", src, small, "--max", str(PHOTOCRAFT_MAX)])
+        width, height = int(info["width"]), int(info["height"])
+        rect = check_box(box, width, height)
+        scale = min(1.0, PHOTOCRAFT_MAX / float(max(width, height)))
+        try:
+            found = photocraft.object_cutout(small, [v * scale for v in rect], out_png)
+        except photocraft.PhotoCraftError as exc:
+            raise EffectError(str(exc)) from exc
+        return [round(v / scale) for v in found] if found else None
+    finally:
+        if os.path.exists(small):
+            os.remove(small)
+
+
+def segment(args: list) -> dict:
+    """rexo-segment, pour les autres modules (assistant)."""
+    return _segment(args)
+
+
+def erase(src: str, out: str, box, folder: str, key: str) -> dict:
+    """Efface l'objet du cadre, pour les autres modules (assistant)."""
+    return _erase(src, out, box, folder, key)
+
+
 def preview(event_dir: str, src: str, effect: str, box=None, log=None) -> dict:
     """Calcule l'apercu d'un effet ; box = cadre en proportions de l'image
     redressee : autour des maries (PhotoCraft complete le detourage de Vision)
@@ -198,29 +231,17 @@ def preview(event_dir: str, src: str, effect: str, box=None, log=None) -> dict:
         args = [spec["tool"], src, out]
         bounds = None
         if box is not None:
-            if not photocraft.installed():
-                raise EffectError("PhotoCraft introuvable : le cadre a besoin de PhotoCraft")
-            small = os.path.join(folder, _key(rel) + "_tmp_copie.jpg")
             mask = os.path.join(folder, _key(rel) + "_tmp_objet.png")
             try:
-                info = _segment(["orient", src, small, "--max", str(PHOTOCRAFT_MAX)])
-                width, height = int(info["width"]), int(info["height"])
-                rect = check_box(box, width, height)
-                scale = min(1.0, PHOTOCRAFT_MAX / float(max(width, height)))
                 if log:
                     log("PhotoCraft : sélection d'objet dans le cadre")
-                try:
-                    found = photocraft.object_cutout(small, [v * scale for v in rect], mask)
-                except photocraft.PhotoCraftError as exc:
-                    raise EffectError(str(exc)) from exc
-                bounds = [round(v / scale) for v in found] if found else None
+                bounds = couple_mask(src, box, mask)
                 if log:
                     log("Vision : détourage des personnes")
                 result = _segment(args + ["--add-mask", mask])
             finally:
-                for tmp in (small, mask):
-                    if os.path.exists(tmp):
-                        os.remove(tmp)
+                if os.path.exists(mask):
+                    os.remove(mask)
         else:
             result = _segment(args)
         return {
