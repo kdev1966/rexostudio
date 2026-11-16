@@ -84,6 +84,10 @@ Ce qui est contrôlé :
 | PhotoCraft | Sélection d'objet dans un cadre, sans interface |
 | Environnement d'effets | versions, SHA-256 des modèles, puis `scripts/effets_smoke.py` : MobileSAM détoure un disque (recouvrement > 0,8), MI-GAN l'efface, Depth Anything rend une carte |
 
+Après l'installation, évaluer aussi l'assistant à consigne avec le vrai modèle (environ
+2 minutes) : `python3 scripts/eval_consignes.py` — score attendu ≥ 9/10 (10/10 sur l'iMac
+le 16/11/2026). À relancer après toute modification du prompt ou du modèle.
+
 Aucune photo de client n'est utilisée par ces contrôles. `--photo` écrit ses résultats
 dans un dossier temporaire affiché à la fin.
 
@@ -108,6 +112,9 @@ dans un dossier temporaire affiché à la fin.
 | **Pleine résolution** (Nikon D780, 5368 × 3579, 19 Mpx) : détourage / noir et blanc / fond flou | 3,4 / 2,6 / 2,7 s | 16/11/2026 |
 | Pleine résolution, avec cadre PhotoCraft : fond flou / détourage | 4,8 / 5,7 s | 16/11/2026 |
 | Pleine résolution : effacer un objet (galerie) | 4,1 s (155 s avant la correction du 16/11) | 16/11/2026 |
+| Assistant : plan d'une consigne (Gemma 4 E2B) | 6 à 8 s (premier appel ≈ 35 s : chargement du modèle) | 16/11/2026 |
+| Assistant : exécution (cadre + fond flou ; effacer + style sur 19 Mpx ; style + recadrage) | 3,8 s ; 4,4 s ; 2,4 s | 16/11/2026 |
+| `scripts/eval_consignes.py` (10 consignes du studio, français et tunisien) | 10/10 | 16/11/2026 |
 
 `check_install.sh` affiche les temps de MobileSAM, MI-GAN et Depth Anything : reporter
 ici ceux d'une nouvelle machine de production pour les comparer.

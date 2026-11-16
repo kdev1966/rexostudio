@@ -58,6 +58,12 @@ class NormalizeTest(unittest.TestCase):
         r = assistant.normalize(plan({"outil": "cadre_maries"}, {"outil": "style", "style": "chaud"}))
         self.assertEqual(tools(r), ["style"])
 
+    def test_instagram_post_is_4_5(self):
+        r = assistant.normalize(plan({"outil": "recadrer", "format": "9:16"}), "pour Instagram en vertical")
+        self.assertEqual(r["etapes"][0]["format"], "4:5")
+        r = assistant.normalize(plan({"outil": "recadrer", "format": "9:16"}), "pour une story Instagram")
+        self.assertEqual(r["etapes"][0]["format"], "9:16")
+
     def test_crop_moved_last(self):
         r = assistant.normalize(plan({"outil": "recadrer", "format": "9:16"},
                                      {"outil": "effacer_objet", "cible": "la chaise"},

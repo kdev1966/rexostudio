@@ -167,6 +167,12 @@ def normalize(raw: dict, text: str = "") -> dict:
         steps = [s for s in steps if s["outil"] != "style"]
         steps.insert(first, {"outil": "style", "cadre": False, "style": keep})
     lowered = (text or "").lower()
+    # Publication Instagram ou Facebook = 4:5 ; seuls story, reel et TikTok sont en 9:16
+    if any(w in lowered for w in ("instagram", "insta", "facebook", "fb")) and not any(
+            w in lowered for w in ("story", "stories", "reel", "tiktok", "statut", "status")):
+        for s in steps:
+            if s["outil"] == "recadrer" and s["format"] in ("9:16", "4:5"):
+                s["format"] = "4:5"
     if any(w in lowered for w in DRESS_WORDS):
         steps.insert(0, {"outil": "cadre_maries", "cadre": True})
     # Le cadre des maries ne sert qu'avant un effet sur les personnes : en tete, une fois
