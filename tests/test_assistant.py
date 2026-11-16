@@ -64,6 +64,15 @@ class NormalizeTest(unittest.TestCase):
         r = assistant.normalize(plan({"outil": "recadrer", "format": "9:16"}), "pour une story Instagram")
         self.assertEqual(r["etapes"][0]["format"], "9:16")
 
+    def test_couple_only_requested(self):
+        for text in ("détoure seulement les mariés", "garde uniquement le couple",
+                     "khalli ken l3rous", "خلي غير العروسة", "floute le fond, juste les mariés"):
+            r = assistant.normalize(plan({"outil": "detourer"}), text)
+            self.assertTrue(r["maries_seulement"], text)
+        for text in ("détoure les mariés et les invités", "floute le fond"):
+            r = assistant.normalize(plan({"outil": "detourer"}), text)
+            self.assertFalse(r["maries_seulement"], text)
+
     def test_crop_moved_last(self):
         r = assistant.normalize(plan({"outil": "recadrer", "format": "9:16"},
                                      {"outil": "effacer_objet", "cible": "la chaise"},
@@ -248,6 +257,18 @@ class RunTest(unittest.TestCase):
         self.assertEqual([s["outil"] for s in steps], ["ameliorer", "effacer_objet"])
         self.assertEqual(steps[1]["box"], [0.2, 0.2, 0.1, 0.1])
         self.assertEqual(assistant.with_enhance(steps), steps)                       # une seule fois
+
+    def test_couple_passed_to_refinement(self):
+        seen = []
+
+        def fake_refined(src, folder, key, enhance=False, log=None, couple=False):
+            seen.append(couple)
+            return ""
+
+        steps = assistant.check_plan([{"outil": "fond_flou"}, {"outil": "detourer"}], {})
+        with mock.patch.object(effects, "refined_mask", side_effect=fake_refined):
+            assistant.run_photo(self.event, self.photo, steps, couple=True)
+        self.assertEqual(seen, [True])                     # calcule une seule fois par photo
 
     def test_one_computation_at_a_time(self):
         steps = assistant.check_plan([{"outil": "fond_flou"}], {})

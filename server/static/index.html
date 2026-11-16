@@ -130,6 +130,7 @@
     <input type="text" id="evd-ask" maxlength="500" placeholder="Assistant pour toute la série : ex. « rendu chaud et vintage sur toutes les photos »">
     <button class="btn btn-sec" id="evd-ask-go">Comprendre</button>
     <label class="fx-enhance tiny"><input type="checkbox" id="evd-enhance" checked> Améliorer d'abord chaque photo</label>
+    <label class="fx-enhance tiny"><input type="checkbox" id="evd-couple"> Seulement les mariés</label>
     <div id="evd-plan" class="fx-plan hidden"></div>
   </div>
   <div id="evd-photos" class="photo-grid"></div>
@@ -376,6 +377,9 @@
       <div class="fx-side">
         <label class="fx-enhance" title="Lumière et couleurs (Apple), balance des blancs sur les zones blanches, léger relief : appliqués avant l'effet">
           <input type="checkbox" id="fx-enhance" checked> Améliorer d'abord la photo (lumière, couleurs, blancs, relief)
+        </label>
+        <label class="fx-enhance" title="Détourage, noir et blanc, fond flou : seules les deux personnes principales restent ; invités et personnes derrière sont retirés (MobileSAM)">
+          <input type="checkbox" id="fx-couple"> Garder seulement les mariés (retire invités et personnes derrière)
         </label>
         <div class="fx-assist">
           <p class="tiny muted">Assistant : écrivez ce que vous voulez (français ou tunisien)</p>

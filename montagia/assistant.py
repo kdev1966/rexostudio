@@ -126,6 +126,16 @@ def system_prompt() -> str:
     return SYSTEM.format(outils=tools)
 
 
+# « seulement les maries » : invites et personnes derriere quittent le detourage
+_COUPLE = re.compile(
+    r"(seulement|uniquement|juste|que|ken|kenn|ghir|غير|كان|فقط)\s+(les\s+|le\s+|el\s+|l)?"
+    r"(mari[ée]s|couple|3rous|3rousa|l3rous|العروس|العروسة|العرسان)", re.IGNORECASE)
+
+
+def couple_requested(text: str) -> bool:
+    return bool(_COUPLE.search(text or ""))
+
+
 # « et » qui relie deux objets a effacer (francais, tunisien en lettres latines ou arabes)
 _AND = re.compile(r"\s+(?:et|w|ou)\s+|\s+و\s*|،\s*|,\s*")
 
@@ -197,7 +207,8 @@ def normalize(raw: dict, text: str = "") -> dict:
         # Un cadre se trace photo par photo : pas d'application a toute la serie
         every = False
         message += " (Effacer ou garder la robe se fait photo par photo : choisissez une photo.)"
-    return {"faisable": feasible, "etapes": steps, "toutes_les_photos": every, "message": message}
+    return {"faisable": feasible, "etapes": steps, "toutes_les_photos": every, "message": message,
+            "maries_seulement": feasible and couple_requested(text)}
 
 
 def plan(text: str) -> dict:
@@ -265,9 +276,10 @@ def _ext_after(tool: str, current_ext: str) -> str:
     return ".jpg"
 
 
-def run_steps(src: str, steps: list, work: str, out_base: str, log=None) -> str:
+def run_steps(src: str, steps: list, work: str, out_base: str, log=None, couple: bool = False) -> str:
     """Applique les etapes a une photo ; chaque etape part du resultat de la
-    precedente. Retourne le chemin du resultat (out_base + extension)."""
+    precedente. Retourne le chemin du resultat (out_base + extension).
+    couple : seulement les maries dans les effets sur les personnes."""
     log = log or (lambda _m: None)
     os.makedirs(work, exist_ok=True)
     key = os.path.basename(out_base)
@@ -299,7 +311,7 @@ def run_steps(src: str, steps: list, work: str, out_base: str, log=None) -> str:
                     # Masque affine par MobileSAM, calcule une fois (meme geometrie
                     # jusqu'au recadrage, toujours en dernier)
                     if refined is None:
-                        refined = effects.refined_mask(current, work, key, log=log)
+                        refined = effects.refined_mask(current, work, key, log=log, couple=couple)
                         if refined:
                             made.append(refined)
                     if refined:
@@ -328,7 +340,7 @@ def preview_path(event_dir: str, rel: str) -> str:
                         hashlib.sha1(rel.encode("utf-8")).hexdigest()[:16] + "_assistant")
 
 
-def run_photo(event_dir: str, src: str, steps: list, job=None) -> dict:
+def run_photo(event_dir: str, src: str, steps: list, job=None, couple: bool = False) -> dict:
     """Execute le plan sur une photo ; le resultat reste en apercu (cache)."""
     rel = os.path.relpath(src, event_dir)
     if rel.split(os.sep)[0] != "02_Photos" or not os.path.isfile(src):
@@ -340,11 +352,12 @@ def run_photo(event_dir: str, src: str, steps: list, job=None) -> dict:
     log = job.add_log if job else None
     start = time.time()
     with _exclusive():
-        out = run_steps(src, steps, os.path.join(event_dir, effects.CACHE_DIR, "travail"), base, log)
+        out = run_steps(src, steps, os.path.join(event_dir, effects.CACHE_DIR, "travail"), base, log,
+                        couple)
     return {"path": out, "rel": rel, "secondes": round(time.time() - start, 1)}
 
 
-def run_all(event_dir: str, photos: list, steps: list, job=None) -> dict:
+def run_all(event_dir: str, photos: list, steps: list, job=None, couple: bool = False) -> dict:
     """Execute le plan (sans cadre) sur toutes les photos : les resultats vont
     directement dans 06_Rendus/Photos_effets/Assistant_<date>/."""
     if any(s["cadre"] for s in steps):
@@ -358,7 +371,8 @@ def run_all(event_dir: str, photos: list, steps: list, job=None) -> dict:
                 job.set_progress(i / max(1, len(photos)), "Photo %d/%d : %s" % (i + 1, len(photos), name))
             try:
                 run_steps(src, steps, os.path.join(event_dir, effects.CACHE_DIR, "travail"),
-                          os.path.join(folder, tools_mod.safe_component(name, "photo")))
+                          os.path.join(folder, tools_mod.safe_component(name, "photo")),
+                          job.add_log if job else None, couple)
                 done += 1
             except (effects.EffectError, AssistantError) as exc:
                 failed.append({"photo": os.path.basename(src), "erreur": str(exc)})

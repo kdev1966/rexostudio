@@ -837,7 +837,8 @@ class StudioHandler(BaseHTTPRequestHandler):
             event_dir, src = self._event_photo(data)
             box = data.get("box")
             result = effects.preview(event_dir, src, str(data.get("effect") or ""),
-                                     box if box else None, enhance=bool(data.get("enhance")))
+                                     box if box else None, enhance=bool(data.get("enhance")),
+                                     couple=bool(data.get("couple")))
         except events.EventError as exc:
             return self._error(exc, 404)
         except effects.EffectError as exc:
@@ -849,7 +850,8 @@ class StudioHandler(BaseHTTPRequestHandler):
         try:
             event_dir, src = self._event_photo(data)
             rel = effects.save(event_dir, src, str(data.get("effect") or ""),
-                               bool(data.get("framed")), bool(data.get("enhanced")))
+                               bool(data.get("framed")), bool(data.get("enhanced")),
+                               bool(data.get("couple")))
         except events.EventError as exc:
             return self._error(exc, 404)
         except effects.EffectError as exc:
@@ -869,7 +871,8 @@ class StudioHandler(BaseHTTPRequestHandler):
             elif data.get("effect"):
                 path = effects.export_psd(event_dir, path, str(data["effect"]),
                                           bool(data.get("framed")),
-                                          enhanced=bool(data.get("enhanced")))
+                                          enhanced=bool(data.get("enhanced")),
+                                          couple=bool(data.get("couple")))
             photocraft.open_in_app(path)
         except events.EventError as exc:
             return self._error(exc, 404)
@@ -896,16 +899,17 @@ class StudioHandler(BaseHTTPRequestHandler):
             steps = assistant.check_plan(data.get("steps") or [], data.get("boxes") or {})
             if data.get("enhance"):
                 steps = assistant.with_enhance(steps)
+            couple = bool(data.get("couple"))
             if data.get("all"):
                 photos = [p["path"] for p in rushes.photo_list(event_dir)]
                 if not photos:
                     return self._error("Aucune photo dans l'événement", 400)
                 title = "Assistant : %d photos" % len(photos)
-                func = lambda j: assistant.run_all(event_dir, photos, steps, j)  # noqa: E731
+                func = lambda j: assistant.run_all(event_dir, photos, steps, j, couple)  # noqa: E731
             else:
                 _event_dir, src = self._event_photo(data)
                 title = "Assistant : %s" % os.path.basename(src)
-                func = lambda j: assistant.run_photo(event_dir, src, steps, j)  # noqa: E731
+                func = lambda j: assistant.run_photo(event_dir, src, steps, j, couple)  # noqa: E731
         except events.EventError as exc:
             return self._error(exc, 404)
         except assistant.AssistantError as exc:

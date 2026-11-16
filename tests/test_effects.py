@@ -451,6 +451,24 @@ class RefineTest(PhotoEventCase):
         self.assertNotIn("--enhance", mask_call)          # Vision sur la photo d'origine
         self.assertIn("--enhance", effect_call)           # l'amelioration sur la photo finale
 
+    def test_couple_only(self):
+        logs = []
+        r = effects.preview(self.event, self.photo, "detourage", couple=True, log=logs.append)
+        self.assertTrue(r["couple"])
+        self.assertTrue(r["path"].endswith("_detourage_maries.png"))
+        with open(self.refine_log) as fh:
+            self.assertEqual(fh.read().splitlines()[0].split()[-1], "--couple")
+        self.assertTrue(any("les mariés" in line for line in logs))
+        effects.save(self.event, self.photo, "detourage", False, False, True)
+        with self.assertRaises(effects.EffectError):            # l'apercu « tous » n'existe pas
+            effects.save(self.event, self.photo, "detourage", False, False, False)
+
+    def test_couple_needs_effects_env(self):
+        with mock.patch.object(effects, "REFINE", False):
+            r = effects.preview(self.event, self.photo, "fond-flou", couple=True)
+        self.assertFalse(r["couple"])
+        self.assertTrue(r["path"].endswith("_fond-flou.jpg"))
+
     def test_refinement_failure_falls_back_to_vision(self):
         self._python('echo \'{"ok":false,"error":"modèle absent"}\'\nexit 1')
         logs = []

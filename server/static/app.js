@@ -1572,11 +1572,11 @@ $('#fx-frame').addEventListener('click', () => {
   fxRender();
 });
 
-$('#fx-enhance').addEventListener('change', () => {
+['#fx-enhance', '#fx-couple'].forEach((sel) => $(sel).addEventListener('change', () => {
   if (FX.busy) return;
   fxInvalidate();          // l'apercu calcule ne correspond plus a la case
   fxRender();
-});
+}));
 
 $('#fx-effects').addEventListener('click', (ev) => {
   const b = ev.target.closest('[data-effect]');
@@ -1627,7 +1627,7 @@ $('#fx-run').addEventListener('click', async () => {
   fxRender();
   try {
     const r = await post('/api/events/effect', { id: EVD.id, rel: FX.photo.rel, effect: FX.effect, box: FX.box,
-      enhance: $('#fx-enhance').checked });
+      enhance: $('#fx-enhance').checked, couple: $('#fx-couple').checked });
     FX.result = Object.assign(r, { stamp: Date.now() });
     FX.saved = '';
     FX.view = 'result';
@@ -1659,7 +1659,7 @@ $('#fx-save').addEventListener('click', async () => {
       ? await post('/api/events/assistant/save', { id: EVD.id, rel: FX.photo.rel })
       : await post('/api/events/effect/save',
         { id: EVD.id, rel: FX.photo.rel, effect: FX.result.effect, framed: FX.result.framed,
-          enhanced: !!FX.result.enhanced });
+          enhanced: !!FX.result.enhanced, couple: !!FX.result.couple });
     FX.saved = r.rel;
     toast('Enregistré : ' + r.rel);
     loadDerush();
@@ -1673,7 +1673,8 @@ $('#fx-photocraft').addEventListener('click', async () => {
   const body = { id: EVD.id, rel: FX.photo.rel };
   if (FX.result && FX.result.kind === 'assistant') body.assistant = true;
   else if (FX.result) {
-    Object.assign(body, { effect: FX.result.effect, framed: FX.result.framed, enhanced: !!FX.result.enhanced });
+    Object.assign(body, { effect: FX.result.effect, framed: FX.result.framed, enhanced: !!FX.result.enhanced,
+      couple: !!FX.result.couple });
   }
   const btn = $('#fx-photocraft');
   btn.disabled = true;
@@ -1724,6 +1725,7 @@ $('#fx-ask-go').addEventListener('click', async () => {
     FX.plan = await post('/api/events/assistant/plan', { text: text });
     FX.boxes = {};
     FX.target = null;
+    if (FX.plan.maries_seulement) $('#fx-couple').checked = true;   // « garde seulement les mariés »
     info.textContent = '';
   } catch (err) {
     info.className = 'tiny err';
@@ -1750,7 +1752,7 @@ $('#fx-plan').addEventListener('click', (ev) => {
   fxRender();
   const fail = (msg) => { FX.busy = false; info.className = 'tiny err'; info.textContent = msg; fxRender(); };
   post('/api/events/assistant/run', { id: EVD.id, rel: FX.photo.rel, steps: FX.plan.etapes, boxes: FX.boxes,
-    enhance: $('#fx-enhance').checked })
+    enhance: $('#fx-enhance').checked, couple: $('#fx-couple').checked })
     .then((data) => followJob(data.job_id, {
       log: (m) => { info.textContent = m; },
       done: (r) => {
@@ -1785,6 +1787,7 @@ $('#evd-ask-go').addEventListener('click', async () => {
     return;
   }
   const plan = SERIES.plan;
+  if (plan.maries_seulement) $('#evd-couple').checked = true;
   const n = EVD.photos.length;
   const needsBox = plan.faisable && plan.etapes.some((s) => s.cadre);
   box.innerHTML = planHtml(plan, {}, false) + (!plan.faisable ? ''
@@ -1798,7 +1801,7 @@ $('#evd-ask').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#ev
 $('#evd-plan').addEventListener('click', (ev) => {
   if (ev.target.id !== 'evd-plan-run' || !SERIES.plan) return;
   derushJob('/api/events/assistant/run', { all: true, steps: SERIES.plan.etapes,
-    enhance: $('#evd-enhance').checked }, (r) => {
+    enhance: $('#evd-enhance').checked, couple: $('#evd-couple').checked }, (r) => {
     toast(plural(r.done, 'photo') + ' traitée' + (r.done > 1 ? 's' : '') + ' → ' + r.folder +
       (r.failed && r.failed.length ? ' (' + r.failed.length + ' en échec)' : ''), r.failed && r.failed.length > 0);
     $('#evd-plan').classList.add('hidden');

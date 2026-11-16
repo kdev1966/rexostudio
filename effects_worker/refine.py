@@ -2,7 +2,11 @@
 
 S'execute dans l'environnement d'effets (.effets/venv, Python 3.11) :
 
-    refine.py <photo> <masque_vision.png> <sortie.png> [--boxes x,y,l,h;x,y,l,h...]
+    refine.py <photo> <masque_vision.png> <sortie.png> [--boxes x,y,l,h;x,y,l,h...] [--couple]
+
+--couple : seulement les maries. Seules les deux personnes principales (les plus
+grandes sur la photo) restent ; invites et personnes derriere quittent le detourage,
+meme si Vision les voit avec certitude.
 
 Le masque de Vision est doux (bon sur les cheveux et le voile) mais garde, avec une
 confiance faible, des morceaux de fond (trainees grises autour des maries) ; une
@@ -40,6 +44,8 @@ def main():
     ap.add_argument("vision")
     ap.add_argument("out")
     ap.add_argument("--boxes", default="")
+    ap.add_argument("--couple", action="store_true",
+                    help="seulement les maries : les deux personnes principales")
     a = ap.parse_args()
     os.environ.setdefault("EMBEDKIT_OFFLINE", "1")
 
@@ -67,21 +73,38 @@ def main():
     sam = np.zeros((h, w), np.uint8)
     strong = (v >= 0.5).astype(np.uint8)
     extra = 0
+    people = []                                   # un masque MobileSAM par personne
     with Segmenter.load(model="mobilesam") as seg:
         if seg.tier == 0:
             fail("modèle MobileSAM absent : ./scripts/install_effects_env.sh")
         embedding = seg.embed(image)
         for box in boxes:
             masks, scores = seg.segment(embedding, box=box)
-            sam |= masks[int(np.argmax(scores))].astype(np.uint8)
+            people.append(masks[int(np.argmax(scores))].astype(np.uint8))
+            sam |= people[-1]
         n, labels, stats, _ = cv2.connectedComponentsWithStats(strong)
         for i in range(1, n):
             x, y, bw, bh, area = stats[i]
             if area < 0.005 * h * w or (sam[labels == i] > 0).mean() > 0.5:
                 continue
             masks, scores = seg.segment(embedding, box=(x, y, x + bw, y + bh))
-            sam |= masks[int(np.argmax(scores))].astype(np.uint8)
+            people.append(masks[int(np.argmax(scores))].astype(np.uint8))
+            sam |= people[-1]
             extra += 1
+
+    kept = len(people)
+    if a.couple and people:
+        # Seulement les maries : les deux personnes principales (les plus grandes sur la
+        # photo) ; deux masques presque identiques (meme personne vue deux fois) comptent
+        # pour une. Tout le reste quitte le detourage, meme ce que Vision voit avec certitude.
+        distinct = []
+        for m in sorted(people, key=lambda m: -int(m.sum())):
+            if all((m & d).sum() / max(1, (m | d).sum()) < 0.5 for d in distinct):
+                distinct.append(m)
+        sam = np.zeros((h, w), np.uint8)
+        for m in distinct[:2]:
+            sam |= m
+        kept = min(2, len(distinct))
 
     # Pres d'une personne / au coeur d'une personne : distance au masque MobileSAM,
     # calculee sur une version reduite (cout independant de la taille de la photo)
@@ -95,13 +118,14 @@ def main():
     near = cv2.resize((outside <= rs).astype(np.uint8), (w, h), interpolation=cv2.INTER_LINEAR) > 0
     core = cv2.resize((inside > rs).astype(np.uint8), (w, h), interpolation=cv2.INTER_LINEAR) > 0
 
-    final = np.where(near | (v >= 0.5), v, 0.0)
+    keep = near if a.couple else (near | (v >= 0.5))
+    final = np.where(keep, v, 0.0)
     final = np.where(core, 1.0, final)
     if not cv2.imwrite(a.out, (final * 255).astype(np.uint8)):
         fail("écriture impossible")
     total = max(1, int((v > 0.1).sum()))
-    print(json.dumps({"ok": True, "persons": len(boxes), "extra": extra,
-                      "removed": round(float(((v > 0.1) & ~(near | (v >= 0.5))).sum()) / total, 4),
+    print(json.dumps({"ok": True, "persons": len(boxes), "extra": extra, "kept": kept,
+                      "removed": round(float(((v > 0.1) & ~keep).sum()) / total, 4),
                       "filled": int(((v < 0.5) & core).sum()),
                       "ms": int((time.time() - start) * 1000)}))
 

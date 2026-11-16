@@ -101,22 +101,23 @@ def _key(rel: str) -> str:
     return hashlib.sha1(rel.encode("utf-8")).hexdigest()[:16]
 
 
-def _variant(framed: bool, enhanced: bool) -> str:
-    return ("_cadre" if framed else "") + ("_ameliore" if enhanced else "")
+def _variant(framed: bool, enhanced: bool, couple: bool = False) -> str:
+    return ("_cadre" if framed else "") + ("_ameliore" if enhanced else "") + ("_maries" if couple else "")
 
 
-def preview_name(rel: str, effect: str, framed: bool, enhanced: bool = False) -> str:
-    return "%s_%s%s%s" % (_key(rel), effect, _variant(framed, enhanced), EFFECTS[effect]["ext"])
+def preview_name(rel: str, effect: str, framed: bool, enhanced: bool = False,
+                 couple: bool = False) -> str:
+    return "%s_%s%s%s" % (_key(rel), effect, _variant(framed, enhanced, couple), EFFECTS[effect]["ext"])
 
 
-def fg_name(rel: str, framed: bool, enhanced: bool = False) -> str:
+def fg_name(rel: str, framed: bool, enhanced: bool = False, couple: bool = False) -> str:
     """Photo aux couleurs de bord nettoyees (detourage) : calque des maries du PSD."""
-    return "%s_detourage%s_couleurs.jpg" % (_key(rel), _variant(framed, enhanced))
+    return "%s_detourage%s_couleurs.jpg" % (_key(rel), _variant(framed, enhanced, couple))
 
 
-def mask_name(rel: str, effect: str, framed: bool, enhanced: bool = False) -> str:
+def mask_name(rel: str, effect: str, framed: bool, enhanced: bool = False, couple: bool = False) -> str:
     """Masque de l'apercu (PNG, transparence = personnes ou zone effacee)."""
-    return "%s_%s%s_masque.png" % (_key(rel), effect, _variant(framed, enhanced))
+    return "%s_%s%s_masque.png" % (_key(rel), effect, _variant(framed, enhanced, couple))
 
 
 def check_box(box, width: int, height: int) -> list:
@@ -208,13 +209,21 @@ def _erase(src: str, out: str, box, folder: str, key: str, mask: str = "",
 REFINE = os.environ.get("REXO_REFINE", "1") != "0"
 
 
-def refined_mask(src: str, folder: str, key: str, enhance: bool = False, log=None) -> str:
+def refine_available() -> bool:
+    return REFINE and env_installed() and os.path.isfile(
+        os.path.join(config.EFFECTS_WORKER_DIR, "refine.py"))
+
+
+def refined_mask(src: str, folder: str, key: str, enhance: bool = False, log=None,
+                 couple: bool = False) -> str:
     """Masque des personnes de Vision affine par MobileSAM (effects_worker/refine.py) :
-    les trainees de fond disparaissent, les mains restent. Retourne le chemin d'un PNG
-    gris a donner a rexo-segment --use-mask (a effacer par l'appelant), ou "" si
-    l'affinage n'est pas possible : l'effet se fait alors avec Vision seul."""
-    if not REFINE or not env_installed() or not os.path.isfile(
-            os.path.join(config.EFFECTS_WORKER_DIR, "refine.py")):
+    les trainees de fond disparaissent, les mains restent ; couple : seulement les
+    deux personnes principales (les maries). Retourne le chemin d'un PNG gris a donner
+    a rexo-segment --use-mask (a effacer par l'appelant), ou "" si l'affinage n'est
+    pas possible : l'effet se fait alors avec Vision seul."""
+    if not refine_available():
+        if couple and log:
+            log("« Seulement les mariés » demande l'environnement d'effets : toutes les personnes restent")
         return ""
     vision = os.path.join(folder, key + "_tmp_vision.png")
     out = os.path.join(folder, key + "_tmp_affine.png")
@@ -227,11 +236,13 @@ def refined_mask(src: str, folder: str, key: str, enhance: bool = False, log=Non
             _segment(["orient", src, tmp])
         boxes = ";".join(",".join(str(v) for v in b) for b in info.get("persons") or [])
         result = _run_json([config.EFFECTS_PYTHON, os.path.join(config.EFFECTS_WORKER_DIR, "refine.py"),
-                            readable, vision, out, "--boxes", boxes],
+                            readable, vision, out, "--boxes", boxes] + (["--couple"] if couple else []),
                            "échec de l'affinage", env=config.effects_env())
         if log:
-            log("MobileSAM : %d personne(s), %.0f %% de traînées retirées" % (
-                result.get("persons", 0) + result.get("extra", 0), 100 * result.get("removed", 0)))
+            found = result.get("persons", 0) + result.get("extra", 0)
+            log("MobileSAM : %d personne(s)%s, %.0f %% du masque de Vision retiré" % (
+                found, (", %d gardée(s) : les mariés" % result.get("kept", 0)) if couple else "",
+                100 * result.get("removed", 0)))
         return out if os.path.isfile(out) else ""
     except EffectError as exc:
         if log:
@@ -277,7 +288,7 @@ def erase(src: str, out: str, box, folder: str, key: str) -> dict:
 
 
 def preview(event_dir: str, src: str, effect: str, box=None, log=None,
-            enhance: bool = False) -> dict:
+            enhance: bool = False, couple: bool = False) -> dict:
     """Calcule l'apercu d'un effet ; box = cadre en proportions de l'image
     redressee : autour des maries (PhotoCraft complete le detourage de Vision)
     ou, pour « effacer », autour de l'objet a faire disparaitre. enhance : la
@@ -287,6 +298,8 @@ def preview(event_dir: str, src: str, effect: str, box=None, log=None,
     rel = _photo_rel(event_dir, src)
     if spec["tool"] == "enhance":
         box, enhance = None, False          # l'effet est l'amelioration elle-meme
+    if spec["tool"] in ("enhance", "erase") or not refine_available():
+        couple = False                      # sans detourage affine, l'option ne s'applique pas
     if not _LOCK.acquire(blocking=False):
         raise EffectError("Un effet est déjà en cours de calcul : patientez")
     try:
@@ -294,9 +307,9 @@ def preview(event_dir: str, src: str, effect: str, box=None, log=None,
         os.makedirs(folder, exist_ok=True)
         _cleanup_cache(folder, _key(rel) + "_")
         framed = box is not None
-        out = os.path.join(folder, preview_name(rel, effect, framed, enhance))
-        alpha = os.path.join(folder, mask_name(rel, effect, framed, enhance))
-        common = {"effect": effect, "framed": framed, "enhanced": enhance, "path": out}
+        out = os.path.join(folder, preview_name(rel, effect, framed, enhance, couple))
+        alpha = os.path.join(folder, mask_name(rel, effect, framed, enhance, couple))
+        common = {"effect": effect, "framed": framed, "enhanced": enhance, "couple": couple, "path": out}
         if spec["tool"] == "erase":
             result = _erase(src, out, box, folder, _key(rel), alpha, enhance)
             return dict(common, framed=True, width=result.get("width"),
@@ -310,12 +323,12 @@ def preview(event_dir: str, src: str, effect: str, box=None, log=None,
         args = [spec["tool"], src, out, "--save-alpha", alpha]
         if enhance:
             args.append("--enhance")
-        refined = refined_mask(src, folder, _key(rel), enhance, log)
+        refined = refined_mask(src, folder, _key(rel), enhance, log, couple)
         if refined:
             args += ["--use-mask", refined]
             common["refined"] = True
         if effect == "detourage":
-            args += ["--save-fg", os.path.join(folder, fg_name(rel, framed, enhance))]
+            args += ["--save-fg", os.path.join(folder, fg_name(rel, framed, enhance, couple))]
         bounds = None
         try:
             if box is not None:
@@ -342,12 +355,13 @@ def preview(event_dir: str, src: str, effect: str, box=None, log=None,
         _LOCK.release()
 
 
-def save(event_dir: str, src: str, effect: str, framed: bool, enhanced: bool = False) -> str:
+def save(event_dir: str, src: str, effect: str, framed: bool, enhanced: bool = False,
+         couple: bool = False) -> str:
     """Copie l'apercu valide dans 06_Rendus/Photos_effets ; retourne son chemin
     relatif a l'evenement. Un nom deja pris n'est jamais ecrase."""
     _check(effect)
     rel = _photo_rel(event_dir, src)
-    cached = os.path.join(event_dir, CACHE_DIR, preview_name(rel, effect, framed, enhanced))
+    cached = os.path.join(event_dir, CACHE_DIR, preview_name(rel, effect, framed, enhanced, couple))
     if not os.path.isfile(cached):
         raise EffectError("Aperçu introuvable : recalculez l'effet")
     stem = tools.safe_component(os.path.splitext(os.path.basename(src))[0], "photo")
@@ -358,7 +372,7 @@ def save(event_dir: str, src: str, effect: str, framed: bool, enhanced: bool = F
 
 
 def export_psd(event_dir: str, src: str, effect: str, framed: bool, log=None,
-               enhanced: bool = False) -> str:
+               enhanced: bool = False, couple: bool = False) -> str:
     """PSD a calques de l'apercu valide, pour l'affiner dans PhotoCraft : la photo
     (amelioree si l'effet l'a ete, pour que tout concorde), et le calque d'effet avec
     un masque de calque modifiable. Enregistre dans 06_Rendus/Photos_effets (jamais
@@ -366,8 +380,8 @@ def export_psd(event_dir: str, src: str, effect: str, framed: bool, log=None,
     _check(effect)
     rel = _photo_rel(event_dir, src)
     folder = os.path.join(event_dir, CACHE_DIR)
-    cached = os.path.join(folder, preview_name(rel, effect, framed, enhanced))
-    alpha = os.path.join(folder, mask_name(rel, effect, framed, enhanced))
+    cached = os.path.join(folder, preview_name(rel, effect, framed, enhanced, couple))
+    alpha = os.path.join(folder, mask_name(rel, effect, framed, enhanced, couple))
     mode, layer_name = PSD_LAYERS[effect]
     if not (os.path.isfile(cached) and (mode == "plain" or os.path.isfile(alpha))):
         raise EffectError("Aperçu introuvable : recalculez l'effet")
@@ -383,7 +397,7 @@ def export_psd(event_dir: str, src: str, effect: str, framed: bool, log=None,
         layer_source = cached
         if mode == "keep":
             # Calque des maries : la photo aux couleurs de bord nettoyees (sinon la photo)
-            fg = os.path.join(folder, fg_name(rel, framed, enhanced))
+            fg = os.path.join(folder, fg_name(rel, framed, enhanced, couple))
             layer_source = fg if os.path.isfile(fg) else base
         photocraft.layered_psd(base, layer_source, alpha, mode, layer_name, out, [event_dir],
                                base_name="Photo améliorée" if enhanced else "Photo originale")
