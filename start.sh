@@ -54,7 +54,8 @@ echo "${DIM}------------------------------------------------------------${OFF}"
 
 if [ "${1:-}" = "--cli" ]; then
   shift
-  exec "$PY" -m montagia.cli "$@"     # ./start.sh --cli video.mp4 render 9:16
+  exec "$PY" -u -m montagia.cli "$@"     # ./start.sh --cli video.mp4 render 9:16
 fi
 
-exec "$PY" -m montagia
+# -u : messages ecrits tout de suite dans le journal (sinon gardes en memoire).
+exec "$PY" -u -m montagia

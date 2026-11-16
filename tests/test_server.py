@@ -340,3 +340,19 @@ class ServerTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class QuietServerTest(unittest.TestCase):
+    def test_connection_reset_is_not_logged(self):
+        server = object.__new__(app.StudioServer)     # sans ouvrir de port
+        with mock.patch.object(ThreadingHTTPServer, "handle_error") as parent:
+            try:
+                raise ConnectionResetError(54, "Connection reset by peer")
+            except ConnectionResetError:
+                server.handle_error(None, ("127.0.0.1", 1))
+            parent.assert_not_called()
+            try:
+                raise ValueError("vraie erreur")
+            except ValueError:
+                server.handle_error(None, ("127.0.0.1", 1))
+            parent.assert_called_once()

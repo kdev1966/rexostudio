@@ -135,6 +135,17 @@ def _final_event(summary: dict):
     return None
 
 
+class StudioServer(ThreadingHTTPServer):
+    daemon_threads = True
+
+    def handle_error(self, request, client_address):
+        # Le navigateur ouvre des connexions d'avance puis les abandonne :
+        # "Connection reset by peer" n'est pas une panne, pas de trace.
+        if isinstance(sys.exc_info()[1], (ConnectionError, TimeoutError)):
+            return
+        super().handle_error(request, client_address)
+
+
 class StudioHandler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"       # necessaire pour le streaming SSE
     disable_nagle_algorithm = True       # reponse plus reactive
@@ -781,7 +792,7 @@ def main():
         else:
             print("  [!] Ollama ne repond pas. Lancez 'ollama serve' dans un autre terminal.")
         print("")
-    httpd = ThreadingHTTPServer((config.HOST, config.PORT), StudioHandler)
+    httpd = StudioServer((config.HOST, config.PORT), StudioHandler)
     httpd.daemon_threads = True
     # MONTAGIA_NO_BROWSER=1 : lancement a distance (SSH), pas de navigateur
     # ouvert sur l'ecran de la machine.
