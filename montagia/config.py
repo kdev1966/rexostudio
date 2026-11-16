@@ -212,6 +212,10 @@ TEXTURES_DIR = os.environ.get("REXO_TEXTURES_DIR") or os.path.join(PROJECT_DIR, 
 TEXTURECRAFT_APP = os.environ.get("REXO_TEXTURECRAFT_APP", "/Applications/TextureCraft.app")
 TEXTURECRAFT_BIN = os.path.join(TEXTURECRAFT_APP, "Contents", "MacOS", "TextureCraft")
 TEXTURECRAFT_PORT = int(os.environ.get("REXO_TEXTURECRAFT_PORT", "9881"))
+# MaterialCraft (materiaux proceduraux par graphes, lit aussi les .sbs de Substance)
+MATERIALCRAFT_APP = os.environ.get("REXO_MATERIALCRAFT_APP", "/Applications/MaterialCraft.app")
+MATERIALCRAFT_BIN = os.path.join(MATERIALCRAFT_APP, "Contents", "MacOS", "MaterialCraft")
+MATERIALCRAFT_PORT = int(os.environ.get("REXO_MATERIALCRAFT_PORT", "9883"))
 
 # EffectCraft (motion design, meme editeur que PhotoCraft et FilmCraft) : serveur de
 # controle local, une requete JSON par ligne (voir montagia/effectcraft.py)

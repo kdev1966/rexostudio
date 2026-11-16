@@ -32,14 +32,16 @@ class TextureCraftError(RuntimeError):
 
 
 class Client(object):
-    def __init__(self, port: int, token: str, timeout: float = 120.0):
-        self.port, self.token, self.timeout = int(port), token, timeout
+    """Protocole commun a TextureCraft et MaterialCraft (jeton, puis command.run)."""
+
+    def __init__(self, port: int, token: str, timeout: float = 120.0, app: str = "TextureCraft"):
+        self.port, self.token, self.timeout, self.app = int(port), token, timeout, app
 
     def call(self, method: str, params: dict = None):
         try:
             sock = socket.create_connection(("127.0.0.1", self.port), timeout=self.timeout)
         except OSError as exc:
-            raise TextureCraftError("TextureCraft injoignable sur le port %d (%s)" % (self.port, exc)) from exc
+            raise TextureCraftError("%s injoignable sur le port %d (%s)" % (self.app, self.port, exc)) from exc
         try:
             stream = sock.makefile("rwb")
             replies = []
@@ -48,16 +50,16 @@ class Client(object):
                 stream.flush()
                 line = stream.readline()
                 if not line:
-                    raise TextureCraftError("TextureCraft a fermé la connexion")
+                    raise TextureCraftError("%s a fermé la connexion" % self.app)
                 replies.append(json.loads(line.decode("utf-8")))
         except (OSError, ValueError) as exc:
-            raise TextureCraftError("Échange avec TextureCraft interrompu (%s)" % exc) from exc
+            raise TextureCraftError("Échange avec %s interrompu (%s)" % (self.app, exc)) from exc
         finally:
             sock.close()
         for reply in replies:
             if not reply.get("ok"):
-                raise TextureCraftError("TextureCraft (%s) : %s" % (
-                    (params or {}).get("id", method), reply.get("error", "erreur inconnue")))
+                raise TextureCraftError("%s (%s) : %s" % (
+                    self.app, (params or {}).get("id", method), reply.get("error", "erreur inconnue")))
         return replies[-1].get("result")
 
     def run(self, command: str, params: dict = None):

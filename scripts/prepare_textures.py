@@ -4,6 +4,8 @@ machine, ou pour ajouter un materiau) dans modeles/textures/<materiau>/.
     python3 scripts/prepare_textures.py                 # materiaux du jardin simple
     python3 scripts/prepare_textures.py marble velvet   # ou ceux donnes
     python3 scripts/prepare_textures.py --liste         # les 93 materiaux de TextureCraft
+    python3 scripts/prepare_textures.py --materialcraft paquet.mcraft nom [graphe] [cle=valeur...]
+                    # materiau concu dans MaterialCraft (ou .sbs Substance), entrees exposees reglees
 
 Deja presentes, les textures sont gardees (--refaire pour les refaire).
 """
@@ -12,13 +14,31 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from montagia import texturecraft  # noqa: E402
+from montagia import materialcraft, texturecraft  # noqa: E402
 
 # Materiaux utilises par blender/build_template_jardin.py
 JARDIN = ("marble", "gold_polished", "wood_oak", "plaster")
 
 
+def from_materialcraft(argv):
+    rest = argv[argv.index("--materialcraft") + 1:]
+    if len(rest) < 2:
+        print("usage : --materialcraft paquet.mcraft nom [graphe] [cle=valeur...]")
+        return 2
+    package, name = rest[0], rest[1]
+    graph = next((a for a in rest[2:] if "=" not in a), None)
+    values = dict(a.split("=", 1) for a in rest[2:] if "=" in a)
+    client = materialcraft.connect(print)
+    try:
+        materialcraft.export_material(client, package, name, values=values, graph=graph, log=print)
+    finally:
+        materialcraft.close(client)
+    return 0
+
+
 def main(argv):
+    if "--materialcraft" in argv:
+        return from_materialcraft(argv)
     redo = "--refaire" in argv
     wanted = [a for a in argv if not a.startswith("--")] or list(JARDIN)
     todo = wanted if redo else [m for m in wanted if not texturecraft.has_textures(m)]

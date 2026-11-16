@@ -11,7 +11,7 @@ from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from montagia import config, texturecraft  # noqa: E402
+from montagia import config, materialcraft, texturecraft  # noqa: E402
 
 TOKEN = "a" * 64
 
@@ -49,6 +49,21 @@ class FakeTextureCraft(object):
             return {"ok": True, "result": []}
         cmd, params = req["params"]["id"], req["params"].get("params", {})
         self.commands.append((cmd, params))
+        if cmd == "file.open":
+            return {"ok": True, "result": {"graphs": 2, "warnings": []}}
+        if cmd == "graph.open":
+            self.opened = params["graph"]
+            return {"ok": True, "result": {"graph": params["graph"]}}
+        if cmd == "session.inspect":                     # graphe 0 : le graphe vide ajoute
+            return {"ok": True, "result": {"graph": {"nodes": [1, 2] if self.opened == 1 else []}}}
+        if cmd == "file.export":
+            files = []
+            for kind in ("basecolor", "normal", "roughness", "mask"):
+                path = os.path.join(params["dir"], "%s.png" % kind)
+                with open(path, "w") as fh:
+                    fh.write("png")
+                files.append(path)
+            return {"ok": True, "result": {"files": files}}
         if cmd == "material.list":
             return {"ok": True, "result": [{"id": "marble"}, {"id": "gold_polished"}]}
         if cmd == "file.exportTextures":
@@ -86,6 +101,15 @@ class TextureCraftCase(unittest.TestCase):
         applied = dict(self.fake.commands)
         self.assertEqual(applied["material.apply"], {"material": "marble"})
         self.assertEqual(applied["file.exportTextures"]["preset"], "Blender (Principled BSDF)")
+
+    def test_materialcraft_skips_the_empty_graph_and_names_maps_for_blender(self):
+        client = texturecraft.Client(self.fake.port, TOKEN, timeout=5, app="MaterialCraft")
+        files = materialcraft.export_material(client, "/m/zellige.mcraft", "zellige_or",
+                                              values={"couleur": "#c8a040"})
+        self.assertEqual(files, ["zellige_or_BaseColor.png", "zellige_or_Normal.png", "zellige_or_Roughness.png"])
+        applied = dict(self.fake.commands)
+        self.assertEqual(applied["graph.exposed.set"], {"id": "couleur", "value": "#c8a040"})
+        self.assertEqual(self.fake.opened, 1)                  # le graphe avec des noeuds
 
 
 if __name__ == "__main__":
