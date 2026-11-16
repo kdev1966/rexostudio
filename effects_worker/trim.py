@@ -5,7 +5,8 @@ S'execute dans l'environnement d'effets (.effets/venv, Python 3.11) :
 
     trim.py <entree.png> <sortie.png>
 
-Sortie standard : une ligne JSON {"ok":true,"width","height","box":[x,y,l,h]}
+Sortie standard : une ligne JSON {"ok":true,"width","height","box":[x,y,l,h],
+"cut_bottom"} ; cut_bottom : les personnes touchent le bas de la photo (pas en pied).
 """
 import json
 import sys
@@ -30,7 +31,9 @@ def main():
     if not cv2.imwrite(sys.argv[2], image[y0:y1, x0:x1]):
         print(json.dumps({"ok": False, "error": "écriture impossible"}, ensure_ascii=False))
         return 1
-    print(json.dumps({"ok": True, "width": x1 - x0, "height": y1 - y0, "box": [x0, y0, x1 - x0, y1 - y0]}))
+    cut_bottom = y1 >= image.shape[0] - max(2, image.shape[0] // 200)
+    print(json.dumps({"ok": True, "width": x1 - x0, "height": y1 - y0, "box": [x0, y0, x1 - x0, y1 - y0],
+                      "cut_bottom": bool(cut_bottom)}))
     return 0
 
 

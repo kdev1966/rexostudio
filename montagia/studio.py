@@ -112,7 +112,9 @@ def clip_drone(job, event_dir: str, src: str, scene: str = blender.DEFAULT_SCENE
     try:
         job.set_progress(0.02, steps[0])
         couple_cutout(src, full_png, folder, key, log)
-        effects.trim(full_png, couple_png)
+        if effects.trim(full_png, couple_png).get("cut_bottom"):
+            log("Attention : les mariés touchent le bas de la photo (photo pas en pied) : dans la "
+                "scène, ils sembleront coupés ; préférez une photo des mariés en entier")
         # Photo des cadres : amelioree et reduite (une photo de 19 Mpx ralentit EffectCraft)
         # (Core Image lit l'image a la demande : jamais la meme entree et sortie)
         effects.segment(["orient", src, small_jpg, "--max", str(FRAME_PHOTO_MAX)])

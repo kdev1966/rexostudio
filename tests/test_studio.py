@@ -245,7 +245,7 @@ class ClipDroneCase(unittest.TestCase):
         self.to_fc = mock.Mock(return_value={"project": os.path.join(self.event, "05_Montage", "Montage.fcproj")})
         patches = [
             mock.patch.object(studio, "couple_cutout", side_effect=lambda _s, out, *_a, **_k: _write(out, b"png")),
-            mock.patch.object(effects, "trim", side_effect=lambda _s, out: _write(out, b"png")),
+            mock.patch.object(effects, "trim", side_effect=self._trim),
             mock.patch.object(effects, "segment", side_effect=lambda args: _write(args[2], b"jpg")),
             mock.patch.object(blender, "ensure_generic", side_effect=self._generic),
             mock.patch.object(effectcraft, "installed", return_value=True),
@@ -259,6 +259,12 @@ class ClipDroneCase(unittest.TestCase):
         for p in patches:
             p.start()
             self.addCleanup(p.stop)
+
+    cut_bottom = False
+
+    def _trim(self, _src, out):
+        _write(out, b"png")
+        return {"ok": True, "cut_bottom": self.cut_bottom}
 
     def _generic(self, *_a, progress=None, **_k):
         progress(1.0)
@@ -289,6 +295,12 @@ class ClipDroneCase(unittest.TestCase):
         self.assertEqual(result["filmcraft"], "")
         self.assertFalse(result["titled"])
         self.assertTrue(any("FilmCraft : envoi impossible" in m for m in job.log))
+
+    def test_photo_not_full_length_is_flagged(self):
+        self.cut_bottom = True
+        job = Job("studio")
+        studio.clip_drone(job, self.event, self.photo)
+        self.assertTrue(any("pas en pied" in m for m in job.log))
 
     def test_template_without_couple_placeholder_is_refused(self):
         self.INFO = {"placeholders": [{"name": "PHOTO_CADRE_PHOTO", "kind": "cadre", "width_m": 1, "height_m": 1}]}
