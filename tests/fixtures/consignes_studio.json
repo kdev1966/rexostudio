@@ -1,0 +1,78 @@
+{
+  "_role": "Consignes typiques du studio (photos de mariage), en français et en tunisien, avec le plan d'outils attendu. Jeu d'évaluation de l'assistant à consigne (M5) : le plan proposé par l'IA locale est comparé à « attendu ». Choisies le 16/11/2026, à compléter par les vraies demandes du studio.",
+  "outils": {
+    "detourer": "les personnes sur fond transparent (Vision)",
+    "cadre_maries": "demander un cadre autour des mariés pour garder robe et traîne (PhotoCraft)",
+    "fond_noir_et_blanc": "les personnes en couleur, le fond en noir et blanc (Vision)",
+    "fond_flou": "les personnes nettes, le fond flou (Vision)",
+    "effacer_objet": "demander un cadre autour de l'objet, puis MobileSAM + MI-GAN",
+    "fond_uni": "remplacer le fond par une couleur (détourage + couleur)",
+    "style": "réglage global de couleur (filtres PhotoCraft ou table de couleurs)",
+    "recadrer": "format de diffusion (4:5, 9:16, 1:1, 16:9)",
+    "lot": "appliquer le plan à toutes les photos de l'événement",
+    "refuser": "pas faisable en local : expliquer et proposer une alternative"
+  },
+  "consignes": [
+    {
+      "id": 1, "langue": "fr",
+      "texte": "Efface les invités qui passent derrière les mariés",
+      "attendu": ["effacer_objet"],
+      "note": "Plusieurs personnes : un cadre par invité, effacées une par une."
+    },
+    {
+      "id": 2, "langue": "fr",
+      "texte": "Mets les mariés en couleur et tout le reste en noir et blanc",
+      "attendu": ["fond_noir_et_blanc"]
+    },
+    {
+      "id": 3, "langue": "fr",
+      "texte": "Floute l'arrière-plan pour faire ressortir le couple, la robe doit rester nette",
+      "attendu": ["cadre_maries", "fond_flou"],
+      "note": "« la robe doit rester nette » : Vision seul perd les grandes traînes."
+    },
+    {
+      "id": 4, "langue": "fr",
+      "texte": "Enlève le fil électrique et le panneau dans le ciel",
+      "attendu": ["effacer_objet", "effacer_objet"]
+    },
+    {
+      "id": 5, "langue": "tunisien (lettres latines)",
+      "texte": "na7i el karhba elli mwa9fa wra l3rousa",
+      "traduction": "enlève la voiture garée derrière la mariée",
+      "attendu": ["effacer_objet"]
+    },
+    {
+      "id": 6, "langue": "tunisien (lettres latines)",
+      "texte": "a3mel el fond k7al w byadh w khalli el 3rousa wel 3ris bel couleur",
+      "traduction": "fais le fond en noir et blanc et laisse la mariée et le marié en couleur",
+      "attendu": ["fond_noir_et_blanc"]
+    },
+    {
+      "id": 7, "langue": "tunisien (lettres arabes)",
+      "texte": "قص العروسة والعريس وحطهم على خلفية بيضاء",
+      "traduction": "découpe la mariée et le marié et mets-les sur un fond blanc",
+      "attendu": ["cadre_maries", "detourer", "fond_uni"],
+      "parametres": {"fond_uni": {"couleur": "blanc"}}
+    },
+    {
+      "id": 8, "langue": "fr",
+      "texte": "Prépare cette photo pour Instagram, en vertical",
+      "attendu": ["recadrer"],
+      "parametres": {"recadrer": {"format": "4:5"}},
+      "note": "Recadrage centré sur les personnes trouvées par Vision."
+    },
+    {
+      "id": 9, "langue": "fr",
+      "texte": "Donne un rendu chaud et un peu vintage à toutes les photos de la soirée",
+      "attendu": ["style", "lot"],
+      "parametres": {"style": {"nom": "vintage chaud"}}
+    },
+    {
+      "id": 10, "langue": "tunisien (lettres latines)",
+      "texte": "zid ghroub chams wra l3rous w zid war9 ward ya7 mel sma",
+      "traduction": "ajoute un coucher de soleil derrière les mariés et des pétales de rose qui tombent du ciel",
+      "attendu": ["refuser"],
+      "note": "Génération d'images (diffusion) : irréaliste sur l'iMac. Proposer : fond remplacé par une photo de coucher de soleil fournie par le studio."
+    }
+  ]
+}

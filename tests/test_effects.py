@@ -30,7 +30,9 @@ exit 1
 """
 
 
-class EffectsTest(unittest.TestCase):
+class PhotoEventCase(unittest.TestCase):
+    """Un evenement temporaire avec une photo, et un faux rexo-segment."""
+
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix="rexo-fx-")
         self.addCleanup(shutil.rmtree, self.tmp, True)
@@ -55,6 +57,8 @@ class EffectsTest(unittest.TestCase):
         with open(self.log) as fh:
             return [line.split() for line in fh.read().splitlines()]
 
+
+class EffectsTest(PhotoEventCase):
     # -- cadre ----------------------------------------------------------
     def test_box_fractions_to_pixels(self):
         self.assertEqual(effects.check_box([0.1, 0.2, 0.5, 0.5], 4000, 3000),
@@ -169,6 +173,91 @@ class EffectsTest(unittest.TestCase):
     def test_save_without_preview(self):
         with self.assertRaises(effects.EffectError):
             effects.save(self.event, self.photo, "detourage", False)
+
+
+# Faux python de l'environnement d'effets : note ses arguments et PYTHONPATH,
+# copie l'entree vers la sortie, repond comme effects_worker/erase.py.
+FAKE_EFFECTS_PYTHON = """#!/bin/bash
+echo "$@" >> "%(log)s"
+echo "PYTHONPATH=$PYTHONPATH OFFLINE=$EMBEDKIT_OFFLINE" >> "%(log)s"
+cp "$2" "$3"
+echo '{"ok":true,"width":4000,"height":3000,"coverage":0.012,"score":0.96,"ms":2200}'
+"""
+
+
+class EraseTest(PhotoEventCase):
+    """Effacer un objet : l'environnement d'effets est un processus separe."""
+
+    def setUp(self):
+        super().setUp()
+        self.erase_log = os.path.join(self.tmp, "erase.log")
+        workers = os.path.join(self.tmp, "effects_worker")
+        os.makedirs(workers)
+        open(os.path.join(workers, "erase.py"), "w").close()
+        python = os.path.join(self.tmp, "python")
+        with open(python, "w") as fh:
+            fh.write(FAKE_EFFECTS_PYTHON % {"log": self.erase_log})
+        os.chmod(python, 0o755)
+        for name, value in (("EFFECTS_PYTHON", python), ("EFFECTS_WORKER_DIR", workers)):
+            patcher = mock.patch.object(config, name, value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def _erase_calls(self):
+        with open(self.erase_log) as fh:
+            return fh.read().splitlines()
+
+    def test_erase_runs_worker_with_box(self):
+        r = effects.preview(self.event, self.photo, "effacer", box=[0.1, 0.2, 0.3, 0.4])
+        self.assertTrue(r["path"].endswith("_effacer_cadre.jpg"))
+        self.assertTrue(os.path.isfile(r["path"]))
+        self.assertEqual((r["coverage"], r["score"], r["ms"]), (0.012, 0.96, 2200))
+        args, env = self._erase_calls()
+        args = args.split()
+        self.assertEqual(args[0], os.path.join(config.EFFECTS_WORKER_DIR, "erase.py"))
+        self.assertEqual(args[1], self.photo)
+        self.assertEqual(args[3:], ["--box", "0.100000,0.200000,0.300000,0.400000"])
+        self.assertIn("PYTHONPATH=" + config.EMBEDKIT_DIR, env)
+        self.assertIn("OFFLINE=1", env)
+        # Vision n'est pas appele pour une photo JPEG
+        self.assertFalse(os.path.exists(self.log))
+
+    def test_erase_needs_a_box(self):
+        with self.assertRaises(effects.EffectError) as ctx:
+            effects.preview(self.event, self.photo, "effacer")
+        self.assertIn("cadre", str(ctx.exception))
+        with self.assertRaises(effects.EffectError):
+            effects.preview(self.event, self.photo, "effacer", box=[0.1, 0.1, 0.001, 0.5])
+
+    def test_erase_heic_goes_through_vision_copy(self):
+        heic = os.path.join(self.event, "02_Photos", "Carte_1", "IMG_0002.HEIC")
+        shutil.copyfile(self.photo, heic)
+        r = effects.preview(self.event, heic, "effacer", box=[0, 0, 1, 1])
+        orient = self._calls()[0]
+        self.assertEqual(orient[0], "orient")
+        self.assertEqual(orient[1], heic)
+        args = self._erase_calls()[0].split()
+        self.assertEqual(args[1], orient[2])                  # la copie JPEG redressee
+        self.assertFalse(os.path.exists(orient[2]))           # effacee ensuite
+        self.assertTrue(os.path.isfile(r["path"]))
+
+    def test_erase_unavailable_without_env(self):
+        with mock.patch.object(config, "EFFECTS_PYTHON", os.path.join(self.tmp, "absent")):
+            self.assertFalse(effects.available("effacer"))
+            with self.assertRaises(effects.EffectError) as ctx:
+                effects.preview(self.event, self.photo, "effacer", box=[0, 0, 1, 1])
+        self.assertIn("install_effects_env", str(ctx.exception))
+
+    def test_catalog_flags(self):
+        cat = {e["key"]: e for e in effects.catalog()}
+        self.assertTrue(cat["effacer"]["needs_box"])
+        self.assertTrue(cat["effacer"]["available"])
+        self.assertFalse(cat["fond-flou"]["needs_box"])
+
+    def test_save_erased_photo(self):
+        effects.preview(self.event, self.photo, "effacer", box=[0.1, 0.1, 0.2, 0.2])
+        rel = effects.save(self.event, self.photo, "effacer", True)
+        self.assertEqual(rel, os.path.join("06_Rendus", "Photos_effets", "IMG_0001_effacer.jpg"))
 
 
 class PhotoCraftTest(unittest.TestCase):

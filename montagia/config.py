@@ -178,6 +178,25 @@ PHOTOCRAFT_CLI = os.path.join(PHOTOCRAFT_APP, "Contents", "MacOS", "photocraft-c
 # --------------------------------------------------------------------------
 SEGMENT_BIN = os.path.join(BIN_DIR, "rexo-segment")
 
+# Environnement d'effets (Python 3.11 + ONNX Runtime, processus separe),
+# installe par scripts/install_effects_env.sh ; ses programmes sont dans effects_worker/.
+EFFECTS_ENV_DIR = os.path.join(PROJECT_DIR, ".effets")
+EFFECTS_PYTHON = os.path.join(EFFECTS_ENV_DIR, "venv", "bin", "python")
+EFFECTS_WORKER_DIR = os.path.join(PROJECT_DIR, "effects_worker")
+EMBEDKIT_DIR = os.path.join(PROJECT_DIR, "vendor", "embedkit")
+EMBEDKIT_CACHE = os.environ.get("EMBEDKIT_CACHE") or os.path.join(
+    os.environ.get("KDEV_MODELS_DIR") or os.path.expanduser("~/.local/share/kdev-models"),
+    "embedkit")
+
+
+def effects_env() -> dict:
+    """Variables d'environnement d'un programme de l'environnement d'effets :
+    embedkit du projet, magasin de modeles, aucun acces reseau."""
+    env = dict(os.environ, PYTHONPATH=EMBEDKIT_DIR, EMBEDKIT_CACHE=EMBEDKIT_CACHE,
+               EMBEDKIT_OFFLINE="1")
+    env.pop("PYTHONHOME", None)
+    return env
+
 # --------------------------------------------------------------------------
 # Decouverte des binaires
 # --------------------------------------------------------------------------

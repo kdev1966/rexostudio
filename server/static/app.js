@@ -1416,16 +1416,21 @@ function openFx(rel) {
   if (!p) return;
   Object.assign(FX, { photo: p, framing: false, box: null, drag: null, result: null, saved: '', view: 'orig' });
   $('#fx-name').textContent = p.name;
+  if (!fxSpec()) FX.effect = 'detourage';
   $('#fx-effects').innerHTML = EVD.effects.map((e) =>
-    '<button class="filter" data-effect="' + escapeHtml(e.key) + '">' + escapeHtml(e.label) + '</button>').join('');
+    '<button class="filter" data-effect="' + escapeHtml(e.key) + '"' +
+    (e.available ? '' : ' disabled title="Non installé : voir docs/DEPLOIEMENT.md"') + '>' +
+    escapeHtml(e.label) + '</button>').join('');
   const info = $('#fx-info');
   info.className = 'tiny' + (STATUS.effects ? '' : ' err');
   info.textContent = STATUS.effects ? '' : 'Outil d’effets absent : lancez ./scripts/build_native.sh';
-  $('#fx-frame').disabled = !STATUS.photocraft;
-  $('#fx-frame').title = STATUS.photocraft ? '' : 'PhotoCraft n’est pas installé';
   $('#fx-photocraft').disabled = !STATUS.photocraft;
   fxRender();
   $('#fx').classList.remove('hidden');
+}
+
+function fxSpec() {
+  return EVD.effects.find((e) => e.key === FX.effect);
 }
 
 function closeFx() {
@@ -1450,8 +1455,15 @@ function fxRender() {
   $$('#fx-effects .filter').forEach((b) => b.classList.toggle('active', b.dataset.effect === FX.effect));
   $('#fx-stage').classList.toggle('framing', FX.framing && !showResult);
   $('#fx-frame').classList.toggle('active', FX.framing);
+  const erase = !!(fxSpec() || {}).needs_box;
+  $('#fx-frame-label').textContent = erase ? 'Désignez l’objet à effacer :' : 'La robe ou la traîne est coupée ?';
   $('#fx-frame').textContent = FX.box ? '✕ Retirer le cadre'
-    : (FX.framing ? 'Tracez le cadre sur la photo…' : '▭ Tracer un cadre autour des mariés');
+    : (FX.framing ? 'Tracez le cadre sur la photo…'
+      : (erase ? '▭ Tracer un cadre autour de l’objet' : '▭ Tracer un cadre autour des mariés'));
+  $('#fx-frame').disabled = FX.busy || (!erase && !STATUS.photocraft);
+  $('#fx-frame-hint').textContent = erase
+    ? 'Glissez sur la photo pour entourer l’objet ou la personne à effacer, au plus près. Le décor est reconstitué à sa place.'
+    : 'Glissez sur la photo pour entourer les mariés, robe et traîne comprises. PhotoCraft complète alors le détourage.';
   $('#fx-frame-hint').classList.toggle('hidden', !FX.framing);
   const box = $('#fx-box');
   const b = FX.drag || FX.box;
@@ -1516,8 +1528,11 @@ $('#fx-frame').addEventListener('click', () => {
 
 $('#fx-effects').addEventListener('click', (ev) => {
   const b = ev.target.closest('[data-effect]');
-  if (!b || FX.busy || b.dataset.effect === FX.effect) return;
+  if (!b || b.disabled || FX.busy || b.dataset.effect === FX.effect) return;
+  const wasErase = !!(fxSpec() || {}).needs_box;
   FX.effect = b.dataset.effect;
+  // Le cadre n'a pas le meme sens : autour des maries (les garder) ou d'un objet (l'effacer)
+  if (wasErase !== !!(fxSpec() || {}).needs_box) { FX.box = null; FX.framing = false; }
   fxInvalidate();
   fxRender();
 });
@@ -1530,11 +1545,20 @@ $$('#fx .fx-view .filter').forEach((b) => b.addEventListener('click', () => {
 
 $('#fx-run').addEventListener('click', async () => {
   if (FX.busy || !FX.photo) return;
+  const info = $('#fx-info');
+  const erase = !!(fxSpec() || {}).needs_box;
+  if (erase && !FX.box) {
+    info.className = 'tiny err';
+    info.textContent = 'Tracez d’abord un cadre autour de l’objet à effacer.';
+    FX.framing = true;
+    fxRender();
+    return;
+  }
   FX.busy = true;
   FX.framing = false;
-  const info = $('#fx-info');
   info.className = 'tiny muted';
-  info.textContent = FX.box ? 'Vision + PhotoCraft (sélection dans le cadre)…' : 'Vision : détourage des personnes…';
+  info.textContent = erase ? 'MobileSAM sélectionne l’objet, MI-GAN reconstitue le décor…'
+    : (FX.box ? 'Vision + PhotoCraft (sélection dans le cadre)…' : 'Vision : détourage des personnes…');
   fxRender();
   try {
     const r = await post('/api/events/effect', { id: EVD.id, rel: FX.photo.rel, effect: FX.effect, box: FX.box });
@@ -1542,7 +1566,11 @@ $('#fx-run').addEventListener('click', async () => {
     FX.saved = '';
     FX.view = 'result';
     const secs = (r.ms / 1000).toFixed(1).replace('.', ',');
-    if (r.coverage < 0.01) {
+    if (erase) {
+      info.className = 'tiny muted';
+      info.textContent = 'Objet effacé en ' + secs + ' s. Comparez avec l’original : si le décor reconstitué ' +
+        'se voit, resserrez le cadre et recalculez, ou retouchez dans PhotoCraft.';
+    } else if (r.coverage < 0.01) {
       info.className = 'tiny err';
       info.textContent = 'Personne n’a été trouvé sur cette photo : effet non conseillé.';
     } else {

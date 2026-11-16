@@ -3,12 +3,18 @@
     detourage      les personnes sur fond transparent (PNG)
     noir-et-blanc  les personnes en couleur, le fond en noir et blanc
     fond-flou      les personnes nettes, le fond flou
+    effacer        un objet designe par un cadre disparait, le decor est reconstitue
 
 Le detourage vient d'Apple Vision (bin/rexo-segment, voir native/segment.swift) :
 fiable sur les personnes, tetes et cheveux compris, mais une grande robe etalee
 au sol lui echappe. Si le studio trace un cadre autour des maries, PhotoCraft fait
 une Selection d'objet dans ce cadre (robe et traine comprises) et son masque est
 ajoute a celui de Vision.
+
+L'effacement tourne dans l'environnement d'effets (Python 3.11 + ONNX, processus
+separe, effects_worker/erase.py) : MobileSAM detoure l'objet dans le cadre, MI-GAN
+reconstitue le decor. Les photos que OpenCV ne lit pas (HEIC, RAW) sont d'abord
+redressees en JPEG par rexo-segment.
 
 Deroulement : un apercu est calcule dans <evenement>/.rexo/effets/ (cache de Rexo
 Studio, seul l'apercu de la derniere photo est garde), puis, si le studio le
@@ -28,7 +34,10 @@ EFFECTS = {
     "detourage": {"label": "Détourage (fond transparent)", "tool": "cutout", "ext": ".png"},
     "noir-et-blanc": {"label": "Couleur sur fond noir et blanc", "tool": "bw", "ext": ".jpg"},
     "fond-flou": {"label": "Fond flou", "tool": "blur", "ext": ".jpg"},
+    "effacer": {"label": "Effacer un objet", "tool": "erase", "ext": ".jpg", "needs_box": True},
 }
+# Formats lus directement par OpenCV dans l'environnement d'effets
+OPENCV_EXT = {".jpg", ".jpeg", ".png", ".tif", ".tiff"}
 CACHE_DIR = os.path.join(".rexo", "effets")
 OUTPUT_DIR = os.path.join("06_Rendus", "Photos_effets")
 # Grand cote de la copie donnee a PhotoCraft : son masque ne sert qu'a completer
@@ -47,8 +56,21 @@ def installed() -> bool:
     return os.path.isfile(config.SEGMENT_BIN) and os.access(config.SEGMENT_BIN, os.X_OK)
 
 
+def env_installed() -> bool:
+    """Environnement d'effets (ONNX) installe par scripts/install_effects_env.sh."""
+    return os.access(config.EFFECTS_PYTHON, os.X_OK) and os.path.isfile(
+        os.path.join(config.EFFECTS_WORKER_DIR, "erase.py"))
+
+
+def available(effect: str) -> bool:
+    if EFFECTS[effect]["tool"] == "erase":
+        return env_installed()
+    return installed()
+
+
 def catalog() -> list:
-    return [{"key": k, "label": v["label"]} for k, v in EFFECTS.items()]
+    return [{"key": k, "label": v["label"], "needs_box": bool(v.get("needs_box")),
+             "available": available(k)} for k, v in EFFECTS.items()]
 
 
 def _photo_rel(event_dir: str, src: str) -> str:
@@ -91,10 +113,16 @@ def _segment(args: list) -> dict:
     """Lance rexo-segment ; retourne sa reponse JSON."""
     if not installed():
         raise EffectError("Outil d'effets absent : lancez ./scripts/build_native.sh")
+    return _run_json([config.SEGMENT_BIN] + args, "échec du détourage")
+
+
+def _run_json(cmd: list, default_error: str, env=None) -> dict:
+    """Lance un outil qui repond par une ligne JSON ; son message d'erreur
+    ({"ok": false, "error": ...}) est remonte tel quel."""
     try:
-        out = tools.run([config.SEGMENT_BIN] + args, timeout=300)
+        out = tools.run(cmd, timeout=600, env=env)
     except tools.CommandError as exc:
-        message = "échec du détourage"
+        message = default_error
         for line in (exc.stdout or "").splitlines():
             try:
                 message = json.loads(line).get("error") or message
@@ -120,9 +148,36 @@ def _cleanup_cache(folder: str, keep_prefix: str) -> None:
                 pass
 
 
+def _erase(src: str, out: str, box, folder: str, key: str) -> dict:
+    """Efface l'objet du cadre (proportions de l'image redressee)."""
+    if box is None:
+        raise EffectError("Tracez un cadre autour de l'objet à effacer")
+    if not env_installed():
+        raise EffectError("Environnement d'effets absent : lancez ./scripts/install_effects_env.sh")
+    try:
+        fx, fy, fw, fh = (float(v) for v in box)
+    except (TypeError, ValueError):
+        raise EffectError("Cadre invalide") from None
+    if fw < 0.005 or fh < 0.005:
+        raise EffectError("Cadre trop petit : tracez-le autour de l'objet")
+    readable = src
+    tmp = ""
+    if os.path.splitext(src)[1].lower() not in OPENCV_EXT:
+        tmp = readable = os.path.join(folder, key + "_tmp_lisible.jpg")
+        _segment(["orient", src, tmp])
+    try:
+        return _run_json([config.EFFECTS_PYTHON, os.path.join(config.EFFECTS_WORKER_DIR, "erase.py"),
+                          readable, out, "--box", ",".join("%.6f" % v for v in (fx, fy, fw, fh))],
+                         "échec de l'effacement", env=config.effects_env())
+    finally:
+        if tmp and os.path.exists(tmp):
+            os.remove(tmp)
+
+
 def preview(event_dir: str, src: str, effect: str, box=None, log=None) -> dict:
-    """Calcule l'apercu d'un effet ; box = cadre autour des maries (proportions
-    de l'image redressee) pour completer le detourage avec PhotoCraft."""
+    """Calcule l'apercu d'un effet ; box = cadre en proportions de l'image
+    redressee : autour des maries (PhotoCraft complete le detourage de Vision)
+    ou, pour « effacer », autour de l'objet a faire disparaitre."""
     spec = _check(effect)
     rel = _photo_rel(event_dir, src)
     if not _LOCK.acquire(blocking=False):
@@ -132,6 +187,14 @@ def preview(event_dir: str, src: str, effect: str, box=None, log=None) -> dict:
         os.makedirs(folder, exist_ok=True)
         _cleanup_cache(folder, _key(rel) + "_")
         out = os.path.join(folder, preview_name(rel, effect, box is not None))
+        if spec["tool"] == "erase":
+            result = _erase(src, out, box, folder, _key(rel))
+            return {
+                "effect": effect, "framed": True, "path": out,
+                "width": result.get("width"), "height": result.get("height"),
+                "coverage": result.get("coverage", 0), "ms": result.get("ms", 0),
+                "score": result.get("score"), "object_bounds": None,
+            }
         args = [spec["tool"], src, out]
         bounds = None
         if box is not None:

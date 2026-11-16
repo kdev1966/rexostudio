@@ -430,6 +430,7 @@ class StudioHandler(BaseHTTPRequestHandler):
             "filmcraft": filmcraft.installed(),
             "photocraft": photocraft.installed(),
             "effects": effects.installed(),
+            "effects_env": effects.env_installed(),
             "model": config.LLM_MODEL,
             "num_ctx": config.LLM_NUM_CTX,
             "workspace": config.WORKSPACE,
