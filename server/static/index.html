@@ -129,6 +129,7 @@
   <div id="evd-assist" class="evd-assist">
     <input type="text" id="evd-ask" maxlength="500" placeholder="Assistant pour toute la série : ex. « rendu chaud et vintage sur toutes les photos »">
     <button class="btn btn-sec" id="evd-ask-go">Comprendre</button>
+    <label class="fx-enhance tiny"><input type="checkbox" id="evd-enhance" checked> Améliorer d'abord chaque photo</label>
     <div id="evd-plan" class="fx-plan hidden"></div>
   </div>
   <div id="evd-photos" class="photo-grid"></div>
@@ -373,6 +374,9 @@
         </div>
       </div>
       <div class="fx-side">
+        <label class="fx-enhance" title="Lumière et couleurs (Apple), balance des blancs sur les zones blanches, léger relief : appliqués avant l'effet">
+          <input type="checkbox" id="fx-enhance" checked> Améliorer d'abord la photo (lumière, couleurs, blancs, relief)
+        </label>
         <div class="fx-assist">
           <p class="tiny muted">Assistant : écrivez ce que vous voulez (français ou tunisien)</p>
           <textarea id="fx-ask" rows="2" maxlength="500" placeholder="ex. efface la voiture derrière la mariée · a3mel el fond k7al w byadh"></textarea>

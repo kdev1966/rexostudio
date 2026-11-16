@@ -163,7 +163,7 @@ def to_psd(src: str, out_psd: str) -> str:
 
 
 def layered_psd(base: str, effect_image: str, alpha: str, mode: str, layer_name: str,
-                out_psd: str, read_roots: list) -> dict:
+                out_psd: str, read_roots: list, base_name: str = "Photo originale") -> dict:
     """PSD a calques pour affiner un effet dans PhotoCraft :
     « Photo originale » en dessous, le calque d'effet au-dessus avec un masque
     de calque modifiable tire de alpha (PNG dont la transparence est le masque).
@@ -186,7 +186,7 @@ def layered_psd(base: str, effect_image: str, alpha: str, mode: str, layer_name:
             pc.execute("layer.layerMask.revealSelection", layer=layer)
         pc.execute("layer.setProps", layer=layer, name=layer_name)
         try:
-            pc.execute("layer.setProps", layer=original, name="Photo originale")
+            pc.execute("layer.setProps", layer=original, name=base_name)
         except PhotoCraftError:
             pass                        # arriere-plan verrouille : il garde son nom
         if mode == "keep":

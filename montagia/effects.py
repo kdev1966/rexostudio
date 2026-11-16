@@ -35,6 +35,8 @@ EFFECTS = {
     "noir-et-blanc": {"label": "Couleur sur fond noir et blanc", "tool": "bw", "ext": ".jpg"},
     "fond-flou": {"label": "Fond flou", "tool": "blur", "ext": ".jpg"},
     "effacer": {"label": "Effacer un objet", "tool": "erase", "ext": ".jpg", "needs_box": True},
+    "ameliorer": {"label": "Améliorer seulement (lumière, couleurs, blancs, relief)",
+                  "tool": "enhance", "ext": ".jpg"},
 }
 # Formats lus directement par OpenCV dans l'environnement d'effets
 OPENCV_EXT = {".jpg", ".jpeg", ".png", ".tif", ".tiff"}
@@ -45,6 +47,7 @@ PSD_LAYERS = {
     "noir-et-blanc": ("outside", "Fond noir et blanc (masque à affiner)"),
     "fond-flou": ("outside", "Fond flou (masque à affiner)"),
     "effacer": ("inside", "Zone reconstituée (masque à affiner)"),
+    "ameliorer": ("plain", "Photo améliorée"),
 }
 OUTPUT_DIR = os.path.join("06_Rendus", "Photos_effets")
 # Grand cote de la copie donnee a PhotoCraft : son masque ne sert qu'a completer
@@ -98,18 +101,22 @@ def _key(rel: str) -> str:
     return hashlib.sha1(rel.encode("utf-8")).hexdigest()[:16]
 
 
-def preview_name(rel: str, effect: str, framed: bool) -> str:
-    return "%s_%s%s%s" % (_key(rel), effect, "_cadre" if framed else "", EFFECTS[effect]["ext"])
+def _variant(framed: bool, enhanced: bool) -> str:
+    return ("_cadre" if framed else "") + ("_ameliore" if enhanced else "")
 
 
-def fg_name(rel: str, framed: bool) -> str:
+def preview_name(rel: str, effect: str, framed: bool, enhanced: bool = False) -> str:
+    return "%s_%s%s%s" % (_key(rel), effect, _variant(framed, enhanced), EFFECTS[effect]["ext"])
+
+
+def fg_name(rel: str, framed: bool, enhanced: bool = False) -> str:
     """Photo aux couleurs de bord nettoyees (detourage) : calque des maries du PSD."""
-    return "%s_detourage%s_couleurs.jpg" % (_key(rel), "_cadre" if framed else "")
+    return "%s_detourage%s_couleurs.jpg" % (_key(rel), _variant(framed, enhanced))
 
 
-def mask_name(rel: str, effect: str, framed: bool) -> str:
+def mask_name(rel: str, effect: str, framed: bool, enhanced: bool = False) -> str:
     """Masque de l'apercu (PNG, transparence = personnes ou zone effacee)."""
-    return "%s_%s%s_masque.png" % (_key(rel), effect, "_cadre" if framed else "")
+    return "%s_%s%s_masque.png" % (_key(rel), effect, _variant(framed, enhanced))
 
 
 def check_box(box, width: int, height: int) -> list:
@@ -165,8 +172,10 @@ def _cleanup_cache(folder: str, keep_prefix: str) -> None:
                 pass
 
 
-def _erase(src: str, out: str, box, folder: str, key: str, mask: str = "") -> dict:
-    """Efface l'objet du cadre (proportions de l'image redressee)."""
+def _erase(src: str, out: str, box, folder: str, key: str, mask: str = "",
+           enhance: bool = False) -> dict:
+    """Efface l'objet du cadre (proportions de l'image redressee) ; enhance :
+    la photo est d'abord amelioree (lumiere, couleurs, blancs, relief)."""
     if box is None:
         raise EffectError("Tracez un cadre autour de l'objet à effacer")
     if not env_installed():
@@ -179,7 +188,10 @@ def _erase(src: str, out: str, box, folder: str, key: str, mask: str = "") -> di
         raise EffectError("Cadre trop petit : tracez-le autour de l'objet")
     readable = src
     tmp = ""
-    if os.path.splitext(src)[1].lower() not in OPENCV_EXT:
+    if enhance:
+        tmp = readable = os.path.join(folder, key + "_tmp_amelioree.jpg")
+        _segment(["enhance", src, tmp])
+    elif os.path.splitext(src)[1].lower() not in OPENCV_EXT:
         tmp = readable = os.path.join(folder, key + "_tmp_lisible.jpg")
         _segment(["orient", src, tmp])
     try:
@@ -225,31 +237,42 @@ def erase(src: str, out: str, box, folder: str, key: str) -> dict:
     return _erase(src, out, box, folder, key)
 
 
-def preview(event_dir: str, src: str, effect: str, box=None, log=None) -> dict:
+def preview(event_dir: str, src: str, effect: str, box=None, log=None,
+            enhance: bool = False) -> dict:
     """Calcule l'apercu d'un effet ; box = cadre en proportions de l'image
     redressee : autour des maries (PhotoCraft complete le detourage de Vision)
-    ou, pour « effacer », autour de l'objet a faire disparaitre."""
+    ou, pour « effacer », autour de l'objet a faire disparaitre. enhance : la
+    photo est d'abord amelioree (lumiere, couleurs, blancs, relief), et Vision
+    travaille sur la photo amelioree."""
     spec = _check(effect)
     rel = _photo_rel(event_dir, src)
+    if spec["tool"] == "enhance":
+        box, enhance = None, False          # l'effet est l'amelioration elle-meme
     if not _LOCK.acquire(blocking=False):
         raise EffectError("Un effet est déjà en cours de calcul : patientez")
     try:
         folder = os.path.join(event_dir, CACHE_DIR)
         os.makedirs(folder, exist_ok=True)
         _cleanup_cache(folder, _key(rel) + "_")
-        out = os.path.join(folder, preview_name(rel, effect, box is not None))
-        alpha = os.path.join(folder, mask_name(rel, effect, box is not None))
+        framed = box is not None
+        out = os.path.join(folder, preview_name(rel, effect, framed, enhance))
+        alpha = os.path.join(folder, mask_name(rel, effect, framed, enhance))
+        common = {"effect": effect, "framed": framed, "enhanced": enhance, "path": out}
         if spec["tool"] == "erase":
-            result = _erase(src, out, box, folder, _key(rel), alpha)
-            return {
-                "effect": effect, "framed": True, "path": out,
-                "width": result.get("width"), "height": result.get("height"),
-                "coverage": result.get("coverage", 0), "ms": result.get("ms", 0),
-                "score": result.get("score"), "object_bounds": None,
-            }
+            result = _erase(src, out, box, folder, _key(rel), alpha, enhance)
+            return dict(common, framed=True, width=result.get("width"),
+                        height=result.get("height"), coverage=result.get("coverage", 0),
+                        ms=result.get("ms", 0), score=result.get("score"), object_bounds=None)
+        if spec["tool"] == "enhance":
+            result = _segment(["enhance", src, out])
+            return dict(common, width=result.get("width"), height=result.get("height"),
+                        coverage=1, ms=result.get("ms", 0), object_bounds=None,
+                        white_balance=result.get("white_balance"))
         args = [spec["tool"], src, out, "--save-alpha", alpha]
+        if enhance:
+            args.append("--enhance")
         if effect == "detourage":
-            args += ["--save-fg", os.path.join(folder, fg_name(rel, box is not None))]
+            args += ["--save-fg", os.path.join(folder, fg_name(rel, framed, enhance))]
         bounds = None
         if box is not None:
             mask = os.path.join(folder, _key(rel) + "_tmp_objet.png")
@@ -265,22 +288,19 @@ def preview(event_dir: str, src: str, effect: str, box=None, log=None) -> dict:
                     os.remove(mask)
         else:
             result = _segment(args)
-        return {
-            "effect": effect, "framed": box is not None, "path": out,
-            "width": result.get("width"), "height": result.get("height"),
-            "coverage": result.get("coverage", 0), "ms": result.get("ms", 0),
-            "object_bounds": bounds,
-        }
+        return dict(common, width=result.get("width"), height=result.get("height"),
+                    coverage=result.get("coverage", 0), ms=result.get("ms", 0),
+                    object_bounds=bounds, white_balance=result.get("white_balance"))
     finally:
         _LOCK.release()
 
 
-def save(event_dir: str, src: str, effect: str, framed: bool) -> str:
+def save(event_dir: str, src: str, effect: str, framed: bool, enhanced: bool = False) -> str:
     """Copie l'apercu valide dans 06_Rendus/Photos_effets ; retourne son chemin
     relatif a l'evenement. Un nom deja pris n'est jamais ecrase."""
     _check(effect)
     rel = _photo_rel(event_dir, src)
-    cached = os.path.join(event_dir, CACHE_DIR, preview_name(rel, effect, framed))
+    cached = os.path.join(event_dir, CACHE_DIR, preview_name(rel, effect, framed, enhanced))
     if not os.path.isfile(cached):
         raise EffectError("Aperçu introuvable : recalculez l'effet")
     stem = tools.safe_component(os.path.splitext(os.path.basename(src))[0], "photo")
@@ -290,16 +310,19 @@ def save(event_dir: str, src: str, effect: str, framed: bool) -> str:
     return os.path.relpath(dest, event_dir)
 
 
-def export_psd(event_dir: str, src: str, effect: str, framed: bool, log=None) -> str:
+def export_psd(event_dir: str, src: str, effect: str, framed: bool, log=None,
+               enhanced: bool = False) -> str:
     """PSD a calques de l'apercu valide, pour l'affiner dans PhotoCraft : la photo
-    originale, et le calque d'effet avec un masque de calque modifiable. Enregistre
-    dans 06_Rendus/Photos_effets (jamais par-dessus un fichier) ; retourne son chemin."""
+    (amelioree si l'effet l'a ete, pour que tout concorde), et le calque d'effet avec
+    un masque de calque modifiable. Enregistre dans 06_Rendus/Photos_effets (jamais
+    par-dessus un fichier) ; retourne son chemin."""
     _check(effect)
     rel = _photo_rel(event_dir, src)
     folder = os.path.join(event_dir, CACHE_DIR)
-    cached = os.path.join(folder, preview_name(rel, effect, framed))
-    alpha = os.path.join(folder, mask_name(rel, effect, framed))
-    if not (os.path.isfile(cached) and os.path.isfile(alpha)):
+    cached = os.path.join(folder, preview_name(rel, effect, framed, enhanced))
+    alpha = os.path.join(folder, mask_name(rel, effect, framed, enhanced))
+    mode, layer_name = PSD_LAYERS[effect]
+    if not (os.path.isfile(cached) and (mode == "plain" or os.path.isfile(alpha))):
         raise EffectError("Aperçu introuvable : recalculez l'effet")
     if not photocraft.installed():
         raise EffectError("PhotoCraft introuvable")
@@ -309,14 +332,14 @@ def export_psd(event_dir: str, src: str, effect: str, framed: bool, log=None) ->
     # Photo redressee sans perte : memes dimensions que l'apercu et le masque
     base = os.path.join(folder, _key(rel) + "_base.png")
     try:
-        _segment(["orient", src, base])
-        mode, layer_name = PSD_LAYERS[effect]
+        _segment(["orient", src, base] + (["--enhance"] if enhanced else []))
         layer_source = cached
         if mode == "keep":
             # Calque des maries : la photo aux couleurs de bord nettoyees (sinon la photo)
-            fg = os.path.join(folder, fg_name(rel, framed))
+            fg = os.path.join(folder, fg_name(rel, framed, enhanced))
             layer_source = fg if os.path.isfile(fg) else base
-        photocraft.layered_psd(base, layer_source, alpha, mode, layer_name, out, [event_dir])
+        photocraft.layered_psd(base, layer_source, alpha, mode, layer_name, out, [event_dir],
+                               base_name="Photo améliorée" if enhanced else "Photo originale")
     except photocraft.PhotoCraftError as exc:
         if os.path.exists(out) and os.path.getsize(out) == 0:
             os.remove(out)

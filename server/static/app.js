@@ -1413,6 +1413,7 @@ const FX = { photo: null, effect: 'detourage', framing: false, box: null, drag: 
 
 const TOOL_LABELS = {
   detourer: 'Détourer les personnes (fond transparent)',
+  ameliorer: 'Améliorer la photo (lumière, couleurs, blancs, relief)',
   cadre_maries: 'Cadre autour des mariés (robe et traîne)',
   fond_noir_et_blanc: 'Mariés en couleur, fond noir et blanc',
   fond_flou: 'Arrière-plan flou',
@@ -1571,6 +1572,12 @@ $('#fx-frame').addEventListener('click', () => {
   fxRender();
 });
 
+$('#fx-enhance').addEventListener('change', () => {
+  if (FX.busy) return;
+  fxInvalidate();          // l'apercu calcule ne correspond plus a la case
+  fxRender();
+});
+
 $('#fx-effects').addEventListener('click', (ev) => {
   const b = ev.target.closest('[data-effect]');
   if (!b || b.disabled || FX.busy || b.dataset.effect === FX.effect) return;
@@ -1619,7 +1626,8 @@ $('#fx-run').addEventListener('click', async () => {
     : (FX.box ? 'Vision + PhotoCraft (sélection dans le cadre)…' : 'Vision : détourage des personnes…');
   fxRender();
   try {
-    const r = await post('/api/events/effect', { id: EVD.id, rel: FX.photo.rel, effect: FX.effect, box: FX.box });
+    const r = await post('/api/events/effect', { id: EVD.id, rel: FX.photo.rel, effect: FX.effect, box: FX.box,
+      enhance: $('#fx-enhance').checked });
     FX.result = Object.assign(r, { stamp: Date.now() });
     FX.saved = '';
     FX.view = 'result';
@@ -1650,7 +1658,8 @@ $('#fx-save').addEventListener('click', async () => {
     const r = FX.result.kind === 'assistant'
       ? await post('/api/events/assistant/save', { id: EVD.id, rel: FX.photo.rel })
       : await post('/api/events/effect/save',
-        { id: EVD.id, rel: FX.photo.rel, effect: FX.result.effect, framed: FX.result.framed });
+        { id: EVD.id, rel: FX.photo.rel, effect: FX.result.effect, framed: FX.result.framed,
+          enhanced: !!FX.result.enhanced });
     FX.saved = r.rel;
     toast('Enregistré : ' + r.rel);
     loadDerush();
@@ -1663,7 +1672,9 @@ $('#fx-photocraft').addEventListener('click', async () => {
   // Apres un effet : PSD a calques (original + calque d'effet au masque modifiable)
   const body = { id: EVD.id, rel: FX.photo.rel };
   if (FX.result && FX.result.kind === 'assistant') body.assistant = true;
-  else if (FX.result) Object.assign(body, { effect: FX.result.effect, framed: FX.result.framed });
+  else if (FX.result) {
+    Object.assign(body, { effect: FX.result.effect, framed: FX.result.framed, enhanced: !!FX.result.enhanced });
+  }
   const btn = $('#fx-photocraft');
   btn.disabled = true;
   btn.textContent = FX.result ? 'Préparation du PSD…' : 'Ouverture…';
@@ -1738,7 +1749,8 @@ $('#fx-plan').addEventListener('click', (ev) => {
   info.textContent = 'Exécution en tâche de fond…';
   fxRender();
   const fail = (msg) => { FX.busy = false; info.className = 'tiny err'; info.textContent = msg; fxRender(); };
-  post('/api/events/assistant/run', { id: EVD.id, rel: FX.photo.rel, steps: FX.plan.etapes, boxes: FX.boxes })
+  post('/api/events/assistant/run', { id: EVD.id, rel: FX.photo.rel, steps: FX.plan.etapes, boxes: FX.boxes,
+    enhance: $('#fx-enhance').checked })
     .then((data) => followJob(data.job_id, {
       log: (m) => { info.textContent = m; },
       done: (r) => {
@@ -1785,7 +1797,8 @@ $('#evd-ask').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#ev
 
 $('#evd-plan').addEventListener('click', (ev) => {
   if (ev.target.id !== 'evd-plan-run' || !SERIES.plan) return;
-  derushJob('/api/events/assistant/run', { all: true, steps: SERIES.plan.etapes }, (r) => {
+  derushJob('/api/events/assistant/run', { all: true, steps: SERIES.plan.etapes,
+    enhance: $('#evd-enhance').checked }, (r) => {
     toast(plural(r.done, 'photo') + ' traitée' + (r.done > 1 ? 's' : '') + ' → ' + r.folder +
       (r.failed && r.failed.length ? ' (' + r.failed.length + ' en échec)' : ''), r.failed && r.failed.length > 0);
     $('#evd-plan').classList.add('hidden');

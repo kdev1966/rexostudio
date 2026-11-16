@@ -192,9 +192,9 @@ class EffectsTest(PhotoEventCase):
         alpha = self._fake_alpha(r, "fond-flou")
         seen = {}
 
-        def fake_psd(base, effect_image, alpha_png, mode, name, out, roots):
+        def fake_psd(base, effect_image, alpha_png, mode, name, out, roots, base_name=""):
             seen.update(base=base, effect=effect_image, alpha=alpha_png, mode=mode, name=name,
-                        out=out, roots=roots, base_exists=os.path.isfile(base))
+                        out=out, roots=roots, base_exists=os.path.isfile(base), base_name=base_name)
             return {"path": out}
 
         with mock.patch.object(photocraft, "installed", return_value=True), \
@@ -207,6 +207,37 @@ class EffectsTest(PhotoEventCase):
         self.assertFalse(os.path.exists(seen["base"]))              # ...effacee apres
         self.assertEqual(seen["roots"], [self.event])
         self.assertEqual(self._calls()[-1][:3], ["orient", self.photo, seen["base"]])
+        self.assertEqual(seen["base_name"], "Photo originale")
+
+    # -- amelioration avant l'effet -------------------------------------
+    def test_enhance_before_effect(self):
+        r = effects.preview(self.event, self.photo, "fond-flou", enhance=True)
+        self.assertTrue(r["enhanced"])
+        self.assertTrue(r["path"].endswith("_fond-flou_ameliore.jpg"))
+        self.assertIn("--enhance", self._calls()[0])
+        effects.save(self.event, self.photo, "fond-flou", False, True)
+        with self.assertRaises(effects.EffectError):               # pas d'apercu sans amelioration
+            effects.save(self.event, self.photo, "fond-flou", False, False)
+
+    def test_enhance_only_effect(self):
+        r = effects.preview(self.event, self.photo, "ameliorer", box=[0, 0, 1, 1], enhance=True)
+        self.assertFalse(r["framed"])
+        self.assertFalse(r["enhanced"])
+        self.assertEqual(self._calls(), [["enhance", self.photo, r["path"]]])
+
+    def test_enhanced_psd_uses_enhanced_base(self):
+        r = effects.preview(self.event, self.photo, "noir-et-blanc", enhance=True)
+        alpha = os.path.join(os.path.dirname(r["path"]),
+                             effects.mask_name("02_Photos/Carte_1/IMG_0001.jpg", "noir-et-blanc", False, True))
+        open(alpha, "wb").close()
+        seen = {}
+        with mock.patch.object(photocraft, "installed", return_value=True), \
+                mock.patch.object(photocraft, "layered_psd",
+                                  side_effect=lambda *a, **k: seen.update(a=a, k=k)):
+            effects.export_psd(self.event, self.photo, "noir-et-blanc", False, enhanced=True)
+        self.assertEqual(seen["a"][1], r["path"])
+        self.assertEqual(seen["k"]["base_name"], "Photo améliorée")
+        self.assertIn("--enhance", self._calls()[-1])               # fond du PSD ameliore aussi
 
     def test_export_psd_modes(self):
         modes = {}
@@ -215,7 +246,7 @@ class EffectsTest(PhotoEventCase):
             self._fake_alpha(r, effect)
             with mock.patch.object(photocraft, "installed", return_value=True), \
                     mock.patch.object(photocraft, "layered_psd",
-                                      side_effect=lambda *a: modes.setdefault(a[3], a[4])):
+                                      side_effect=lambda *a, **_k: modes.setdefault(a[3], a[4])):
                 effects.export_psd(self.event, self.photo, effect, False)
         self.assertEqual(set(modes), {"keep", "outside"})
 
@@ -228,7 +259,7 @@ class EffectsTest(PhotoEventCase):
         seen = {}
         with mock.patch.object(photocraft, "installed", return_value=True), \
                 mock.patch.object(photocraft, "layered_psd",
-                                  side_effect=lambda *a: seen.update(layer=a[1], mode=a[3])):
+                                  side_effect=lambda *a, **_k: seen.update(layer=a[1], mode=a[3])):
             effects.export_psd(self.event, self.photo, "detourage", False)
         self.assertEqual((seen["layer"], seen["mode"]), (fg, "keep"))
 
@@ -307,6 +338,15 @@ class EraseTest(PhotoEventCase):
         self.assertIn("cadre", str(ctx.exception))
         with self.assertRaises(effects.EffectError):
             effects.preview(self.event, self.photo, "effacer", box=[0.1, 0.1, 0.001, 0.5])
+
+    def test_erase_enhanced_photo(self):
+        r = effects.preview(self.event, self.photo, "effacer", box=[0.1, 0.1, 0.2, 0.2], enhance=True)
+        self.assertTrue(r["path"].endswith("_effacer_cadre_ameliore.jpg"))
+        enhance = self._calls()[0]
+        self.assertEqual(enhance[:2], ["enhance", self.photo])
+        args = self._erase_calls()[0].split()
+        self.assertEqual(args[1], enhance[2])                  # efface sur la photo amelioree
+        self.assertFalse(os.path.exists(enhance[2]))           # copie effacee ensuite
 
     def test_erase_heic_goes_through_vision_copy(self):
         heic = os.path.join(self.event, "02_Photos", "Carte_1", "IMG_0002.HEIC")

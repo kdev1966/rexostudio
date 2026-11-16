@@ -24,6 +24,8 @@ from . import tools as tools_mod
 
 # Outils proposes a l'IA : nom -> (ce qu'il fait, pour l'IA et pour l'interface)
 TOOLS = {
+    "ameliorer": "corriger la lumière, les couleurs, la balance des blancs et le relief de la"
+                 " photo (photo sombre, terne, jaune ou bleue, à embellir)",
     "detourer": "garder seulement les personnes, sur fond transparent",
     "cadre_maries": "le studio entoure les mariés d'un cadre pour garder toute la robe et la traîne"
                     " (à mettre avant detourer, fond_flou, fond_noir_et_blanc ou fond_uni quand la"
@@ -160,6 +162,9 @@ def normalize(raw: dict, text: str = "") -> dict:
     # Le recadrage change la taille de l'image : les cadres traces par le studio ne
     # correspondraient plus. Il passe donc en dernier.
     steps = [s for s in steps if s["outil"] != "recadrer"] + [s for s in steps if s["outil"] == "recadrer"][:1]
+    # L'amelioration (lumiere, couleurs, blancs) se fait avant tout le reste, une fois
+    if any(s["outil"] == "ameliorer" for s in steps):
+        steps = [{"outil": "ameliorer", "cadre": False}] + [s for s in steps if s["outil"] != "ameliorer"]
     styles = [s for s in steps if s["outil"] == "style"]
     if len(styles) > 1:
         keep = "vintage-chaud" if any(s["style"] == "vintage-chaud" for s in styles) else styles[-1]["style"]
@@ -223,7 +228,15 @@ COLOR_RGB = {"blanc": "255,255,255", "noir": "0,0,0", "gris": "128,128,128",
              "beige": "225,210,185", "rose": "240,200,210", "bleu": "170,195,230"}
 # Outil de l'assistant -> effet de rexo-segment
 SEGMENT_EFFECT = {"detourer": "cutout", "fond_noir_et_blanc": "bw", "fond_flou": "blur",
-                  "fond_uni": "uni", "style": "style", "recadrer": "crop"}
+                  "fond_uni": "uni", "style": "style", "recadrer": "crop", "ameliorer": "enhance"}
+
+
+def with_enhance(steps: list) -> list:
+    """Case « Améliorer d'abord la photo » : l'amelioration en premiere etape
+    (les cadres deja attaches aux etapes ne bougent pas)."""
+    if any(s["outil"] == "ameliorer" for s in steps):
+        return steps
+    return [{"outil": "ameliorer", "cadre": False}] + list(steps)
 RESULT_DIR = os.path.join("06_Rendus", "Photos_effets")
 
 

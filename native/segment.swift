@@ -15,6 +15,9 @@
 //            froid, vintage-chaud, noir-et-blanc, lumineux, contraste, doux)
 //   crop     recadrage au format --ratio L:H (4:5, 9:16, 1:1, 16:9), le plus grand
 //            possible, centre sur les personnes trouvees par Vision
+//   enhance  photo amelioree : lumiere et couleurs (Apple), balance des blancs sur
+//            les zones blanches, relief ; --enhance applique la meme amelioration
+//            avant n'importe quel effet (Vision travaille alors sur la photo amelioree)
 //
 // Pour style, crop et orient, la sortie est en PNG si son nom finit par .png (la
 // transparence d'un detourage est gardee ; orient sans perte), en JPEG sinon.
@@ -66,7 +69,7 @@ guard args.count >= 4 else {
 let effect = args[1]
 let input = URL(fileURLWithPath: args[2])
 let output = URL(fileURLWithPath: args[3])
-guard ["cutout", "mask", "bw", "blur", "uni", "style", "crop", "orient"].contains(effect) else {
+guard ["cutout", "mask", "bw", "blur", "uni", "style", "crop", "orient", "enhance"].contains(effect) else {
     fail("effet inconnu : \(effect)")
 }
 var quality = VNGeneratePersonSegmentationRequest.QualityLevel.accurate
@@ -84,10 +87,74 @@ let start = Date()
 guard let source = CIImage(contentsOf: input, options: [.applyOrientationProperty: true]) else {
     fail("image illisible : \(input.path)")
 }
-let image = atOrigin(source)
-let extent = image.extent
+let rawImage = atOrigin(source)
+let extent = rawImage.extent
 let srgb = CGColorSpace(name: CGColorSpace.sRGB)!
 let context = CIContext(options: [.workingColorSpace: srgb])
+var report: [String: Any] = [:]       // ajoute a la reponse JSON
+
+// Amelioration avant effet (--enhance, ou effet « enhance ») : trois reglages doux,
+// pour ne pas denaturer une photo de mariage.
+//  1. lumiere et couleurs : l'amelioration automatique d'Apple (ombres, courbe de
+//     tons, vivacite), sans correction des yeux rouges ;
+//  2. balance des blancs : les zones tres claires et peu colorees (la robe, une
+//     chemise) sont ramenees vers le neutre, a moitie seulement et de 15 % au plus
+//     par couleur, pour garder la chaleur des eclairages de soiree ;
+//  3. relief : leger contraste local (masque flou a grand rayon).
+func enhanced(_ img: CIImage) -> CIImage {
+    var r = img
+    var applied: [String] = []
+    for f in r.autoAdjustmentFilters(options: [.redEye: false]) {
+        f.setValue(r, forKey: kCIInputImageKey)
+        if let out = f.outputImage { r = out; applied.append(f.name) }
+    }
+    // Balance des blancs sur une version de 256 px
+    let side = 256.0
+    let scale = side / Double(max(extent.width, extent.height))
+    let w = Int((Double(extent.width) * scale).rounded()), h = Int((Double(extent.height) * scale).rounded())
+    var px = [UInt8](repeating: 0, count: w * h * 4)
+    let small = r.applyingFilter("CILanczosScaleTransform",
+                                 parameters: [kCIInputScaleKey: scale, kCIInputAspectRatioKey: 1.0])
+    context.render(atOrigin(small), toBitmap: &px, rowBytes: w * 4,
+                   bounds: CGRect(x: 0, y: 0, width: w, height: h), format: .RGBA8, colorSpace: srgb)
+    var lum: [Double] = []
+    lum.reserveCapacity(w * h)
+    for i in 0..<(w * h) {
+        lum.append(0.299 * Double(px[i * 4]) + 0.587 * Double(px[i * 4 + 1]) + 0.114 * Double(px[i * 4 + 2]))
+    }
+    let sorted = lum.sorted()
+    let threshold = sorted[Int(Double(sorted.count) * 0.97)]
+    var sum = [0.0, 0.0, 0.0], count = 0
+    for i in 0..<(w * h) where lum[i] >= threshold {
+        let c = [Double(px[i * 4]), Double(px[i * 4 + 1]), Double(px[i * 4 + 2])]
+        let hi = c.max()!, lo = c.min()!
+        if hi < 250 && hi > 120 && (hi - lo) / hi < 0.25 {      // clair, non brule, peu colore
+            for k in 0..<3 { sum[k] += c[k] }
+            count += 1
+        }
+    }
+    var gains = [1.0, 1.0, 1.0]
+    if count >= max(20, w * h / 500) {
+        let mean = (sum[0] + sum[1] + sum[2]) / 3
+        gains = (0..<3).map { k in min(1.15, max(0.85, 1 + (mean / sum[k] - 1) * 0.5)) }
+        r = r.applyingFilter("CIColorMatrix", parameters: [
+            "inputRVector": CIVector(x: CGFloat(gains[0]), y: 0, z: 0, w: 0),
+            "inputGVector": CIVector(x: 0, y: CGFloat(gains[1]), z: 0, w: 0),
+            "inputBVector": CIVector(x: 0, y: 0, z: CGFloat(gains[2]), w: 0)])
+        applied.append("BalanceDesBlancs")
+    }
+    // Relief
+    r = r.applyingFilter("CIUnsharpMask", parameters: [
+        kCIInputRadiusKey: Double(max(extent.width, extent.height)) / 150.0,
+        kCIInputIntensityKey: 0.25])
+    applied.append("Relief")
+    report["enhance"] = applied
+    report["white_balance"] = gains.map { NSDecimalNumber(string: String(format: "%.3f", $0)) }
+    return r.applyingFilter("CIColorClamp").cropped(to: extent)
+}
+
+let image = (effect == "enhance" || CommandLine.arguments.contains("--enhance"))
+    ? enhanced(rawImage) : rawImage
 let jpegQuality = CIImageRepresentationOption(
     rawValue: kCGImageDestinationLossyCompressionQuality as String)
 
@@ -107,13 +174,19 @@ func finish(_ result: CIImage, png: Bool, coverage: Double) -> Never {
     } catch {
         fail("ecriture impossible : \(error.localizedDescription)")
     }
-    let info: [String: Any] = [
+    var info: [String: Any] = [
         "ok": true, "width": Int(extent.width), "height": Int(extent.height),
         "out_width": Int(result.extent.width), "out_height": Int(result.extent.height),
         "coverage": NSDecimalNumber(string: String(format: "%.3f", coverage)),
         "ms": Int(Date().timeIntervalSince(start) * 1000)]
+    info.merge(report) { _, new in new }
     print(String(data: try! JSONSerialization.data(withJSONObject: info), encoding: .utf8)!)
     exit(0)
+}
+
+// Photo amelioree seule (lumiere, couleurs, balance des blancs, relief)
+if effect == "enhance" {
+    finish(image, png: pngOutput, coverage: 0)
 }
 
 // Copie redressee et reduite (pas de detourage)
@@ -198,17 +271,19 @@ func fitted(_ small: CIImage) -> CIImage {
         .cropped(to: extent)
 }
 
-// Bord resserre : le masque de Vision, calcule en basse resolution puis agrandi, a un
-// bord flou large (22 % des pixels d'une personne a demi transparents sur une photo
-// 2048 px). Les valeurs 0,25..0,75 sont etirees sur 0..1 : bord plus net, moins de
-// fond d'origine visible autour du personnage sur un fond clair.
+// Bord plus net : le masque de Vision, calcule en basse resolution puis agrandi, a un
+// bord flou large. Les valeurs 0,08..0,6 sont etirees sur 0..1 : le bord se resserre
+// et ce que Vision voit avec peu de confiance devient plus opaque. Un seuil plus haut
+// (0,25..0,75, essaye le 16/11/2026) effacait la main du marie le long du corps,
+// detectee a 17 % seulement : rien de ce que Vision voit ne doit disparaitre.
 func tightened(_ m: CIImage) -> CIImage {
-    m.applyingFilter("CIColorMatrix", parameters: [
-        "inputRVector": CIVector(x: 2, y: 0, z: 0, w: 0),
-        "inputGVector": CIVector(x: 2, y: 0, z: 0, w: 0),
-        "inputBVector": CIVector(x: 2, y: 0, z: 0, w: 0),
+    let gain = 1.0 / 0.52, bias = -0.08 / 0.52
+    return m.applyingFilter("CIColorMatrix", parameters: [
+        "inputRVector": CIVector(x: CGFloat(gain), y: 0, z: 0, w: 0),
+        "inputGVector": CIVector(x: CGFloat(gain), y: 0, z: 0, w: 0),
+        "inputBVector": CIVector(x: CGFloat(gain), y: 0, z: 0, w: 0),
         "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 1),
-        "inputBiasVector": CIVector(x: -0.5, y: -0.5, z: -0.5, w: 0)])
+        "inputBiasVector": CIVector(x: CGFloat(bias), y: CGFloat(bias), z: CGFloat(bias), w: 0)])
         .applyingFilter("CIColorClamp").cropped(to: extent)
 }
 

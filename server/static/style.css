@@ -477,6 +477,9 @@ mark { background: #5a3a10; color: inherit; border-radius: 2px; }
 .evd-assist input { flex: 1; min-width: 260px; }
 .evd-assist .fx-plan { flex-basis: 100%; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; }
 .fx-boxes { position: absolute; inset: 0; pointer-events: none; }
+.fx-enhance { display: flex; gap: 7px; align-items: flex-start; font-size: 12.5px; cursor: pointer; }
+.fx-enhance input { margin-top: 2px; accent-color: var(--accent); }
+.evd-assist .fx-enhance { align-self: center; }
 /* Fond de l'apercu : les bords d'un detourage se jugent sur fond clair (comme PhotoCraft) */
 .fx-stage.bg-light { background: repeating-conic-gradient(#ffffff 0% 25%, #d6d6d6 0% 50%) 50% / 16px 16px; }
 .fx-stage.bg-white { background: #fff; }

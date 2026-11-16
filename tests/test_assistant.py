@@ -230,6 +230,21 @@ class RunTest(unittest.TestCase):
         with self.assertRaises(assistant.AssistantError):
             assistant.run_all(self.event, [self.photo], steps)
 
+    def test_enhance_step(self):
+        steps = assistant.check_plan([{"outil": "fond_flou"}, {"outil": "ameliorer"}], {})
+        self.assertEqual([s["outil"] for s in steps], ["ameliorer", "fond_flou"])   # en premier
+        assistant.run_photo(self.event, self.photo, steps)
+        self.assertEqual([c[0] for c in self._calls()], ["enhance", "blur"])
+        self.assertEqual(self._calls()[1][1], self._calls()[0][2])
+
+    def test_with_enhance_keeps_boxes(self):
+        steps = assistant.check_plan([{"outil": "effacer_objet", "cible": "la chaise"}],
+                                     {"0": [0.2, 0.2, 0.1, 0.1]})
+        steps = assistant.with_enhance(steps)
+        self.assertEqual([s["outil"] for s in steps], ["ameliorer", "effacer_objet"])
+        self.assertEqual(steps[1]["box"], [0.2, 0.2, 0.1, 0.1])
+        self.assertEqual(assistant.with_enhance(steps), steps)                       # une seule fois
+
     def test_one_computation_at_a_time(self):
         steps = assistant.check_plan([{"outil": "fond_flou"}], {})
         self.assertTrue(effects._LOCK.acquire(blocking=False))

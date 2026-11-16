@@ -837,7 +837,7 @@ class StudioHandler(BaseHTTPRequestHandler):
             event_dir, src = self._event_photo(data)
             box = data.get("box")
             result = effects.preview(event_dir, src, str(data.get("effect") or ""),
-                                     box if box else None)
+                                     box if box else None, enhance=bool(data.get("enhance")))
         except events.EventError as exc:
             return self._error(exc, 404)
         except effects.EffectError as exc:
@@ -849,7 +849,7 @@ class StudioHandler(BaseHTTPRequestHandler):
         try:
             event_dir, src = self._event_photo(data)
             rel = effects.save(event_dir, src, str(data.get("effect") or ""),
-                               bool(data.get("framed")))
+                               bool(data.get("framed")), bool(data.get("enhanced")))
         except events.EventError as exc:
             return self._error(exc, 404)
         except effects.EffectError as exc:
@@ -868,7 +868,8 @@ class StudioHandler(BaseHTTPRequestHandler):
                 path = assistant.export_psd(event_dir, path)
             elif data.get("effect"):
                 path = effects.export_psd(event_dir, path, str(data["effect"]),
-                                          bool(data.get("framed")))
+                                          bool(data.get("framed")),
+                                          enhanced=bool(data.get("enhanced")))
             photocraft.open_in_app(path)
         except events.EventError as exc:
             return self._error(exc, 404)
@@ -893,6 +894,8 @@ class StudioHandler(BaseHTTPRequestHandler):
         try:
             event_dir = self._event_dir(data.get("id"))
             steps = assistant.check_plan(data.get("steps") or [], data.get("boxes") or {})
+            if data.get("enhance"):
+                steps = assistant.with_enhance(steps)
             if data.get("all"):
                 photos = [p["path"] for p in rushes.photo_list(event_dir)]
                 if not photos:
