@@ -1,6 +1,6 @@
 # 🎬 MontageIA — assistant de montage vidéo par IA, 100 % local
 
-Un système d'assistance au montage vidéo qui utilise **qwen2.5:3b** sur **Ollama local**,
+Un système d'assistance au montage vidéo qui utilise **Gemma 4 E2B** via **llama.cpp** (local),
 **whisper.cpp** pour la transcription, **ffmpeg** pour le montage réel et **FilmCraft**
 pour continuer le montage à la main.
 Aucune donnée ne sort de la machine, aucune dépendance Python à installer.
@@ -29,8 +29,9 @@ L'icône, elle, peut être sur le Bureau.
 
 | Outil | Rôle | Où il vient |
 |---|---|---|
-| Ollama ≥ 0.12 | LLM local | `/usr/local/bin/ollama` |
-| `qwen2.5:3b` | modèle | `ollama pull qwen2.5:3b` |
+| llama.cpp b12428 | IA locale | `bin/llama-server` (compilé par le script, autonome) |
+| Gemma 4 E2B Q4_0 | modèle (2,8 Go) | `models/` (SHA-256 vérifié ; repris de `~/.local/share/kdev-models` s'il y est) |
+| Ollama + `qwen2.5:3b` | secours, facultatif | `MONTAGIA_LLM_BACKEND=ollama` |
 | whisper.cpp | transcription | `bin/whisper-cli` (compilé en statique) + `models/` |
 | ffmpeg / ffprobe | média | `bin/` (build statique evermeet, SHA-256 épinglé) |
 | FilmCraft ≥ 0.20 | éditeur vidéo, piloté en direct | `/Applications/FilmCraft.app` |
@@ -62,8 +63,9 @@ Le parcours :
    **Ouvrir dans FilmCraft** : clips calés à l'image, piste de sous-titres, un marqueur par
    coupe (`.fcproj`).
 
-Le modèle IA reste en mémoire 5 min après sa dernière utilisation, puis Ollama le décharge
-(`MONTAGIA_KEEP_ALIVE` pour changer ce délai).
+Le moteur IA (`llama-server`) démarre à la première demande, reste en mémoire 5 min après sa
+dernière utilisation, puis s'arrête (`MONTAGIA_LLM_IDLE=<secondes>` pour changer ce délai).
+Journal du moteur : `workspace/cache/llama-server.log`.
 
 ### Mode terminal
 
@@ -82,12 +84,12 @@ Commandes : `analyse`, `transcribe`, `plan`, `render 16:9`, `subs`, `filmcraft [
 
 | Tâche | Modèle | Sortie |
 |---|---|---|
-| Plan de coupe | qwen2.5:3b | JSON `{segments:[{id, reason, trim_start, trim_end}], rationale}` |
-| Meilleurs moments (trailer) | qwen2.5:3b | JSON `{segments:[{id, score, reason}]}` |
-| Pack de publication | qwen2.5:3b | titres, description, hashtags, chapitres, accroche |
-| Résumé & analyse | qwen2.5:3b | résumé, points clés, thèmes, questions |
-| Correction des sous-titres | qwen2.5:3b | JSON `{lines:[{index, text}]}` (ponctuation, casse) |
-| Chat sur la vidéo | qwen2.5:3b | texte libre, streaming |
+| Plan de coupe | Gemma 4 E2B | JSON `{segments:[{id, reason, trim_start, trim_end}], rationale}` |
+| Meilleurs moments (trailer) | Gemma 4 E2B | JSON `{segments:[{id, score, reason}]}` |
+| Pack de publication | Gemma 4 E2B | titres, description, hashtags, chapitres, accroche |
+| Résumé & analyse | Gemma 4 E2B | résumé, points clés, thèmes, questions |
+| Correction des sous-titres | Gemma 4 E2B | JSON `{lines:[{index, text}]}` (ponctuation, casse) |
+| Chat sur la vidéo | Gemma 4 E2B | texte libre, streaming |
 
 **Ce que l'IA ne fait jamais** : calculer un timecode, écrire une commande shell,
 modifier un fichier source. Les timecodes sont recalculés par le code à partir
@@ -104,6 +106,7 @@ iMac 27" 2015 · i5-5575R 4 cœurs · 16 Go RAM · Iris Pro 6200 · macOS 12.7.6
 | Détection de silence | ffmpeg décode la vidéo | `-vn -map 0:a:0` | **6,0 s → 0,25 s** (24×) |
 | Transcription | `small`, sans VAD | `base` + beam 5 + **VAD Silero** | **74 s → 9,2 s** (8×) *et meilleure qualité* |
 | Appels IA répétés | préfill 23 tok/s | préfixe stable → cache Ollama | **56 s → 4,5 s** (12×) |
+| Moteur IA (plan de coupe film002, 7 min) | Ollama + qwen2.5:3b, 180 s | llama.cpp + Gemma 4 E2B | **180 s → 78 s** (2,3×) |
 | Rendu | libx264 | `h264_videotoolbox` | 5,3× → **11,8×** temps réel |
 | Dépendances | `auto-editor` (PyAV) | ffmpeg natif | 0 dépendance Python |
 
@@ -111,8 +114,21 @@ Détails qui comptent :
 
 - **Le VAD améliore la qualité *et* la vitesse** : les marqueurs `[MUSIC]` parasites
   disparaissent, les phrases sont regroupées, et 75 % de l'audio sans parole est sauté.
-- **Les réglages Ollama par défaut sont les meilleurs** : forcer `num_batch` ou
-  `num_thread` dégrade le préfill de 2,5×. On ne force rien.
+- **Moteur IA (16/11/2026)** — même plan de coupe, mêmes appels, sur l'iMac :
+
+  | Moteur + modèle | café | récit | film002 | Références FR |
+  |---|---|---|---|---|
+  | Ollama + qwen2.5:3b | 40 s | 24 s | 180 s | 2/2 |
+  | Ollama + qwen2.5:1.5b | 34 s | 32 s | 150 s | 1/2 |
+  | llama.cpp + qwen2.5:3b | 27 s | 20 s | 135 s | 2/2 |
+  | llama.cpp + Qwen3.5-2B | 31 s | 23 s | 136 s | 1/2 |
+  | **llama.cpp + Gemma 4 E2B** | **16 s** | **12 s** | **82 s** | **2/2** |
+
+  Gemma lit le prompt à ~170 tokens/s (Q4_0 réorganisé par llama.cpp pour AVX2) contre ~30
+  pour Ollama ; l'écriture (~12 tokens/s) devient le goulot. Réglages : 4 fils (cœurs
+  physiques), flash attention, Accelerate, 1 seul emplacement. MacBook 2015 : café 25 s.
+- **Whisper compressé (q8_0, q5_x) : pas retenu** — au mieux 10 % plus rapide sur l'iMac,
+  mais 30 % du texte arabe change.
 - **Cache de préfixe** : la transcription est toujours en tête du message système,
   avec un budget de caractères fixe. Toutes les tâches IA d'une même vidéo
   partagent le même préfixe → la transcription n'est ré-analysée qu'une fois.
@@ -127,7 +143,7 @@ Détails qui comptent :
 
 ```
 MontageIA/
-├── start.sh                     lanceur (Ollama + serveur + navigateur)
+├── start.sh                     lanceur (serveur + navigateur ; Ollama si pas de llama.cpp)
 ├── scripts/install_models.sh    installation whisper.cpp + modèles
 ├── bin/whisper-cli              binaire natif
 ├── models/                      ggml-base.bin, ggml-small.bin, VAD Silero
@@ -136,7 +152,8 @@ MontageIA/
 │   ├── tools.py                 exécution de processus, utils
 │   ├── media.py                 ffprobe, silencedetect, loudness
 │   ├── transcribe.py            whisper.cpp, SRT/VTT, remappage de timeline
-│   ├── ai.py                    client Ollama (JSON Schema + streaming)
+│   ├── ai.py                    client IA (llama.cpp ou Ollama ; JSON Schema + streaming)
+│   ├── llm_server.py            llama-server : démarrage à la demande, arrêt après inactivité
 │   ├── prompts.py               prompts et schémas JSON
 │   ├── edit.py                  moteur de rendu ffmpeg
 │   ├── filmcraft.py             pilotage de FilmCraft (projet .fcproj)
@@ -155,7 +172,7 @@ MontageIA/
 ```
 vidéo → silencedetect → segments de parole
       → whisper.cpp (+VAD) → segments horodatés
-      → qwen2.5:3b (JSON) → sélection d'identifiants
+      → Gemma 4 E2B (JSON) → sélection d'identifiants
       → résolution des timecodes → plan de coupe
       → ffmpeg select/aselect → rendu 16:9 ou 9:16
       → serveur de contrôle FilmCraft → projet .fcproj
@@ -167,7 +184,7 @@ vidéo → silencedetect → segments de parole
 
 | Route | Effet |
 |---|---|
-| `GET /api/status` | état d'Ollama, ffmpeg, Whisper, FilmCraft |
+| `GET /api/status` | état du moteur IA, ffmpeg, Whisper, FilmCraft |
 | `POST /api/upload?name=` | téléversement (corps brut, streaming disque) |
 | `POST /api/analyze` | détection des silences |
 | `POST /api/transcribe` | transcription Whisper + VAD |
@@ -192,7 +209,8 @@ vidéo → silencedetect → segments de parole
 
 | Symptôme | Cause probable | Solution |
 |---|---|---|
-| « Ollama injoignable » | serveur arrêté | `ollama serve` |
+| « IA indisponible » | moteur IA non installé | `./scripts/install_models.sh` |
+| « Le moteur IA s'est arrêté au démarrage » | modèle abîmé ou mémoire insuffisante | voir `workspace/cache/llama-server.log` |
 | Transcription très lente | modèle `small` sélectionné | choisir `base` |
 | Aucun silence détecté | seuil trop strict | `-30 dB` par défaut ; baisser via l'API `noise_db` |
 | Sous-titres décalés | les timecodes sont recalculés automatiquement | — |
@@ -204,9 +222,11 @@ vidéo → silencedetect → segments de parole
 
 ## 8. Licences et crédits
 
-- **qwen2.5:3b** — Alibaba, Apache 2.0
+- **Gemma 4 E2B** — Google, Apache 2.0
+- **llama.cpp** — MIT
+- **qwen2.5:3b** (secours) — Alibaba, Apache 2.0
 - **whisper.cpp** — MIT (Georgi Gerganov)
-- **Ollama** — MIT
+- **Ollama** (secours) — MIT
 - **FilmCraft** — MIT ou Apache-2.0
 - **FFmpeg** (build evermeet.cx) — GPL
 - Vidéos de test : Wikimedia Commons (CC BY-SA) — `~/Desktop/Studio_IA/tests/`

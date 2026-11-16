@@ -19,7 +19,7 @@
 | Exécution de processus | `montagia/tools.py` | ✅ |
 | Analyse média (silences, loudness) | `montagia/media.py` | ✅ mesuré 0,25 s / 3 min |
 | Transcription Whisper + VAD | `montagia/transcribe.py` | ✅ 9,2 s / 3 min |
-| Client Ollama (JSON Schema + stream) | `montagia/ai.py` | ✅ |
+| Client IA : llama.cpp (défaut) ou Ollama (JSON Schema + stream) | `montagia/ai.py`, `montagia/llm_server.py` | ✅ |
 | Prompts & schémas JSON | `montagia/prompts.py` | ✅ |
 | Moteur de rendu ffmpeg | `montagia/edit.py` | ✅ 16:9 + 9:16 |
 | Pilotage FilmCraft (remplace Kdenlive) | `montagia/filmcraft.py` | ✅ testé en réel 16:9 et 9:16 |
@@ -201,9 +201,10 @@ Test de non-régression : `tests/fixtures/cafe_words.json` (vrais mots de cette 
 
 ### Éventuel (améliorations)
 
-- Modèle `qwen2.5:1.5b` pour les tâches mécaniques (correction de sous-titres) → 2× plus rapide.
-- La clé du cache IA contient `PROMPT_VERSION` mais pas le nom du modèle : penser à
-  l'ajouter si `MONTAGIA_MODEL` change.
+- ~~`qwen2.5:1.5b`~~ testé le 16/11/2026 : échoue la référence café, rien proposé sur film002.
+- ~~Nom du modèle dans la clé du cache IA~~ ✅ (16/11/2026).
+- Plan de coupe : l'écriture de la réponse est le goulot (~12 tokens/s, ~13 tokens par
+  passage) — piste : ne faire lister que les passages à couper (à valider avec eval_plan).
 - Chunking parallèle de la transcription pour les vidéos > 30 min (non implémenté).
 - Réencodage intelligent : éviter le re-encode complet quand le plan ne change rien
   (déjà fait via le raccourci « copie directe »).
@@ -249,8 +250,12 @@ python3 -c "import sys;sys.path.insert(0,'.');import montagia.cli,montagia.pipel
 
 ## 8. À savoir sur la machine
 
-- **Ollama doit tourner** : `ollama serve` (le `start.sh` le lance s'il est absent).
-- `qwen2.5:3b` Q4_K_M, 1,9 Go — génération ≈ 8,5 tok/s.
+- **IA locale = llama.cpp b12428 + Gemma 4 E2B Q4_0** (16/11/2026, choix validé par
+  l'utilisateur) : `bin/llama-server` lancé à la demande par `llm_server.py`, arrêté après
+  5 min sans requête et au bouton Quitter. Plan de coupe film002 : 78 s (Ollama : 180 s).
+  Ollama + `qwen2.5:3b` reste en secours (`MONTAGIA_LLM_BACKEND=ollama`).
+- Mesures et choix détaillés : README § 4. Magasin de modèles partagé avec les autres projets
+  du développeur : `~/.local/share/kdev-models` (Codewright, Delest, FerroLink…).
 - ffmpeg/ffprobe sont dans `bin/` (builds statiques evermeet 9.0.2, installés par
   `scripts/install_models.sh`) ; Homebrew n'est pas installé. Kdenlive n'est plus utilisé.
 - Production : **iMac de Najeh** (`najehstudio@192.168.1.166`, accès par clé SSH) ;
