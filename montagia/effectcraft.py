@@ -437,6 +437,11 @@ def detour_video(client: Client, video: str, point: tuple, start: float, duratio
         raise EffectCraftError("Modèle %s absent d'EffectCraft : ./scripts/install_sam2_effectcraft.sh %s"
                                % (model, model.replace("sam2.1-hiera-", "")))
     out = os.path.abspath(out)
+    # Au demarrage, EffectCraft recharge le dernier modele utilise et refuse d'en choisir
+    # un autre pendant ce chargement : on attend qu'il ait fini
+    deadline = time.time() + 180
+    while (client.execute("roto.models") or {}).get("busy") and time.time() < deadline:
+        time.sleep(1.0)
     client.execute("roto.model.select", {"id": model, "wait": True})
     client.execute("file.newProject")
     imported = client.execute("file.import", {"paths": [os.path.abspath(video)], "newComp": True}) or {}
