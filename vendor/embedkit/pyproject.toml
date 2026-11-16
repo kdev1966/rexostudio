@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "embedkit"
+version = "0.1.0"
+description = "Socle d'IA embarquée réutilisable : matériel, registre de modèles, licences, runtimes en processus"
+readme = "README.md"
+license = {text = "Apache-2.0"}
+requires-python = ">=3.10"
+dependencies = ["numpy", "pyyaml"]
+
+[project.optional-dependencies]
+onnx = ["onnxruntime"]
+
+[project.scripts]
+embedkit = "embedkit.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["embedkit*"]
+
+[tool.setuptools.package-data]
+embedkit = ["models/*.yaml"]

@@ -1,0 +1,31 @@
+id: paddleocr-arabic-v5-rec
+task: ocr
+tier: 1
+runtime: onnx
+source:
+  url: https://github.com/GreatV/oar-ocr/releases/download/v0.3.0/arabic_pp-ocrv5_mobile_rec.onnx
+  revision: oar-ocr-v0.3.0
+sha256: 2768206d9a0ce48eba45b59619184e18161dde8f44115f029920ca17a9dc0384
+size_mb: 7.7
+extras:
+  - name: dict
+    url: https://github.com/GreatV/oar-ocr/releases/download/v0.3.0/ppocrv5_arabic_dict.txt
+    sha256: 7f92f7dbb9b75a4787a83bfb4f6d14a8ab515525130c9d40a9036f61cf6999e9
+license:
+  code: Apache-2.0        # PaddleOCR; ONNX conversion by the oar-ocr project (Apache-2.0)
+  weights: Apache-2.0     # arabic_PP-OCRv5_mobile_rec, PaddlePaddle
+  commercial: true
+io:
+  input:
+    height: 48            # one text line, any width
+    layout: nchw_rgb_float
+    mean: [0.5, 0.5, 0.5]
+    std: [0.5, 0.5, 0.5]
+  output:
+    decoder: ctc          # blank = 0, then the dictionary, then a space
+    order: arabic_runs_reversed   # Arabic runs come out reversed; Latin and digit runs do not
+  scripts: [arabic, latin]
+notes: >
+  One text line in, text out. Measured on 46 Qahwati balloons (clean text, line by line):
+  11 % character error rate, 76 % of the words found, 0.08 s per balloon on the reference
+  Mac. Latin words and digits are its weak point (v3 keeps them better but glues Arabic words).

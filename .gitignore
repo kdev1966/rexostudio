@@ -12,3 +12,6 @@ __pycache__/
 # Outillage de developpement (venv ruff) - jamais versionne
 .venv/
 .ruff_cache/
+
+# Environnement d'effets (Python 3.11 autonome + ONNX), installe par scripts/install_effects_env.sh
+.effets/

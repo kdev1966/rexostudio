@@ -1,0 +1,23 @@
+id: migan-512
+task: inpaint
+tier: 1
+runtime: onnx
+source:
+  repo: andraniksargsyan/migan          # MI-GAN author (Picsart AI Research)
+  file: migan_pipeline_v2.onnx         # whole pipeline: crop around the hole, 512 px, paste back
+  revision: 406830d0fa60666da0071c342ad2fbc8f30c5c64
+sha256: 6f1f3530a1a2324b19752018ce756088b07973cda8d7d890034ace5c8a48c40b
+size_mb: 26.8
+license:
+  code: MIT                 # github.com/Picsart-AI-Research/MI-GAN, LICENSE
+  weights: MIT              # same repository, LICENSE-WEIGHTS (trained on Places2)
+  commercial: true
+io:
+  input:
+    image: nchw_rgb_uint8   # any size
+    mask: nchw_uint8        # 255 = keep, 0 = fill
+  output:
+    image: nchw_rgb_uint8
+notes: >
+  Places2 weights: made for scenery; on drawn artwork the fill is plausible colours and
+  textures rather than exact lines. Residual question: the terms of the Places2 dataset.

@@ -1,0 +1,27 @@
+id: depth-anything-v2-small
+task: depth
+tier: 1
+runtime: onnx
+source:
+  repo: onnx-community/depth-anything-v2-small
+  file: onnx/model.onnx
+  revision: 4472b7362082ad9968fee890ca0f1e5aca36b93d
+sha256: afb6a5c28f3b6bf1618c6e43f02073ef9dfdc70e937502d51603e57b0a1df10c
+size_mb: 94.5
+license:
+  code: Apache-2.0
+  weights: Apache-2.0      # Small variant only (Base/Large are CC-BY-NC-4.0)
+  commercial: true
+io:
+  input:
+    name: pixel_values
+    size: 518              # square input, any multiple of 14 works
+    layout: nchw_rgb_float
+    mean: [0.485, 0.456, 0.406]
+    std: [0.229, 0.224, 0.225]
+  output:
+    name: predicted_depth
+    kind: disparity        # larger = closer
+notes: >
+  FP32 retained over INT8: on the reference CPU (Haswell, no VNNI) INT8 is not faster
+  (598 ms vs 694 ms at 518x518, ADR 0003). About 0.6 s per panel, 420 MB peak RAM.
