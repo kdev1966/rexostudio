@@ -102,6 +102,11 @@ def preview_name(rel: str, effect: str, framed: bool) -> str:
     return "%s_%s%s%s" % (_key(rel), effect, "_cadre" if framed else "", EFFECTS[effect]["ext"])
 
 
+def fg_name(rel: str, framed: bool) -> str:
+    """Photo aux couleurs de bord nettoyees (detourage) : calque des maries du PSD."""
+    return "%s_detourage%s_couleurs.jpg" % (_key(rel), "_cadre" if framed else "")
+
+
 def mask_name(rel: str, effect: str, framed: bool) -> str:
     """Masque de l'apercu (PNG, transparence = personnes ou zone effacee)."""
     return "%s_%s%s_masque.png" % (_key(rel), effect, "_cadre" if framed else "")
@@ -243,6 +248,8 @@ def preview(event_dir: str, src: str, effect: str, box=None, log=None) -> dict:
                 "score": result.get("score"), "object_bounds": None,
             }
         args = [spec["tool"], src, out, "--save-alpha", alpha]
+        if effect == "detourage":
+            args += ["--save-fg", os.path.join(folder, fg_name(rel, box is not None))]
         bounds = None
         if box is not None:
             mask = os.path.join(folder, _key(rel) + "_tmp_objet.png")
@@ -304,7 +311,12 @@ def export_psd(event_dir: str, src: str, effect: str, framed: bool, log=None) ->
     try:
         _segment(["orient", src, base])
         mode, layer_name = PSD_LAYERS[effect]
-        photocraft.layered_psd(base, cached, alpha, mode, layer_name, out, [event_dir])
+        layer_source = cached
+        if mode == "keep":
+            # Calque des maries : la photo aux couleurs de bord nettoyees (sinon la photo)
+            fg = os.path.join(folder, fg_name(rel, framed))
+            layer_source = fg if os.path.isfile(fg) else base
+        photocraft.layered_psd(base, layer_source, alpha, mode, layer_name, out, [event_dir])
     except photocraft.PhotoCraftError as exc:
         if os.path.exists(out) and os.path.getsize(out) == 0:
             os.remove(out)

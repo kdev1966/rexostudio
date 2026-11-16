@@ -112,7 +112,9 @@ class EffectsTest(PhotoEventCase):
         self.assertEqual(calls[1][:3], ["cutout", self.photo, r["path"]])
         self.assertEqual(calls[1][3], "--save-alpha")
         self.assertTrue(calls[1][4].endswith("_detourage_cadre_masque.png"))
-        self.assertEqual(calls[1][5], "--add-mask")
+        self.assertEqual(calls[1][5], "--save-fg")
+        self.assertTrue(calls[1][6].endswith("_detourage_cadre_couleurs.jpg"))
+        self.assertEqual(calls[1][7], "--add-mask")
         # Fichiers intermediaires effaces : il ne reste que l'apercu
         self.assertEqual(os.listdir(os.path.dirname(r["path"])), [os.path.basename(r["path"])])
 
@@ -216,6 +218,19 @@ class EffectsTest(PhotoEventCase):
                                       side_effect=lambda *a: modes.setdefault(a[3], a[4])):
                 effects.export_psd(self.event, self.photo, effect, False)
         self.assertEqual(set(modes), {"keep", "outside"})
+
+    def test_export_psd_cutout_uses_cleaned_colors(self):
+        r = effects.preview(self.event, self.photo, "detourage")
+        self._fake_alpha(r, "detourage")
+        fg = os.path.join(os.path.dirname(r["path"]),
+                          effects.fg_name("02_Photos/Carte_1/IMG_0001.jpg", False))
+        open(fg, "wb").close()                       # le faux outil ne l'ecrit pas
+        seen = {}
+        with mock.patch.object(photocraft, "installed", return_value=True), \
+                mock.patch.object(photocraft, "layered_psd",
+                                  side_effect=lambda *a: seen.update(layer=a[1], mode=a[3])):
+            effects.export_psd(self.event, self.photo, "detourage", False)
+        self.assertEqual((seen["layer"], seen["mode"]), (fg, "keep"))
 
     def test_export_psd_needs_preview_and_mask(self):
         with mock.patch.object(photocraft, "installed", return_value=True):

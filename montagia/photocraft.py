@@ -144,7 +144,8 @@ class Session(object):
 
 
 # Comment le calque d'effet est masque dans le PSD
-#   keep    : detourage ; calque « personnes » = la photo + masque, original masque dessous
+#   keep    : detourage ; calque « personnes » = effect_image (la photo aux couleurs de
+#             bord nettoyees) + masque, original cache dessous
 #   outside : fond traite (noir et blanc, flou, uni) ; masque = tout sauf les personnes
 #   inside  : objet efface ; masque = la zone reconstituee
 #   plain   : resultat entier (assistant), sans masque
@@ -173,7 +174,7 @@ def layered_psd(base: str, effect_image: str, alpha: str, mode: str, layer_name:
     with Session(read_roots, os.path.dirname(out_psd)) as pc:
         pc.call("doc.open", {"path": base})
         original = pc.call("doc.inspect")["layers"][-1]["id"]
-        layer = pc.call("doc.place", {"path": base if mode == "keep" else effect_image})["layer"]
+        layer = pc.call("doc.place", {"path": effect_image})["layer"]
         pc.execute("layer.rasterize.smartObject", layer=layer)
         if mode != "plain":
             shape = pc.call("doc.place", {"path": alpha})["layer"]

@@ -1480,7 +1480,7 @@ function fxRender() {
     : (p.viewable ? fileUrl(p.path) : (p.thumb ? fileUrl(p.thumb) : ''));
   const img = $('#fx-img');
   if (img.getAttribute('src') !== src) img.setAttribute('src', src);
-  $$('#fx .fx-view .filter').forEach((b) => {
+  $$('#fx .fx-view .filter[data-view]').forEach((b) => {
     b.classList.toggle('active', b.dataset.view === FX.view);
     if (b.dataset.view === 'result') b.disabled = !FX.result;
   });
@@ -1582,7 +1582,20 @@ $('#fx-effects').addEventListener('click', (ev) => {
   fxRender();
 });
 
-$$('#fx .fx-view .filter').forEach((b) => b.addEventListener('click', () => {
+/* Fond de l'apercu (clair par defaut, comme PhotoCraft), garde d'une fois sur l'autre */
+function fxBackground(bg) {
+  const stage = $('#fx-stage');
+  stage.classList.toggle('bg-light', bg === 'light');
+  stage.classList.toggle('bg-white', bg === 'white');
+  $$('#fx [data-bg]').forEach((b) => b.classList.toggle('active', b.dataset.bg === bg));
+  try { localStorage.setItem('rexo-fx-bg', bg); } catch (e) { /* stockage indisponible */ }
+}
+$$('#fx [data-bg]').forEach((b) => b.addEventListener('click', () => fxBackground(b.dataset.bg)));
+let savedBg = 'light';
+try { savedBg = localStorage.getItem('rexo-fx-bg') || 'light'; } catch (e) { /* stockage indisponible */ }
+fxBackground(savedBg);
+
+$$('#fx .fx-view .filter[data-view]').forEach((b) => b.addEventListener('click', () => {
   if (b.disabled) return;
   FX.view = b.dataset.view;
   fxRender();

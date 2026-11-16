@@ -19,6 +19,9 @@
 // Pour style, crop et orient, la sortie est en PNG si son nom finit par .png (la
 // transparence d'un detourage est gardee ; orient sans perte), en JPEG sinon.
 //
+// --save-fg <jpg> : enregistre aussi la photo aux couleurs de bord nettoyees
+// (« decontaminees »), source du calque des maries dans le PSD a calques.
+//
 // --save-alpha <png> : enregistre aussi le masque final (personnes + masque
 // complementaire) en PNG blanc dont la transparence est le masque : PhotoCraft
 // en fait la selection, puis le masque de calque modifiable du PSD.
@@ -195,7 +198,21 @@ func fitted(_ small: CIImage) -> CIImage {
         .cropped(to: extent)
 }
 
-var mask = fitted(CIImage(cvPixelBuffer: buffer))
+// Bord resserre : le masque de Vision, calcule en basse resolution puis agrandi, a un
+// bord flou large (22 % des pixels d'une personne a demi transparents sur une photo
+// 2048 px). Les valeurs 0,25..0,75 sont etirees sur 0..1 : bord plus net, moins de
+// fond d'origine visible autour du personnage sur un fond clair.
+func tightened(_ m: CIImage) -> CIImage {
+    m.applyingFilter("CIColorMatrix", parameters: [
+        "inputRVector": CIVector(x: 2, y: 0, z: 0, w: 0),
+        "inputGVector": CIVector(x: 2, y: 0, z: 0, w: 0),
+        "inputBVector": CIVector(x: 2, y: 0, z: 0, w: 0),
+        "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 1),
+        "inputBiasVector": CIVector(x: -0.5, y: -0.5, z: -0.5, w: 0)])
+        .applyingFilter("CIColorClamp").cropped(to: extent)
+}
+
+var mask = tightened(fitted(CIImage(cvPixelBuffer: buffer)))
 
 // 2. Masque complementaire (transparence d'un PNG detoure), ajoute au masque
 if let extraPath = option("--add-mask") {
@@ -226,6 +243,43 @@ if let alphaPath = option("--save-alpha") {
                                            format: .RGBA8, colorSpace: srgb)
     } catch {
         fail("masque impossible a ecrire : \(error.localizedDescription)")
+    }
+}
+
+// Couleurs du bord « decontaminees » : sur le pourtour, un pixel a demi transparent
+// melange la personne et le fond d'origine (sombre la nuit). On le remplace par la
+// couleur moyenne de la personne autour de lui : flou(image x masque) / flou(masque).
+// Au coeur du personnage (masque > 0,9) l'image reste intacte.
+let divideKernel = CIColorKernel(source:
+    "kernel vec4 rexoDivide(__sample p, __sample m) {" +
+    " float a = max(m.r, 0.0001); return vec4(clamp(p.rgb / a, 0.0, 1.0), 1.0); }")!
+
+func decontaminated() -> CIImage {
+    let radius = max(4.0, Double(max(extent.width, extent.height)) / 400.0)
+    let black = CIImage(color: CIColor(red: 0, green: 0, blue: 0)).cropped(to: extent)
+    let premult = image.applyingFilter("CIBlendWithMask", parameters: [
+        kCIInputBackgroundImageKey: black, kCIInputMaskImageKey: mask])
+    let blurP = premult.clampedToExtent().applyingFilter("CIGaussianBlur",
+        parameters: [kCIInputRadiusKey: radius]).cropped(to: extent)
+    let blurM = mask.clampedToExtent().applyingFilter("CIGaussianBlur",
+        parameters: [kCIInputRadiusKey: radius]).cropped(to: extent)
+    let foreground = divideKernel.apply(extent: extent, arguments: [blurP, blurM])!
+    let core = mask.applyingFilter("CIColorMatrix", parameters: [
+        "inputRVector": CIVector(x: 10, y: 0, z: 0, w: 0),
+        "inputGVector": CIVector(x: 10, y: 0, z: 0, w: 0),
+        "inputBVector": CIVector(x: 10, y: 0, z: 0, w: 0),
+        "inputBiasVector": CIVector(x: -9, y: -9, z: -9, w: 0)]).applyingFilter("CIColorClamp")
+    return image.applyingFilter("CIBlendWithMask", parameters: [
+        kCIInputBackgroundImageKey: foreground, kCIInputMaskImageKey: core]).cropped(to: extent)
+}
+
+if let fgPath = option("--save-fg") {
+    // Image opaque aux couleurs de bord nettoyees : calque du PSD (detourage)
+    do {
+        try context.writeJPEGRepresentation(of: decontaminated(), to: URL(fileURLWithPath: fgPath),
+                                            colorSpace: srgb, options: [jpegQuality: 0.95])
+    } catch {
+        fail("image de premier plan impossible a ecrire : \(error.localizedDescription)")
     }
 }
 
@@ -287,7 +341,7 @@ case "crop":
 case "mask":
     finish(mask, png: true, coverage: coverage)
 case "cutout":
-    finish(image.applyingFilter("CIBlendWithMask", parameters: [
+    finish(decontaminated().applyingFilter("CIBlendWithMask", parameters: [
         kCIInputBackgroundImageKey: CIImage.empty(), kCIInputMaskImageKey: mask]),
            png: true, coverage: coverage)
 case "bw":
