@@ -393,3 +393,28 @@ mark { background: #5a3a10; color: inherit; border-radius: 2px; }
 .rush-keep .auto { color: var(--muted); font-size: 10.5px; }
 .ev-names { cursor: pointer; }
 .ev-names:hover { color: var(--accent2); }
+
+/* ---------- corbeille et photos ---------- */
+.del {
+  background: transparent; border: 1px solid transparent; border-radius: 6px; cursor: pointer;
+  font-size: 12px; padding: 1px 5px; opacity: .45; color: inherit; margin-left: auto;
+}
+.del:hover { opacity: 1; border-color: var(--err); background: #2a1616; }
+.rush-name { display: flex; align-items: center; gap: 6px; }
+.ev-actions .ev-trash { flex: none; min-width: 0; }
+.ev-actions .ev-trash:hover { border-color: var(--err); }
+.evd-cards { margin-top: 12px; font-size: 12.5px; }
+.evd-card-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; border-top: 1px solid var(--line); }
+.evd-folders-card { margin-bottom: 14px; }
+.evd-folders { display: flex; flex-wrap: wrap; gap: 8px; }
+.evd-folder { display: flex; align-items: center; gap: 2px; }
+.evd-section { margin: 22px 0 8px; color: var(--accent); }
+.photo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; }
+.photo { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.photo a { display: flex; align-items: center; justify-content: center; aspect-ratio: 3 / 2; background: #000; }
+.photo img { width: 100%; height: 100%; object-fit: cover; }
+.photo a.noview { cursor: default; }
+.photo-bar { display: flex; align-items: center; gap: 6px; padding: 5px 8px; font-size: 11.5px; color: var(--muted); }
+.photo-bar span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rush-thumb { overflow: hidden; }
+.rush-thumb img { position: absolute; inset: 0; }

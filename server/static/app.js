@@ -953,7 +953,8 @@ function renderEvents() {
       '<div class="ev-folders">' + folders + '</div>' +
       '<div class="btn-row ev-actions">' +
       '<button class="btn btn-primary btn-small ev-derush" data-id="' + id + '">🎬 Dérushage</button>' +
-      '<button class="btn btn-sec btn-small ev-open" data-id="' + id + '">📂 Dossier</button></div>' +
+      '<button class="btn btn-sec btn-small ev-open" data-id="' + id + '">📂 Dossier</button>' +
+      '<button class="btn btn-sec btn-small ev-trash" data-id="' + id + '" title="Mettre tout l’événement à la Corbeille">🗑</button></div>' +
       '</div>';
   }).join('');
 }
@@ -965,6 +966,8 @@ async function openEvent(id, sub) {
 }
 
 $('#ev-list').addEventListener('click', (ev) => {
+  const del = ev.target.closest('.ev-trash');
+  if (del) { trashEvent(del.dataset.id); return; }
   const derush = ev.target.closest('.ev-derush, .ev-names');
   if (derush) { openDerush(derush.dataset.id || derush.closest('.ev-card').dataset.id); return; }
   const btn = ev.target.closest('.ev-folder, .ev-open');
@@ -1061,7 +1064,7 @@ $('#ev-form').addEventListener('submit', async (e) => {
 /* Derushage d'un evenement (M1)                                       */
 /* ------------------------------------------------------------------ */
 
-const EVD = { id: '', event: null, clips: [], issues: {}, filter: 'all' };
+const EVD = { id: '', event: null, clips: [], photos: [], cards: [], issues: {}, filter: 'all' };
 
 function fileUrl(path) {
   return '/api/file?path=' + encodeURIComponent(path);
@@ -1083,15 +1086,18 @@ async function loadDerush() {
     EVD.event = data.event;
     EVD.clips = data.clips || [];
     EVD.issues = data.issues || {};
+    EVD.photos = data.photos || [];
+    EVD.cards = data.cards || [];
+    EVD.imports = data.imports || [];
     const e = data.event;
     $('#evd-type').textContent = e.type_label;
     $('#evd-type').className = 'ev-type t-' + e.type;
     $('#evd-names').textContent = e.names;
     $('#evd-date').textContent = evDate(e.date).text + (e.place ? ' — ' + e.place : '');
-    $('#evd-imports').innerHTML = (data.imports || []).map((i) =>
-      escapeHtml(i.card + ' : ' + i.copied + ' fichier' + (i.copied > 1 ? 's' : '') + ' copié' +
-        (i.copied > 1 ? 's' : '') + ' depuis ' + i.source)).join('<br>');
     renderDerush();
+    renderCards();
+    renderFolders();
+    renderPhotos();
   } catch (err) {
     toast(err.message, true);
   }
@@ -1142,7 +1148,8 @@ function renderDerush() {
       '<span class="play">▶</span>' +
       (c.duration ? '<span class="dur">' + fmtDuration(c.duration) + '</span>' : '') + '</div>' +
       '<div class="rush-body">' +
-      '<div class="rush-name">' + escapeHtml(c.name) + '</div>' +
+      '<div class="rush-name">' + escapeHtml(c.name) +
+      '<button class="del" data-rel="' + escapeHtml(c.rel) + '" title="Mettre à la Corbeille">🗑</button></div>' +
       '<div class="rush-meta">' + escapeHtml([c.card.replace('_', ' '), time, res].filter(Boolean).join(' · ')) + '</div>' +
       '<div class="rush-issues">' + issues + '</div>' +
       (c.analyzed ? '<label class="rush-keep"><input type="checkbox" data-rel="' + escapeHtml(c.rel) + '"' +
@@ -1276,6 +1283,114 @@ $('#evd-proxies').addEventListener('click', () => derushJob('/api/events/proxies
   toast(plural(r.made, 'proxy') + ' créé' + (r.made > 1 ? 's' : ''))));
 $('#evd-filmcraft').addEventListener('click', () => derushJob('/api/events/filmcraft', {}, (r) =>
   toast('Sélection ouverte dans FilmCraft : ' + r.clips + ' rushes, ' + fmtDuration(r.duration))));
+
+
+/* ------------------------------------------------------------------ */
+/* Corbeille : supprimer un evenement, une carte, un dossier, un media */
+/* ------------------------------------------------------------------ */
+
+const TRASH_NOTE = '\n\nLes fichiers vont dans la Corbeille du Mac : récupérables tant qu’elle n’est pas vidée.';
+
+async function trashEvent(id) {
+  const e = EV.items.find((x) => x.id === id);
+  if (!e) return;
+  const files = (e.folders || []).reduce((t, f) => t + f.files, 0);
+  const typed = prompt('Mettre TOUT l’événement « ' + e.names + ' » (' + e.type_label + ', ' +
+    evDate(e.date).text + ') à la Corbeille ?\n' + plural(files, 'fichier') +
+    (e.size ? ', ' + fmtSize(e.size) : '') + ' : rushes, photos, montages, rendus.' + TRASH_NOTE +
+    '\n\nTapez SUPPRIMER pour confirmer :');
+  if (typed === null) return;
+  if (typed.trim().toUpperCase() !== 'SUPPRIMER') { toast('Suppression annulée', true); return; }
+  try {
+    await post('/api/events/delete', { id: id });
+    toast('Événement mis à la Corbeille : ' + e.names);
+    if (EVD.id === id) { EVD.id = ''; showView('events'); } else { loadEvents(); }
+  } catch (err) { toast(err.message, true); }
+}
+
+async function trashInEvent(body, question) {
+  if (S.busy) { toast('Un traitement est en cours : attendez la fin', true); return; }
+  if (!confirm(question + TRASH_NOTE)) return;
+  try {
+    const r = await post('/api/events/trash', Object.assign({ id: EVD.id }, body));
+    toast(plural(r.trashed.length, 'élément') + ' mis à la Corbeille');
+  } catch (err) { toast(err.message, true); }
+  $('#evd-player').pause();
+  $('#evd-player').removeAttribute('src');
+  $('#evd-player-box').classList.add('hidden');
+  loadDerush();
+}
+
+function renderCards() {
+  const box = $('#evd-cards');
+  if (!EVD.cards.length) { box.innerHTML = ''; return; }
+  const source = {};
+  (EVD.imports || []).forEach((i) => { source[i.card] = i.source; });
+  box.innerHTML = '<p class="tiny muted">Cartes importées :</p>' + EVD.cards.map((c) =>
+    '<div class="evd-card-row"><span>💾 <b>' + escapeHtml(c.name.replace('_', ' ')) + '</b> — ' +
+    plural(c.videos, 'vidéo') + ', ' + plural(c.photos, 'photo') +
+    (source[c.name] ? ' <span class="muted">(' + escapeHtml(source[c.name]) + ')</span>' : '') + '</span>' +
+    '<button class="del" data-card="' + escapeHtml(c.name) + '" title="Mettre cette carte à la Corbeille">🗑</button></div>'
+  ).join('');
+}
+
+function renderFolders() {
+  const e = EVD.event;
+  $('#evd-folders').innerHTML = (e.folders || []).map((f) =>
+    '<div class="evd-folder"><button class="ev-folder" data-sub="' + escapeHtml(f.name) + '" title="Ouvrir dans le Finder">📂 ' +
+    escapeHtml(f.label) + ' <b>' + f.files + '</b>' + (f.size ? ' <span class="muted">' + fmtSize(f.size) + '</span>' : '') +
+    '</button>' + (f.files ? '<button class="del" data-folder="' + escapeHtml(f.name) + '" data-label="' + escapeHtml(f.label) +
+      '" data-files="' + f.files + '" data-size="' + f.size + '" title="Vider ce dossier (Corbeille)">🗑</button>' : '') +
+    '</div>').join('');
+}
+
+function renderPhotos() {
+  $('#evd-photo-count').textContent = EVD.photos.length ? '(' + EVD.photos.length + ')' : '';
+  $('#evd-photos').innerHTML = !EVD.photos.length
+    ? '<p class="empty">Aucune photo : elles arrivent avec l’import d’une carte, dans 02_Photos.</p>'
+    : EVD.photos.map((p) =>
+      '<div class="photo" title="' + escapeHtml(p.rel) + '">' +
+      '<a ' + (p.viewable ? 'href="' + fileUrl(p.path) + '" target="_blank" rel="noopener"' : 'class="noview"') + '>' +
+      (p.thumb ? '<img loading="lazy" src="' + fileUrl(p.thumb) + '" alt="">' : '<span class="muted">' + escapeHtml(p.name) + '</span>') +
+      '</a><div class="photo-bar"><span>' + escapeHtml(p.name) + '</span>' +
+      '<button class="del" data-rel="' + escapeHtml(p.rel) + '" title="Mettre à la Corbeille">🗑</button></div></div>'
+    ).join('');
+}
+
+$('#evd-clips').addEventListener('click', (ev) => {
+  const b = ev.target.closest('.del');
+  if (!b) return;
+  ev.stopPropagation();
+  const c = EVD.clips.find((x) => x.rel === b.dataset.rel);
+  trashInEvent({ rel: b.dataset.rel }, 'Mettre le rush « ' + (c ? c.name : b.dataset.rel) + ' » à la Corbeille ?' +
+    (c && c.proxy ? '\nSon proxy part avec lui.' : ''));
+}, true);
+
+$('#evd-photos').addEventListener('click', (ev) => {
+  const b = ev.target.closest('.del');
+  if (!b) return;
+  trashInEvent({ rel: b.dataset.rel }, 'Mettre la photo « ' + b.dataset.rel.split('/').pop() + ' » à la Corbeille ?');
+});
+
+$('#evd-cards').addEventListener('click', (ev) => {
+  const b = ev.target.closest('.del');
+  if (!b) return;
+  const c = EVD.cards.find((x) => x.name === b.dataset.card) || { videos: 0, photos: 0 };
+  trashInEvent({ card: b.dataset.card }, 'Mettre toute la ' + b.dataset.card.replace('_', ' ') + ' à la Corbeille ?\n' +
+    plural(c.videos, 'vidéo') + ', ' + plural(c.photos, 'photo') + ' et leurs proxies.');
+});
+
+$('#evd-folders').addEventListener('click', (ev) => {
+  const del = ev.target.closest('.del');
+  if (del) {
+    const d = del.dataset;
+    trashInEvent({ rel: d.folder }, 'Vider le dossier ' + d.label + ' (' + d.folder + ') ?\n' +
+      plural(+d.files, 'fichier') + ', ' + fmtSize(+d.size) + '. Le dossier lui-même reste en place.');
+    return;
+  }
+  const open = ev.target.closest('.ev-folder');
+  if (open) openEvent(EVD.id, open.dataset.sub);
+});
 
 /* ------------------------------------------------------------------ */
 

@@ -88,7 +88,7 @@
       <button class="btn btn-primary btn-big" id="evd-import">Copier et vérifier</button>
       <p class="tiny muted hint">Chaque fichier est copié puis relu et comparé à l'original (empreinte
         SHA-256). La carte n'est jamais modifiée. Un fichier déjà importé n'est pas recopié.</p>
-      <div id="evd-imports" class="tiny muted"></div>
+      <div id="evd-cards" class="evd-cards"></div>
     </div>
 
     <div class="card">
@@ -107,6 +107,11 @@
     </div>
   </div>
 
+  <div class="card evd-folders-card">
+    <h2>Dossiers de l'événement</h2>
+    <div id="evd-folders" class="evd-folders"></div>
+  </div>
+
   <div id="evd-player-box" class="card hidden">
     <video id="evd-player" controls preload="metadata"></video>
     <p id="evd-player-label" class="tiny muted"></p>
@@ -119,6 +124,9 @@
     <button class="filter" data-f="new">Non analysés <span></span></button>
   </div>
   <div id="evd-clips" class="rush-grid"></div>
+
+  <h2 class="evd-section">Photos <span id="evd-photo-count" class="muted"></span></h2>
+  <div id="evd-photos" class="photo-grid"></div>
 </section>
 
 <main id="view-montage" class="hidden">

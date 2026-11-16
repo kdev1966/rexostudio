@@ -489,8 +489,9 @@ def analyze(event_dir: str, job=None, force: bool = False) -> dict:
         log("%s : %s" % (os.path.basename(rel), ", ".join(ISSUES[i] for i in result["issues"]) or "bon"))
         save_state(event_dir, state)
     save_state(event_dir, state)
+    photos = photo_thumbnails(event_dir, job)
     bad = sum(1 for r in rels if state["clips"][r].get("issues"))
-    return {"clips": len(rels), "analyzed": len(todo), "issues": bad}
+    return {"clips": len(rels), "analyzed": len(todo), "issues": bad, "photo_thumbs": photos}
 
 
 def is_kept(clip: dict) -> bool:
@@ -621,3 +622,126 @@ def send_to_filmcraft(event_dir: str, job, title: str = "") -> dict:
     job.set_progress(1.0, "Sélection ouverte dans FilmCraft")
     return {"path": result["path"], "clips": result["clips"], "duration": result["duration"],
             "valid": bool(seq)}
+
+
+# --------------------------------------------------------------------------
+# Photos
+# --------------------------------------------------------------------------
+
+BROWSER_IMAGES = {".jpg", ".jpeg", ".png"}
+
+
+def _thumb_rel(rel: str, prefix: str = "") -> str:
+    return os.path.join(".rexo", THUMBS_DIR,
+                        prefix + hashlib.sha1(rel.encode("utf-8")).hexdigest()[:16] + ".jpg")
+
+
+def _photo_thumb(src: str, out: str) -> None:
+    """Vignette JPEG 360 px : sips (macOS, lit aussi HEIC et RAW), sinon ffmpeg."""
+    os.makedirs(os.path.dirname(out), exist_ok=True)
+    if shutil.which("sips"):
+        tools.run(["sips", "-s", "format", "jpeg", "-s", "formatOptions", "70",
+                   "-Z", "360", src, "--out", out], timeout=120)
+    else:
+        tools.run([config.ffmpeg_bin(), "-hide_banner", "-v", "error", "-nostdin", "-y",
+                   "-i", src, "-vf", "scale=360:-2", "-frames:v", "1", out], timeout=120)
+
+
+def photo_thumbnails(event_dir: str, job=None) -> int:
+    """Cree les vignettes manquantes des photos ; retourne leur nombre."""
+    photos = _walk(os.path.join(event_dir, PHOTOS_DIR), PHOTO_EXT)
+    made = 0
+    for i, path in enumerate(photos):
+        rel = os.path.relpath(path, event_dir)
+        out = os.path.join(event_dir, _thumb_rel(rel, "p_"))
+        if os.path.isfile(out):
+            continue
+        if job:
+            job.set_progress(i / max(1, len(photos)), "Vignettes des photos %d/%d" % (i + 1, len(photos)))
+        try:
+            _photo_thumb(path, out)
+            made += 1
+        except (tools.CommandError, OSError):
+            continue
+    return made
+
+
+def photo_list(event_dir: str) -> list:
+    """Photos de 02_Photos, dans l'ordre de prise de vue (date du fichier,
+    conservee a l'import)."""
+    items = []
+    for path in _walk(os.path.join(event_dir, PHOTOS_DIR), PHOTO_EXT):
+        rel = os.path.relpath(path, event_dir)
+        thumb = os.path.join(event_dir, _thumb_rel(rel, "p_"))
+        st = os.stat(path)
+        parts = rel.split(os.sep)
+        items.append({
+            "rel": rel, "name": os.path.basename(path), "path": path,
+            "card": parts[1] if len(parts) > 2 else "",
+            "thumb": thumb if os.path.isfile(thumb) else "",
+            "viewable": os.path.splitext(path)[1].lower() in BROWSER_IMAGES,
+            "size": st.st_size, "mtime": st.st_mtime,
+        })
+    items.sort(key=lambda p: (p["mtime"], p["rel"]))
+    return items
+
+
+# --------------------------------------------------------------------------
+# Cartes et suppression
+# --------------------------------------------------------------------------
+
+_CARD = re.compile(r"^Carte_\d+$")
+
+
+def card_list(event_dir: str) -> list:
+    """Cartes importees : nombre de rushes et de photos de chacune."""
+    cards = {}
+    for kind, key in ((RUSHES_DIR, "videos"), (PHOTOS_DIR, "photos")):
+        base = os.path.join(event_dir, kind)
+        if not os.path.isdir(base):
+            continue
+        for name in os.listdir(base):
+            if _CARD.match(name) and os.path.isdir(os.path.join(base, name)):
+                exts = VIDEO_EXT if kind == RUSHES_DIR else PHOTO_EXT
+                cards.setdefault(name, {"name": name, "videos": 0, "photos": 0})[key] = \
+                    len(_walk(os.path.join(base, name), exts))
+    return sorted(cards.values(), key=lambda c: int(c["name"].split("_")[1]))
+
+
+def card_paths(event_dir: str, card: str) -> list:
+    """Dossiers d'une carte : rushes, photos et proxies (ceux qui existent)."""
+    if not _CARD.match(card or ""):
+        raise RushError("Carte invalide : %s" % card)
+    paths = [os.path.join(event_dir, kind, card) for kind in (RUSHES_DIR, PHOTOS_DIR, PROXIES_DIR)]
+    paths = [p for p in paths if os.path.isdir(p)]
+    if not paths:
+        raise RushError("Carte introuvable : %s" % card)
+    return paths
+
+
+def related_paths(event_dir: str, rel: str) -> list:
+    """Fichiers derives d'un rush a supprimer avec lui : son proxy."""
+    rel = os.path.normpath(rel)
+    if not rel.startswith(RUSHES_DIR + os.sep):
+        return []
+    proxy = os.path.join(event_dir, proxy_rel(rel))
+    return [proxy] if os.path.isfile(proxy) else []
+
+
+def forget_missing(event_dir: str) -> None:
+    """Apres une suppression : retire de l'etat les rushes disparus et efface
+    les vignettes orphelines (cache de Rexo Studio, recreable)."""
+    state = load_state(event_dir)
+    sync_clips(event_dir, state)
+    save_state(event_dir, state)
+    keep = {c.get("thumb") for c in state["clips"].values() if c.get("thumb")}
+    keep |= {_thumb_rel(os.path.relpath(p, event_dir), "p_")
+             for p in _walk(os.path.join(event_dir, PHOTOS_DIR), PHOTO_EXT)}
+    folder = os.path.join(event_dir, ".rexo", THUMBS_DIR)
+    if os.path.isdir(folder):
+        for name in os.listdir(folder):
+            if os.path.join(".rexo", THUMBS_DIR, name) not in keep:
+                try:
+                    os.remove(os.path.join(folder, name))
+                except OSError:
+                    pass

@@ -374,6 +374,37 @@ class ServerTest(unittest.TestCase):
             status, _ = self.request("GET", "/api/events/detail?id=..")
             self.assertEqual(status, 404)
 
+    def test_event_trash_routes_use_the_trash(self):
+        root = tempfile.mkdtemp(prefix="rexo-events-")
+        self.addCleanup(shutil.rmtree, root, True)
+        trashed = []
+
+        def fake_trash(path):
+            trashed.append(path)
+            shutil.rmtree(path) if os.path.isdir(path) else os.remove(path)
+
+        with mock.patch.object(app.config, "EVENTS_DIR", root), \
+                mock.patch.object(app.trash, "to_trash", side_effect=fake_trash):
+            ev = app.events.create(root, "Fete", "2026-12-31", "Reveillon")
+            rush = os.path.join(ev["path"], "01_Rushes", "Carte_1", "C0001.MP4")
+            os.makedirs(os.path.dirname(rush))
+            open(rush, "wb").close()
+            status, body = self.request("POST", "/api/events/trash",
+                                        {"id": ev["id"], "rel": ".rexo/evenement.json"})
+            self.assertEqual(status, 404, body)
+            status, body = self.request("POST", "/api/events/trash",
+                                        {"id": ev["id"], "card": "Carte_1"})
+            self.assertEqual(status, 200, body)
+            self.assertEqual(trashed, [os.path.join(ev["path"], "01_Rushes", "Carte_1")])
+            with mock.patch.object(app.MANAGER, "busy", return_value=True):
+                status, _ = self.request("POST", "/api/events/delete", {"id": ev["id"]})
+            self.assertEqual(status, 409)
+            status, body = self.request("POST", "/api/events/delete", {"id": ev["id"]})
+            self.assertEqual(status, 200, body)
+            self.assertEqual(trashed[-1], ev["path"])
+            status, body = self.request("GET", "/api/events")
+            self.assertEqual(json.loads(body)["events"], [])
+
     def test_quit_unloads_model_then_stops(self):
         stopped = threading.Event()
         with mock.patch.object(app.ai, "unload") as unload, \

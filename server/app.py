@@ -21,7 +21,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from montagia import (ai, config, events, filmcraft, media, pipeline, project,  # noqa: E402
-                      rushes, tools, transcribe)
+                      rushes, tools, transcribe, trash)
 from montagia.jobs import MANAGER  # noqa: E402
 
 MAX_BODY = config.MAX_UPLOAD_BYTES
@@ -314,6 +314,10 @@ class StudioHandler(BaseHTTPRequestHandler):
                                        lambda j, d, _data: rushes.send_to_filmcraft(d, j))
             if route == "/api/events/keep":
                 return self._api_event_keep()
+            if route == "/api/events/delete":
+                return self._api_event_delete()
+            if route == "/api/events/trash":
+                return self._api_event_trash()
             if route == "/api/project/delete":
                 return self._api_project_delete()
             if route == "/api/quit":
@@ -798,6 +802,8 @@ class StudioHandler(BaseHTTPRequestHandler):
         return self._json({
             "event": events.summary(config.EVENTS_DIR, event_id),
             "clips": rushes.clip_list(event_dir),
+            "photos": rushes.photo_list(event_dir),
+            "cards": rushes.card_list(event_dir),
             "issues": rushes.ISSUES,
             "imports": state.get("imports", []),
         })
@@ -812,6 +818,49 @@ class StudioHandler(BaseHTTPRequestHandler):
         job = MANAGER.create(kind, "%s : %s" % (title, os.path.basename(event_dir)))
         MANAGER.run_async(job, lambda j: func(j, event_dir, data))
         return self._json({"job_id": job.id})
+
+    def _api_event_delete(self):
+        """Tout l'evenement a la Corbeille (recuperable tant qu'elle n'est pas videe)."""
+        data = self._body_json()
+        if MANAGER.busy():
+            return self._error("Un traitement est en cours : attendez la fin", 409)
+        try:
+            path = events.trash_event(config.EVENTS_DIR, str(data.get("id") or ""), trash.to_trash)
+        except events.EventError as exc:
+            return self._error(exc, 404)
+        except trash.TrashError as exc:
+            return self._error(exc, 500)
+        return self._json({"ok": True, "trashed": [path]})
+
+    def _api_event_trash(self):
+        """Un rush, une photo, un dossier ou une carte entiere a la Corbeille."""
+        data = self._body_json()
+        if MANAGER.busy():
+            return self._error("Un traitement est en cours : attendez la fin", 409)
+        try:
+            event_dir = self._event_dir(data.get("id"))
+        except events.EventError as exc:
+            return self._error(exc, 404)
+        try:
+            if data.get("card"):
+                targets = rushes.card_paths(event_dir, str(data["card"]))
+                for path in targets:
+                    trash.to_trash(path)
+            else:
+                rel = str(data.get("rel") or "")
+                related = rushes.related_paths(event_dir, rel)
+                targets = events.trash_item(config.EVENTS_DIR, data.get("id"), rel, trash.to_trash)
+                for path in related:
+                    if os.path.exists(path):
+                        trash.to_trash(path)
+                        targets.append(path)
+        except (events.EventError, rushes.RushError) as exc:
+            return self._error(exc, 404)
+        except trash.TrashError as exc:
+            return self._error(exc, 500)
+        finally:
+            rushes.forget_missing(event_dir)
+        return self._json({"ok": True, "trashed": targets})
 
     def _api_event_keep(self):
         data = self._body_json()

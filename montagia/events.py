@@ -7,7 +7,7 @@
 
 Le dossier est la verite : la liste est relue sur le disque a chaque demande,
 un evenement copie ou archive a la main reapparait tel quel. Rien n'est
-jamais supprime ici.
+jamais efface : supprimer = mettre a la Corbeille du Mac (voir trash.py).
 """
 from __future__ import annotations
 
@@ -188,3 +188,46 @@ def event_path(root: str, event_id: str, sub: str = "") -> str:
             raise EventError("Dossier inconnu : %s" % sub)
         path = os.path.join(path, sub)
     return path
+
+
+# --------------------------------------------------------------------------
+# Suppression = mise a la Corbeille
+# --------------------------------------------------------------------------
+
+def item_path(root: str, event_id: str, rel: str) -> str:
+    """Chemin d'un element de l'evenement designe par un chemin relatif,
+    verifie : dans un des dossiers visibles (jamais .rexo/ ni la racine)."""
+    base = event_path(root, event_id)
+    rel = os.path.normpath(rel or "")
+    parts = rel.split(os.sep)
+    if os.path.isabs(rel) or ".." in parts or parts[0] not in FOLDER_NAMES:
+        raise EventError("Élément invalide : %s" % rel)
+    path = os.path.join(base, rel)
+    if not os.path.lexists(path) or not os.path.realpath(path).startswith(
+            os.path.realpath(base) + os.sep):
+        raise EventError("Élément introuvable : %s" % rel)
+    return path
+
+
+def trash_event(root: str, event_id: str, to_trash) -> str:
+    """Met tout le dossier de l'evenement a la Corbeille."""
+    path = event_path(root, event_id)
+    to_trash(path)
+    return path
+
+
+def trash_item(root: str, event_id: str, rel: str, to_trash) -> list:
+    """Met un fichier ou un dossier a la Corbeille. Un dossier principal
+    (01_Rushes...) est vide, pas retire : la structure reste en place."""
+    path = item_path(root, event_id, rel)
+    rel = os.path.normpath(rel)
+    if rel in FOLDER_NAMES:
+        targets = [os.path.join(path, n) for n in sorted(os.listdir(path)) if not n.startswith(".")]
+    else:
+        targets = [path]
+    for target in targets:
+        to_trash(target)
+    if rel == "06_Rendus":
+        for sub in RENDER_SUBDIRS:
+            os.makedirs(os.path.join(path, sub), exist_ok=True)
+    return targets
