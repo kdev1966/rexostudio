@@ -253,7 +253,10 @@ python3 -c "import sys;sys.path.insert(0,'.');import montagia.cli,montagia.pipel
 - **IA locale = llama.cpp b12428 + Gemma 4 E2B Q4_0** (16/11/2026, choix validé par
   l'utilisateur) : `bin/llama-server` lancé à la demande par `llm_server.py`, arrêté après
   5 min sans requête et au bouton Quitter. Plan de coupe film002 : 78 s (Ollama : 180 s).
-  Ollama + `qwen2.5:3b` reste en secours (`MONTAGIA_LLM_BACKEND=ollama`).
+  Ollama + `qwen2.5:3b` reste possible en secours dans le code (`MONTAGIA_LLM_BACKEND=ollama`),
+  mais **Ollama a été retiré de l'iMac le 16/11/2026** à la demande de l'utilisateur
+  (application, modèles et réglages dans la Corbeille de l'iMac ; le lien root
+  `/usr/local/bin/ollama`, désormais cassé, demande un `sudo rm` sur place).
 - Mesures et choix détaillés : README § 4. Magasin de modèles partagé avec les autres projets
   du développeur : `~/.local/share/kdev-models` (Codewright, Delest, FerroLink…).
 - ffmpeg/ffprobe sont dans `bin/` (builds statiques evermeet 9.0.2, installés par
