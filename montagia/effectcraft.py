@@ -123,7 +123,7 @@ def connect(log=None, wait: float = 90.0) -> Client:
         tools.ensure_parent(log_path)
         log("Lancement d'EffectCraft (pilotage sur le port %d)" % client.port)
         with open(log_path, "ab") as out:
-            subprocess.Popen([config.EFFECTCRAFT_BIN, "--control", str(client.port)],
+            subprocess.Popen([config.EFFECTCRAFT_BIN, "--control", str(client.port)], env=config.craft_env(),
                              stdin=subprocess.DEVNULL, stdout=out, stderr=out,
                              start_new_session=True, close_fds=True)
         deadline = time.time() + wait

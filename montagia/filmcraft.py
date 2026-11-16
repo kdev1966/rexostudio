@@ -220,7 +220,7 @@ def connect(log=None, launch: bool = True, wait: float = 90.0) -> Client:
 
     token = secrets.token_hex(32)
     _save_session(port, token)
-    env = dict(os.environ, FILMCRAFT_CONTROL_TOKEN=token)
+    env = dict(config.craft_env(), FILMCRAFT_CONTROL_TOKEN=token)
     log_path = os.path.join(config.CACHE_DIR, "filmcraft.log")
     tools.ensure_parent(log_path)
     log("Lancement de FilmCraft (pilotage sur le port %d)..." % port)
@@ -401,7 +401,7 @@ def read_project(path: str) -> dict:
 
 def open_in_app() -> None:
     """Met FilmCraft au premier plan."""
-    subprocess.Popen(["open", "-a", config.FILMCRAFT_APP])
+    subprocess.Popen(["open"] + config.craft_open_args() + ["-a", config.FILMCRAFT_APP])
 
 
 def open_project(path: str, log=None) -> None:

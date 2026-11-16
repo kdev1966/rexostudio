@@ -167,6 +167,28 @@ FILMCRAFT_BIN = os.path.join(FILMCRAFT_APP, "Contents", "MacOS", "FilmCraft")
 FILMCRAFT_PORT = int(os.environ.get("MONTAGIA_FILMCRAFT_PORT", "9877"))
 
 # --------------------------------------------------------------------------
+# Carte graphique des outils Craft (PhotoCraft, FilmCraft, EffectCraft) : toujours la
+# carte econome (integree). Sur un MacBook Pro a deux cartes, la Radeon dediee causait
+# des erreurs de rendu (lecture GPU expiree) ; sur l'iMac (une seule carte) rien ne change.
+# --------------------------------------------------------------------------
+CRAFT_GPU_ENV = {"WGPU_POWER_PREF": "low"}
+
+
+def craft_env() -> dict:
+    """Environnement de lancement d'un outil Craft (carte graphique integree)."""
+    return dict(os.environ, **CRAFT_GPU_ENV)
+
+
+def craft_open_args() -> list:
+    """Memes reglages pour un lancement par `open -a` (le Finder ne transmet pas
+    l'environnement de Rexo Studio)."""
+    args = []
+    for key, value in CRAFT_GPU_ENV.items():
+        args += ["--env", "%s=%s" % (key, value)]
+    return args
+
+
+# --------------------------------------------------------------------------
 # PhotoCraft (editeur photo du meme editeur que FilmCraft, voir montagia/photocraft.py)
 # --------------------------------------------------------------------------
 PHOTOCRAFT_APP = os.environ.get("REXO_PHOTOCRAFT_APP", "/Applications/PhotoCraft.app")

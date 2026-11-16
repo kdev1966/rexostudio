@@ -47,6 +47,7 @@
 import CoreImage
 import Foundation
 import ImageIO
+import Metal
 import Vision
 
 func fail(_ message: String) -> Never {
@@ -94,7 +95,16 @@ guard let source = CIImage(contentsOf: input, options: [.applyOrientationPropert
 let rawImage = atOrigin(source)
 let extent = rawImage.extent
 let srgb = CGColorSpace(name: CGColorSpace.sRGB)!
-let context = CIContext(options: [.workingColorSpace: srgb])
+// Carte graphique : sur un Mac a deux cartes (MacBook Pro avec AMD Radeon), jamais la
+// carte dediee, source d'erreurs de rendu : Core Image prend la carte integree et
+// Vision (qui ne laisse pas choisir sa carte avant macOS 14) passe sur le processeur.
+// Un Mac a une seule carte (iMac) garde son comportement.
+let gpus = MTLCopyAllDevices()
+let integratedGPU = gpus.first { $0.isLowPower }
+let avoidDiscrete = integratedGPU != nil && gpus.contains { !$0.isLowPower }
+let context = avoidDiscrete
+    ? CIContext(mtlDevice: integratedGPU!, options: [.workingColorSpace: srgb])
+    : CIContext(options: [.workingColorSpace: srgb])
 var report: [String: Any] = [:]       // ajoute a la reponse JSON
 
 // Amelioration avant effet (--enhance, ou effet « enhance ») : trois reglages doux,
@@ -266,6 +276,10 @@ if usedMask == nil || CommandLine.arguments.contains("--persons") {
     request.outputPixelFormat = kCVPixelFormatType_OneComponent8
     let humans = VNDetectHumanRectanglesRequest()
     humans.upperBodyOnly = false
+    if avoidDiscrete {
+        request.usesCPUOnly = true
+        humans.usesCPUOnly = true
+    }
     var requests: [VNRequest] = []
     if usedMask == nil { requests.append(request) }
     if CommandLine.arguments.contains("--persons") { requests.append(humans) }

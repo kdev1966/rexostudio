@@ -44,7 +44,7 @@ def run(src: str, commands: list, out: str, timeout: float = 300) -> list:
     cmd += ["--out", out]
     tools.ensure_parent(out)
     try:
-        stdout = tools.run(cmd, timeout=timeout)
+        stdout = tools.run(cmd, timeout=timeout, env=config.craft_env())
     except tools.CommandError as exc:
         raise PhotoCraftError("PhotoCraft : %s" % (exc.stderr.strip()[-300:] or exc.code)) from exc
     except subprocess.TimeoutExpired as exc:
@@ -84,7 +84,7 @@ def open_in_app(path: str) -> None:
     """Ouvre un fichier dans PhotoCraft (avec son interface), pour retoucher."""
     if not os.path.isdir(config.PHOTOCRAFT_APP):
         raise PhotoCraftError("PhotoCraft introuvable (%s)." % config.PHOTOCRAFT_APP)
-    subprocess.Popen(["open", "-a", config.PHOTOCRAFT_APP, path],
+    subprocess.Popen(["open"] + config.craft_open_args() + ["-a", config.PHOTOCRAFT_APP, path],
                      stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                      stderr=subprocess.DEVNULL, start_new_session=True)
 
@@ -106,7 +106,7 @@ class Session(object):
         cmd += ["--automation-write-root", write_root]
         self.timeout = timeout
         self._id = 0
-        self._proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+        self._proc = subprocess.Popen(cmd, env=config.craft_env(), stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                       stderr=subprocess.DEVNULL, text=True, bufsize=1)
 
     def call(self, method: str, params: dict = None):
