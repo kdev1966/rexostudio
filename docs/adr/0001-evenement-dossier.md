@@ -40,8 +40,11 @@ archiver d'un bloc.
 4. **La fiche de l'événement** (`.rexo/evenement.json`) : type, date, noms, lieu, notes ;
    les chemins qu'elle contient sont **relatifs au dossier de l'événement**, pour qu'il puisse
    être déplacé ou archivé sans rien réécrire.
-5. **Rien n'est supprimé** par Rexo Studio dans `01_Rushes` ni `02_Photos`. Seuls
-   `04_Proxies` (et les caches de `.rexo/`) sont proposés au nettoyage après livraison.
+5. **Rien n'est effacé définitivement** par Rexo Studio. À la demande du studio (16 novembre
+   2026), l'interface permet de supprimer un rush, une photo, une carte importée, le contenu
+   d'un dossier ou l'événement entier : tout part dans la **Corbeille du Mac** (API système),
+   récupérable tant qu'elle n'est pas vidée. Confirmation obligatoire ; pour un événement
+   entier, il faut taper « SUPPRIMER ». Refusé pendant un traitement en cours.
 6. **Les anciens projets** (une vidéo) restent lisibles ; ils pourront être rattachés à un
    événement.
 
