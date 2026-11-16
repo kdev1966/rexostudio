@@ -94,6 +94,32 @@ if [ -x "$PC" ]; then
   else
     bad "PhotoCraft present mais l'essai de selection echoue"
   fi
+  # PSD a calques (bouton « Affiner dans PhotoCraft ») : masque tire d'un PNG transparent
+  if R="$(python3 - "$TMP" <<'PY' 2>&1
+import json, os, struct, subprocess, sys, zlib
+tmp = sys.argv[1]
+w, h = 320, 240
+def png(path, rgba):
+    rows = b"".join(b"\x00" + bytes(v for x in range(w) for v in rgba(x, y)) for y in range(h))
+    chunk = lambda t, d: struct.pack(">I", len(d)) + t + d + struct.pack(">I", zlib.crc32(t + d) & 0xffffffff)
+    open(path, "wb").write(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 6, 0, 0, 0))
+                           + chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b""))
+png(os.path.join(tmp, "alpha.png"), lambda x, y: (255, 255, 255, 255 if (x - 160) ** 2 + (y - 120) ** 2 < 3600 else 0))
+sys.path.insert(0, os.getcwd())
+from montagia import config, photocraft
+out = os.path.join(tmp, "psd", "essai.psd")
+photocraft.layered_psd(os.path.join(tmp, "essai.png"), os.path.join(tmp, "flou.jpg"),
+                       os.path.join(tmp, "alpha.png"), "outside", "Fond", out, [tmp])
+info = json.loads(subprocess.run([config.PHOTOCRAFT_CLI, "info", out], capture_output=True, text=True).stdout)
+masks = [l["hasMask"] for l in info["layers"]]
+assert masks == [True, False], masks
+print("%d calques, masque modifiable" % len(masks))
+PY
+)"; then
+    ok "PhotoCraft : PSD a calques ($R)"
+  else
+    bad "PhotoCraft : PSD a calques en echec : $(echo "$R" | tail -1)"
+  fi
 else
   warn "PhotoCraft absent (cadre autour des maries et retouche indisponibles)"
 fi
