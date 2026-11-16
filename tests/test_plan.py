@@ -2,7 +2,9 @@
 sous-titres. Lancer :  python3 -m unittest discover -s tests
 """
 import os
+import shutil
 import sys
+import tempfile
 import unittest
 from unittest import mock
 
@@ -81,6 +83,14 @@ class RenderSubtitleSyncTest(unittest.TestCase):
             return path
 
         job = mock.Mock()
+        # os.makedirs est neutralise plus bas : le dossier des SRT temporaires
+        # doit deja exister (une copie neuve du depot n'a pas de workspace/).
+        cache = tempfile.mkdtemp(prefix="rexo-cache-")
+        self.addCleanup(shutil.rmtree, cache, True)
+        os.makedirs(os.path.join(cache, "subs"))
+        patcher = mock.patch.object(pipeline.config, "CACHE_DIR", cache)
+        patcher.start()
+        self.addCleanup(patcher.stop)
         overlapping = [{"start": 0, "end": 5}, {"start": 0, "end": 5},
                        {"start": 10, "end": 15}]
         with mock.patch.object(pipeline.media, "probe",
