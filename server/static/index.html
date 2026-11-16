@@ -399,6 +399,18 @@
           <button class="btn btn-sec" id="fx-save" disabled>Enregistrer dans Rendus</button>
           <button class="btn btn-sec" id="fx-photocraft" title="Retoucher à la main dans PhotoCraft">Ouvrir dans PhotoCraft</button>
         </div>
+        <details class="fx-studio" id="fx-studio">
+          <summary>Clip drone 3D (Blender + EffectCraft)</summary>
+          <p class="tiny muted">Les mariés détourés au centre d'une scène 3D, filmés par une caméra drone, titre à la fin. Tâche de fond de plusieurs minutes.</p>
+          <label class="tiny">Scène 3D <select id="st-scene"></select></label>
+          <label class="tiny">Mouvement <select id="st-motion"></select></label>
+          <label class="tiny">Durée <select id="st-seconds"><option value="6">6 s</option><option value="9" selected>9 s</option><option value="12">12 s</option></select></label>
+          <label class="tiny">Qualité <select id="st-quality"><option value="brouillon">Brouillon (rapide)</option><option value="normal" selected>Normale</option><option value="fin">Fine (lente)</option></select></label>
+          <label class="tiny">Titre <input id="st-title" maxlength="80"></label>
+          <label class="tiny">Sous-titre <input id="st-subtitle" maxlength="80"></label>
+          <button class="btn btn-primary" id="st-run">Lancer le clip drone</button>
+          <p id="st-info" class="tiny"></p>
+        </details>
       </div>
     </div>
   </div>

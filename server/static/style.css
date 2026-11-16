@@ -485,3 +485,10 @@ mark { background: #5a3a10; color: inherit; border-radius: 2px; }
 .fx-stage.bg-white { background: #fff; }
 .fx-view { flex-wrap: wrap; align-items: center; }
 .fx-bg { display: inline-flex; gap: 4px; align-items: center; margin-left: 12px; }
+
+/* Chaine de production : clip drone 3D */
+.fx-studio { border-top: 1px solid var(--line); padding-top: 10px; margin-top: 6px; }
+.fx-studio summary { cursor: pointer; font-weight: 600; font-size: 13px; }
+.fx-studio[open] { display: flex; flex-direction: column; gap: 6px; }
+.fx-studio label { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.fx-studio select, .fx-studio input { flex: 1; max-width: 62%; }

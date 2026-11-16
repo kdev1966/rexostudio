@@ -1,0 +1,131 @@
+"""Blender 3.6 LTS, moteur des scenes 3D de la chaine de production.
+
+Blender ne fait qu'une chose : mettre les maries detoures dans un modele de scene
+(.blend fait a part, voir blender/build_template_jardin.py pour le contrat) et
+filmer la scene avec une camera drone. Il tourne sans interface (blender -b), en
+processus separe ; les mouvements sont definis dans blender/render_template.py.
+"""
+from __future__ import annotations
+
+import os
+import re
+import subprocess
+import time
+
+from . import config, tools
+
+RENDER_SCRIPT = os.path.join(config.BLENDER_SCRIPTS_DIR, "render_template.py")
+BUILD_SCRIPT = os.path.join(config.BLENDER_SCRIPTS_DIR, "build_template_jardin.py")
+
+MOTIONS = {
+    "sequence": "Séquence drone (approche, tour, envol)",
+    "approche": "Approche depuis le ciel",
+    "orbite": "Tour autour des mariés",
+    "envol": "Envol au-dessus des mariés",
+    "spirale": "Spirale descendante",
+}
+QUALITIES = ("brouillon", "normal", "fin")
+DEFAULT_SCENE = "jardin_nuit"
+FPS = 30
+
+_FRAME = re.compile(r"Append frame (\d+)")
+_MEASURE = re.compile(r"MESURE .*: (\d+) image\(s\) en ([\d.]+) s")
+
+
+class BlenderError(RuntimeError):
+    pass
+
+
+def installed() -> bool:
+    return os.path.isfile(config.BLENDER_BIN) and os.access(config.BLENDER_BIN, os.X_OK)
+
+
+def scenes() -> list:
+    """Modeles de scenes 3D disponibles (un .blend par scene)."""
+    folder = config.SCENES_3D_DIR
+    if not os.path.isdir(folder):
+        return []
+    items = []
+    for name in sorted(os.listdir(folder)):
+        if name.lower().endswith(".blend") and not name.startswith("."):
+            stem = name[:-6]
+            items.append({"id": stem, "name": stem.replace("_", " ").capitalize(),
+                          "path": os.path.join(folder, name)})
+    return items
+
+
+def scene_path(scene_id: str) -> str:
+    for item in scenes():
+        if item["id"] == scene_id:
+            return item["path"]
+    raise BlenderError("Scène 3D introuvable : %s (dossier %s)" % (scene_id, config.SCENES_3D_DIR))
+
+
+def build_default_scene(log=None) -> str:
+    """Construit le premier modele simple (jardin de nuit) s'il manque."""
+    out = os.path.join(config.SCENES_3D_DIR, DEFAULT_SCENE + ".blend")
+    if os.path.isfile(out):
+        return out
+    if not installed():
+        raise BlenderError("Blender 3.6 introuvable (%s) : ./scripts/install_blender.sh" % config.BLENDER_APP)
+    tools.ensure_parent(out)
+    if log:
+        log("Blender : construction du modèle de scène « %s »" % DEFAULT_SCENE)
+    proc = subprocess.run([config.BLENDER_BIN, "-b", "--factory-startup", "--python", BUILD_SCRIPT,
+                           "--", out], capture_output=True, text=True, timeout=600)
+    if proc.returncode != 0 or not os.path.isfile(out):
+        raise BlenderError("Construction de la scène impossible : %s" % _tail(proc.stdout + proc.stderr))
+    return out
+
+
+def _tail(text: str, lines: int = 6) -> str:
+    rows = [r for r in (text or "").strip().splitlines() if r.strip()]
+    return " | ".join(rows[-lines:]) or "aucun message"
+
+
+def render(couple_png: str, scene: str, out: str, motion: str = "sequence",
+           seconds: float = 9.0, quality: str = "normal", log=None, progress=None,
+           timeout: float = 3 * 3600) -> dict:
+    """Video de la scene avec les maries detoures (PNG transparent) et la camera drone.
+    progress(fraction) est appele a chaque image enregistree."""
+    if not installed():
+        raise BlenderError("Blender 3.6 introuvable (%s) : ./scripts/install_blender.sh" % config.BLENDER_APP)
+    if motion not in MOTIONS:
+        raise BlenderError("Mouvement inconnu : %s" % motion)
+    if quality not in QUALITIES:
+        raise BlenderError("Qualité inconnue : %s" % quality)
+    if not os.path.isfile(couple_png):
+        raise BlenderError("Détourage introuvable : %s" % couple_png)
+    path = scene if scene.endswith(".blend") else scene_path(scene)
+    frames = max(2, int(round(seconds * FPS)))
+    tools.ensure_parent(out)
+    cmd = [config.BLENDER_BIN, "-b", path, "--python", RENDER_SCRIPT, "--",
+           couple_png, out, motion, "%g" % seconds, quality]
+    if log:
+        log("Blender : %s, %d images (%s)" % (MOTIONS[motion].lower(), frames, quality))
+    started = time.time()
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                            stdin=subprocess.DEVNULL)
+    tail, measure = [], None
+    try:
+        for line in proc.stdout:
+            tail = (tail + [line])[-40:]
+            match = _FRAME.search(line)
+            if match and progress:
+                progress(min(1.0, int(match.group(1)) / float(frames)))
+            match = _MEASURE.search(line)
+            if match:
+                measure = (int(match.group(1)), float(match.group(2)))
+            if time.time() - started > timeout:
+                proc.kill()
+                raise BlenderError("Blender dépasse %d min : arrêté" % (timeout // 60))
+        proc.wait()
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()
+    if proc.returncode != 0 or not os.path.isfile(out):
+        raise BlenderError("Rendu Blender impossible : %s" % _tail("".join(tail)))
+    seconds_spent = measure[1] if measure else time.time() - started
+    return {"path": out, "frames": frames, "seconds": round(seconds_spent, 1),
+            "per_frame": round(seconds_spent / frames, 2)}

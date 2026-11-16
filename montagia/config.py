@@ -189,6 +189,29 @@ EMBEDKIT_CACHE = os.environ.get("EMBEDKIT_CACHE") or os.path.join(
     "embedkit")
 
 
+# --------------------------------------------------------------------------
+# Chaine de production (montagia/studio.py) : chaque outil ne fait que sa tache
+# --------------------------------------------------------------------------
+# Blender 3.6 LTS (EEVEE en OpenGL : Blender 4.x exige Metal, qui plante sur l'Iris
+# Pro de l'iMac), installe par scripts/install_blender.sh
+BLENDER_APP = os.environ.get("REXO_BLENDER_APP") or next(
+    (p for p in (os.path.expanduser("~/Applications/Blender-3.6.app"),
+                 "/Applications/Blender-3.6.app") if os.path.isdir(p)),
+    os.path.expanduser("~/Applications/Blender-3.6.app"))
+BLENDER_BIN = os.path.join(BLENDER_APP, "Contents", "MacOS", "Blender")
+BLENDER_SCRIPTS_DIR = os.path.join(PROJECT_DIR, "blender")
+# Modeles de scenes 3D (.blend, faits a part dans Blender) : hors du depot
+SCENES_3D_DIR = os.environ.get("REXO_SCENES_DIR") or os.path.join(PROJECT_DIR, "modeles", "scenes_3d")
+# Modeles de titres EffectCraft (.ectemplate, champs « Title » et « Subtitle »)
+TITLES_DIR = os.environ.get("REXO_TITLES_DIR") or os.path.join(PROJECT_DIR, "modeles", "titres")
+
+# EffectCraft (motion design, meme editeur que PhotoCraft et FilmCraft) : serveur de
+# controle local, une requete JSON par ligne (voir montagia/effectcraft.py)
+EFFECTCRAFT_APP = os.environ.get("REXO_EFFECTCRAFT_APP", "/Applications/EffectCraft.app")
+EFFECTCRAFT_BIN = os.path.join(EFFECTCRAFT_APP, "Contents", "MacOS", "EffectCraft")
+EFFECTCRAFT_PORT = int(os.environ.get("REXO_EFFECTCRAFT_PORT", "9879"))
+
+
 def effects_env() -> dict:
     """Variables d'environnement d'un programme de l'environnement d'effets :
     embedkit du projet, magasin de modeles, aucun acces reseau."""

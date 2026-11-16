@@ -15,3 +15,6 @@ __pycache__/
 
 # Environnement d'effets (Python 3.11 autonome + ONNX), installe par scripts/install_effects_env.sh
 .effets/
+
+# Modeles de scenes 3D (.blend) et de titres (.ectemplate) : faits a part, gros fichiers
+modeles/

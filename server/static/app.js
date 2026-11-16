@@ -1069,7 +1069,7 @@ $('#ev-form').addEventListener('submit', async (e) => {
 /* Derushage d'un evenement (M1)                                       */
 /* ------------------------------------------------------------------ */
 
-const EVD = { id: '', event: null, clips: [], photos: [], cards: [], issues: {}, filter: 'all', effects: [] };
+const EVD = { id: '', event: null, clips: [], photos: [], cards: [], issues: {}, filter: 'all', effects: [], studio: null };
 
 function fileUrl(path) {
   return '/api/file?path=' + encodeURIComponent(path);
@@ -1095,6 +1095,7 @@ async function loadDerush() {
     EVD.cards = data.cards || [];
     EVD.imports = data.imports || [];
     EVD.effects = data.effects || [];
+    EVD.studio = data.studio || null;
     const e = data.event;
     $('#evd-type').textContent = e.type_label;
     $('#evd-type').className = 'ev-type t-' + e.type;
@@ -1458,9 +1459,49 @@ function openFx(rel) {
   info.className = 'tiny' + (STATUS.effects ? '' : ' err');
   info.textContent = STATUS.effects ? '' : 'Outil d’effets absent : lancez ./scripts/build_native.sh';
   $('#fx-photocraft').disabled = !STATUS.photocraft;
+  studioForm();
   fxRender();
   $('#fx').classList.remove('hidden');
 }
+
+/* -- chaine de production : clip drone 3D (Rexo + Blender + EffectCraft) -- */
+
+function studioForm() {
+  const st = EVD.studio;
+  const info = $('#st-info');
+  const opts = (items, key, label) => items.map((x) =>
+    '<option value="' + escapeHtml(x[key]) + '">' + escapeHtml(x[label]) + '</option>').join('');
+  $('#st-motion').innerHTML = st ? opts(st.motions, 'id', 'label') : '';
+  // Sans modele de scene, le jardin simple est construit au premier clip
+  $('#st-scene').innerHTML = st && st.scenes.length ? opts(st.scenes, 'id', 'name')
+    : '<option value="jardin_nuit">Jardin nuit (simple)</option>';
+  $('#st-title').value = (EVD.event && EVD.event.names) || '';
+  $('#st-subtitle').value = frenchDate((EVD.event && EVD.event.date) || '');
+  const ready = !!(st && st.blender && st.detourage);
+  $('#st-run').disabled = !ready;
+  info.className = 'tiny' + (ready ? ' muted' : ' err');
+  info.textContent = !st ? '' : !st.blender ? 'Blender 3.6 absent : ./scripts/install_blender.sh'
+    : !st.detourage ? 'Outil de détourage absent : ./scripts/build_native.sh'
+      : st.effectcraft ? '' : 'EffectCraft absent : le clip sortira sans titre';
+}
+
+function frenchDate(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (!m) return '';
+  const months = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre',
+    'octobre', 'novembre', 'décembre'];
+  return (+m[3]) + ' ' + months[+m[2] - 1] + ' ' + m[1];
+}
+
+$('#st-run').addEventListener('click', () => {
+  if (FX.busy || !FX.photo) return;
+  const body = { recipe: 'clip-drone', rel: FX.photo.rel, scene: $('#st-scene').value,
+    motion: $('#st-motion').value, seconds: +$('#st-seconds').value, quality: $('#st-quality').value,
+    title: $('#st-title').value.trim(), subtitle: $('#st-subtitle').value.trim() };
+  closeFx();
+  toast('Clip drone lancé en tâche de fond : il arrivera dans 06_Rendus/Clips_3D');
+  derushJob('/api/events/studio', body);
+});
 
 function fxSpec() {
   return EVD.effects.find((e) => e.key === FX.effect);

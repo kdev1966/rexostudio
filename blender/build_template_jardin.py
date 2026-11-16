@@ -1,0 +1,132 @@
+"""Construit le modele de scene « jardin de ceremonie de nuit » (Blender 3.6 LTS) et
+l'enregistre en .blend, pret a recevoir les maries detoures.
+
+    blender -b --factory-startup --python build_template_jardin.py -- jardin_nuit.blend
+
+Premier modele, volontairement simple (materiaux unis, formes de base) ; de vrais
+decors, textures et modeles 3D viendront ensuite, construits a la main dans Blender.
+
+Contrat d'un modele de scene Rexo Studio (blender/render_template.py s'appuie dessus) :
+  - objet « MARIES » : plan vertical, pieds a l'origine, face vers -Y, materiau avec un
+    noeud image nomme « MARIES_IMAGE » (la photo detouree y est chargee) ;
+  - objet vide « VISE » : point vise par la camera (buste des maries) ;
+  - camera « DRONE » (scene.camera), avec une contrainte TRACK_TO vers « VISE » ;
+  - les maries restent face a la camera (contrainte LOCKED_TRACK) : une photo vue de
+    cote deviendrait une feuille de papier.
+Le modele ne contient pas le mouvement : render_template.py anime la camera.
+"""
+import math
+import random
+import sys
+
+import bpy
+
+out_blend = sys.argv[sys.argv.index("--") + 1]
+random.seed(7)
+for obj in list(bpy.data.objects):          # scene vide (sans recharger les reglages d'usine)
+    bpy.data.objects.remove(obj, do_unlink=True)
+scene = bpy.context.scene
+
+
+def material(name, color, roughness=0.5, emission=None, strength=0.0, metallic=0.0):
+    mat = bpy.data.materials.new(name)
+    mat.use_nodes = True
+    p = mat.node_tree.nodes.get("Principled BSDF")
+    p.inputs["Base Color"].default_value = (*color, 1)
+    p.inputs["Roughness"].default_value = roughness
+    p.inputs["Metallic"].default_value = metallic
+    if emission:
+        p.inputs["Emission"].default_value = (*emission, 1)
+        p.inputs["Emission Strength"].default_value = strength
+    return mat
+
+
+def add(obj, mat, name=None):
+    obj.data.materials.append(mat)
+    if name:
+        obj.name = name
+    return obj
+
+
+# Sol, colonnes, arche fleurie, petites lumieres au loin (halos avec la mise au point)
+bpy.ops.mesh.primitive_plane_add(size=80)
+add(bpy.context.active_object, material("sol", (0.80, 0.78, 0.75), roughness=0.12), "Sol")
+white = material("colonnes", (0.92, 0.90, 0.86), roughness=0.35)
+for i in range(10):
+    ang = 2 * math.pi * i / 10 + 0.3
+    bpy.ops.mesh.primitive_cylinder_add(radius=0.28, depth=4.5, vertices=24,
+                                        location=(7.5 * math.sin(ang), 7.5 * math.cos(ang), 2.25))
+    add(bpy.context.active_object, white, "Colonne")
+bpy.ops.mesh.primitive_torus_add(major_radius=2.1, minor_radius=0.09, location=(0, 1.3, 0),
+                                 rotation=(math.radians(90), 0, 0))
+add(bpy.context.active_object, material("arche", (0.85, 0.75, 0.55), 0.3, metallic=0.8), "Arche")
+flowers = [material("rose_blanche", (0.95, 0.93, 0.92), 0.6), material("rose_rose", (0.90, 0.45, 0.55), 0.6),
+           material("rose_rouge", (0.65, 0.04, 0.08), 0.6), material("feuillage", (0.10, 0.30, 0.12), 0.7)]
+for _ in range(70):
+    t = math.radians(8 + 164 * random.random())
+    r = 2.1 + random.uniform(-0.12, 0.12)
+    bpy.ops.mesh.primitive_ico_sphere_add(radius=random.uniform(0.09, 0.2), subdivisions=2,
+                                          location=(r * math.cos(t), 1.3 + random.uniform(-0.15, 0.15),
+                                                    r * math.sin(t)))
+    add(bpy.context.active_object, random.choice(flowers), "Fleur")
+warm = material("ampoule", (1, 0.8, 0.5), emission=(1.0, 0.72, 0.4), strength=25)
+for _ in range(140):
+    bpy.ops.mesh.primitive_ico_sphere_add(radius=0.035, subdivisions=1,
+                                          location=(random.uniform(-14, 14), random.uniform(5, 22),
+                                                    random.uniform(0.8, 6.5)))
+    add(bpy.context.active_object, warm, "Lumiere")
+
+world = bpy.data.worlds.new("nuit")
+scene.world = world
+world.use_nodes = True
+world.node_tree.nodes["Background"].inputs["Color"].default_value = (0.004, 0.007, 0.02, 1)
+bpy.ops.object.light_add(type="AREA", location=(0, -4, 5), rotation=(math.radians(40), 0, 0))
+key = bpy.context.active_object
+key.data.energy, key.data.size, key.data.color = 900, 5, (1.0, 0.9, 0.8)
+bpy.ops.object.light_add(type="SUN", rotation=(math.radians(50), 0, math.radians(-20)))
+sun = bpy.context.active_object
+sun.data.energy, sun.data.color, sun.data.angle = 1.2, (0.75, 0.82, 1.0), math.radians(8)
+
+# Emplacement des maries : plan vertical 1 x 1,85 m (redimensionne a la photo au rendu)
+bpy.ops.mesh.primitive_plane_add(size=2)
+couple = bpy.context.active_object
+couple.name = "MARIES"
+for v in couple.data.vertices:
+    x, y = v.co.x, v.co.y
+    v.co = (x * 0.5, 0, (y + 1) / 2 * 1.85)
+cm = bpy.data.materials.new("maries")
+cm.use_nodes = True
+nodes, links = cm.node_tree.nodes, cm.node_tree.links
+nodes.clear()
+tex = nodes.new("ShaderNodeTexImage")
+tex.name, tex.extension = "MARIES_IMAGE", "CLIP"
+em, tr, mix = nodes.new("ShaderNodeEmission"), nodes.new("ShaderNodeBsdfTransparent"), nodes.new("ShaderNodeMixShader")
+out = nodes.new("ShaderNodeOutputMaterial")
+links.new(tex.outputs["Color"], em.inputs["Color"])
+links.new(tex.outputs["Alpha"], mix.inputs["Fac"])
+links.new(tr.outputs["BSDF"], mix.inputs[1])
+links.new(em.outputs["Emission"], mix.inputs[2])
+links.new(mix.outputs["Shader"], out.inputs["Surface"])
+cm.blend_method, cm.shadow_method = "HASHED", "HASHED"
+couple.data.materials.append(cm)
+
+target = bpy.data.objects.new("VISE", None)
+scene.collection.objects.link(target)
+target.location = (0, 0, 1.25)
+cam_data = bpy.data.cameras.new("DRONE")
+cam_data.lens = 35
+cam_data.dof.use_dof, cam_data.dof.focus_object, cam_data.dof.aperture_fstop = True, target, 2.0
+cam = bpy.data.objects.new("DRONE", cam_data)
+scene.collection.objects.link(cam)
+cam.location = (0, -4.4, 1.7)
+scene.camera = cam
+track = cam.constraints.new("TRACK_TO")
+track.target, track.track_axis, track.up_axis = target, "TRACK_NEGATIVE_Z", "UP_Y"
+face = couple.constraints.new("LOCKED_TRACK")
+face.target, face.track_axis, face.lock_axis = cam, "TRACK_NEGATIVE_Y", "LOCK_Z"
+
+scene.view_settings.view_transform = "Standard"
+scene.render.engine = "BLENDER_EEVEE"
+scene.eevee.use_bloom, scene.eevee.bloom_threshold, scene.eevee.bloom_intensity = True, 1.0, 0.05
+bpy.ops.wm.save_as_mainfile(filepath=out_blend)
+print("MODELE enregistre : %s" % out_blend)

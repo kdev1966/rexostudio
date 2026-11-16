@@ -20,8 +20,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from montagia import (ai, assistant, config, effects, events, filmcraft, media,  # noqa: E402
-                      photocraft, pipeline, project, rushes, tools, transcribe, trash)
+from montagia import (ai, assistant, blender, config, effects, events, filmcraft,  # noqa: E402
+                      media, photocraft, pipeline, project, rushes, studio, tools, transcribe,
+                      trash)
 from montagia.jobs import MANAGER  # noqa: E402
 
 MAX_BODY = config.MAX_UPLOAD_BYTES
@@ -330,6 +331,8 @@ class StudioHandler(BaseHTTPRequestHandler):
                 return self._api_assistant_run()
             if route == "/api/events/assistant/save":
                 return self._api_assistant_save()
+            if route == "/api/events/studio":
+                return self._api_studio_run()
             if route == "/api/project/delete":
                 return self._api_project_delete()
             if route == "/api/quit":
@@ -822,6 +825,7 @@ class StudioHandler(BaseHTTPRequestHandler):
             "issues": rushes.ISSUES,
             "imports": state.get("imports", []),
             "effects": effects.catalog(),
+            "studio": studio.status(),
         })
 
     def _event_photo(self, data):
@@ -928,6 +932,35 @@ class StudioHandler(BaseHTTPRequestHandler):
         except assistant.AssistantError as exc:
             return self._error(exc, 400)
         return self._json({"ok": True, "rel": rel, "path": os.path.join(event_dir, rel)})
+
+    # -- chaine de production (Rexo + Blender + EffectCraft) -------------------
+    def _api_studio_run(self):
+        """Recette de la chaine de production sur une photo, en tache de fond (minutes)."""
+        data = self._body_json()
+        recipe = str(data.get("recipe") or "")
+        if recipe not in studio.RECIPES:
+            return self._error("Recette inconnue : %s" % recipe, 400)
+        try:
+            event_dir, src = self._event_photo(data)
+            fiche = events.summary(config.EVENTS_DIR, os.path.basename(event_dir))
+            seconds = min(30.0, max(3.0, float(data.get("seconds") or 9)))
+        except events.EventError as exc:
+            return self._error(exc, 404)
+        except (TypeError, ValueError):
+            return self._error("Durée invalide", 400)
+        title = data.get("title")
+        options = {
+            "scene": str(data.get("scene") or blender.DEFAULT_SCENE),
+            "motion": str(data.get("motion") or "sequence"),
+            "quality": str(data.get("quality") or "normal"),
+            "seconds": seconds,
+            "title": fiche.get("names", "") if title is None else str(title),
+            "subtitle": studio.french_date(fiche.get("date", "")) if data.get("subtitle") is None
+            else str(data.get("subtitle")),
+        }
+        job = MANAGER.create("studio", "%s : %s" % (studio.RECIPES[recipe]["label"], os.path.basename(src)))
+        MANAGER.run_async(job, lambda j: studio.clip_drone(j, event_dir, src, **options))
+        return self._json({"job_id": job.id})
 
     def _event_job(self, kind: str, title: str, func):
         """Traitement de fond sur un evenement : func(job, dossier, donnees)."""
