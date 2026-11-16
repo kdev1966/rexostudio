@@ -260,6 +260,13 @@ class ClipDroneCase(unittest.TestCase):
             studio.clip_drone(job, self.event, self.photo)
         self.assertFalse(os.listdir(os.path.join(self.event, studio.CLIPS_DIR)))
 
+    def test_unexpected_failure_leaves_no_empty_file(self):
+        job = Job("studio")
+        with mock.patch.object(blender, "render", side_effect=KeyError("id")), \
+                self.assertRaises(KeyError):
+            studio.clip_drone(job, self.event, self.photo)
+        self.assertFalse(os.listdir(os.path.join(self.event, studio.CLIPS_DIR)))
+
     def test_french_date(self):
         self.assertEqual(studio.french_date("2026-11-16"), "16 novembre 2026")
         self.assertEqual(studio.french_date("2026-08-01"), "1 août 2026")

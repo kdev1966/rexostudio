@@ -178,7 +178,9 @@ def wait_jobs(client: Client, progress=None, timeout: float = 3600, poll: float 
 
 
 def render(client: Client, comp: int, out: str, fmt: str = "h264", progress=None, **options) -> str:
-    """Rend toute la composition (pas seulement la zone de travail)."""
+    """Rend toute la composition (pas seulement la zone de travail). EffectCraft lit un
+    chemin relatif depuis ~/Movies : on ne lui donne que des chemins absolus."""
+    out = os.path.abspath(out)
     tools.ensure_parent(out)
     params = dict({"comp": comp, "format": fmt, "output": out, "timeSpan": "comp"}, **options)
     item = client.execute("renderQueue.add", params) or {}
@@ -186,7 +188,8 @@ def render(client: Client, comp: int, out: str, fmt: str = "h264", progress=None
     wait_jobs(client, progress)
     for entry in (client.execute("renderQueue.list") or {}).get("items", []):
         if entry.get("id") == item.get("id"):
-            if entry.get("status") != "Done" or not os.path.isfile(out):
+            # Le nom est souvent reserve d'avance (fichier vide) : la taille fait foi
+            if entry.get("status") != "Done" or not os.path.isfile(out) or os.path.getsize(out) == 0:
                 raise EffectCraftError("Rendu EffectCraft : %s" % entry.get("statusLabel", "échec"))
             return out
     raise EffectCraftError("Rendu EffectCraft introuvable dans la file")
@@ -222,9 +225,12 @@ def ensure_default_title(client: Client, log=None) -> str:
     tools.ensure_parent(out)
     created = client.execute("templates.create", {"id": "title-card"}) or {}
     comp = created.get("comp")
+    # Sans fond, et descendu en bas de l'image : le titre ne couvre pas les maries
     client.script("var c = app.project.itemByID ? app.project.itemByID(%d) : app.project.item(%d);"
-                  "for (var i = 1; i <= c.numLayers; i++) if (c.layer(i).name == 'Background') "
-                  "c.layer(i).enabled = false; 1" % (comp, comp))
+                  "for (var i = 1; i <= c.numLayers; i++) { var L = c.layer(i);"
+                  " if (L.name == 'Background') { L.enabled = false; continue; }"
+                  " var p = L.property('Position'); var v = p.value;"
+                  " p.setValue([v[0], v[1] + c.height * 0.31, v[2] || 0]); } 1" % (comp, comp))
     client.execute("essential.exportTemplate", {"comp": comp, "path": out, "name": "Titre simple"})
     return out
 
@@ -277,6 +283,7 @@ def _set_texts(client: Client, layer: int, title: str, subtitle: str) -> None:
 def title_over_video(client: Client, video: str, template: str, title: str, subtitle: str, out: str,
                      at="end", log=None, progress=None) -> dict:
     """Pose le modele de titre sur la video (a la fin, ou a « at » secondes) et rend en H.264."""
+    video, template, out = os.path.abspath(video), os.path.abspath(template), os.path.abspath(out)
     if log:
         log("EffectCraft : titre « %s » sur la vidéo" % title)
     client.execute("file.newProject")

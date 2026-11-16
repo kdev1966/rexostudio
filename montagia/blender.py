@@ -96,7 +96,8 @@ def render(couple_png: str, scene: str, out: str, motion: str = "sequence",
         raise BlenderError("Qualité inconnue : %s" % quality)
     if not os.path.isfile(couple_png):
         raise BlenderError("Détourage introuvable : %s" % couple_png)
-    path = scene if scene.endswith(".blend") else scene_path(scene)
+    path = os.path.abspath(scene if scene.endswith(".blend") else scene_path(scene))
+    couple_png, out = os.path.abspath(couple_png), os.path.abspath(out)
     frames = max(2, int(round(seconds * FPS)))
     tools.ensure_parent(out)
     cmd = [config.BLENDER_BIN, "-b", path, "--python", RENDER_SCRIPT, "--",
@@ -124,7 +125,7 @@ def render(couple_png: str, scene: str, out: str, motion: str = "sequence",
         if proc.poll() is None:
             proc.kill()
             proc.wait()
-    if proc.returncode != 0 or not os.path.isfile(out):
+    if proc.returncode != 0 or not os.path.isfile(out) or os.path.getsize(out) == 0:
         raise BlenderError("Rendu Blender impossible : %s" % _tail("".join(tail)))
     seconds_spent = measure[1] if measure else time.time() - started
     return {"path": out, "frames": frames, "seconds": round(seconds_spent, 1),

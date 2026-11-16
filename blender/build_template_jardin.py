@@ -48,12 +48,14 @@ def add(obj, mat, name=None):
     return obj
 
 
-# Sol, colonnes, arche fleurie, petites lumieres au loin (halos avec la mise au point)
+# Sol, colonnes (derriere), arche fleurie, petites lumieres au loin (halos avec la mise au point)
 bpy.ops.mesh.primitive_plane_add(size=80)
 add(bpy.context.active_object, material("sol", (0.80, 0.78, 0.75), roughness=0.12), "Sol")
 white = material("colonnes", (0.92, 0.90, 0.86), roughness=0.35)
-for i in range(10):
-    ang = 2 * math.pi * i / 10 + 0.3
+# Colonnes en demi-cercle derriere les maries : la camera vole devant (+-40 degres)
+# et ne passe jamais entre une colonne et les maries
+for i in range(7):
+    ang = math.radians(-90 + 30 * i)
     bpy.ops.mesh.primitive_cylinder_add(radius=0.28, depth=4.5, vertices=24,
                                         location=(7.5 * math.sin(ang), 7.5 * math.cos(ang), 2.25))
     add(bpy.context.active_object, white, "Colonne")

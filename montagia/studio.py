@@ -123,10 +123,13 @@ def clip_drone(job, event_dir: str, src: str, scene: str = blender.DEFAULT_SCENE
                 effectcraft.close(client, folder)
         else:
             shutil.move(scene_video, out)
-    except (blender.BlenderError, effectcraft.EffectCraftError, effects.EffectError) as exc:
+    except Exception as exc:
+        # Le nom etait reserve d'avance : pas de fichier vide laisse dans les Rendus
         if os.path.exists(out) and os.path.getsize(out) == 0:
             os.remove(out)
-        raise StudioError(str(exc)) from exc
+        if isinstance(exc, (blender.BlenderError, effectcraft.EffectCraftError, effects.EffectError)):
+            raise StudioError(str(exc)) from exc
+        raise
     finally:
         for path in (couple_png, scene_video):
             if os.path.exists(path):
