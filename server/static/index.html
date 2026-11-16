@@ -108,8 +108,8 @@
         <summary>Générique des moments forts (EffectCraft → FilmCraft)</summary>
         <p class="tiny muted">Rexo cherche le meilleur passage de chaque rush gardé (net, stable, bien exposé, avec des personnes) ; EffectCraft les enchaîne en fondu avec le titre ; le générique rejoint le projet FilmCraft (chutier « Génériques »), la musique se pose au montage.</p>
         <label class="tiny">Moments <select id="gen-count"><option>4</option><option selected>6</option><option>8</option><option>10</option></select></label>
-        <label class="tiny">Titre <input id="gen-title" maxlength="80"></label>
-        <label class="tiny">Sous-titre <input id="gen-subtitle" maxlength="80"></label>
+        <label class="tiny">Titre <input type="text" id="gen-title" maxlength="80"></label>
+        <label class="tiny">Sous-titre <input type="text" id="gen-subtitle" maxlength="80"></label>
         <label class="fx-enhance tiny"><input type="checkbox" id="gen-filmcraft" checked> Ajouter au projet FilmCraft</label>
         <button class="btn btn-primary" id="gen-run">Créer le générique</button>
       </details>
@@ -415,8 +415,8 @@
           <label class="tiny">Mouvement <select id="st-motion"></select></label>
           <label class="tiny">Durée <select id="st-seconds"><option value="6">6 s</option><option value="9" selected>9 s</option><option value="12">12 s</option></select></label>
           <label class="tiny">Qualité <select id="st-quality"><option value="brouillon">Brouillon (rapide)</option><option value="normal" selected>Normale</option><option value="fin">Fine (lente)</option></select></label>
-          <label class="tiny">Titre <input id="st-title" maxlength="80"></label>
-          <label class="tiny">Sous-titre <input id="st-subtitle" maxlength="80"></label>
+          <label class="tiny">Titre <input type="text" id="st-title" maxlength="80"></label>
+          <label class="tiny">Sous-titre <input type="text" id="st-subtitle" maxlength="80"></label>
           <p class="tiny muted">Robe à grande traîne : tracez d'abord le cadre autour des mariés (bouton ▭ ci-dessus), il sert aussi au clip.</p>
           <label class="fx-enhance tiny"><input type="checkbox" id="st-filmcraft" checked> Ajouter au projet FilmCraft (chutier « Génériques »)</label>
           <button class="btn btn-primary" id="st-run">Lancer le clip drone</button>
