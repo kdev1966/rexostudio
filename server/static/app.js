@@ -1140,7 +1140,10 @@ function renderDerush() {
       : c.issues.length ? c.issues.map((i) => '<span class="issue">' + escapeHtml(EVD.issues[i] || i) + '</span>').join('')
         : '<span class="issue ok">Bon</span>';
     const time = (c.shot_at || '').slice(11, 19);
-    const res = c.height ? (c.height >= 2160 ? '4K' : c.height + 'p') + ' ' + Math.round(c.fps || 0) + ' i/s' : '';
+    // Definition = petit cote (une video verticale 720x1280 est du 720p).
+    const side = Math.min(c.width || 0, c.height || 0);
+    const res = side ? (side >= 2160 ? '4K' : side + 'p') + (c.width < c.height ? ' vertical' : '') +
+      ' ' + Math.round(c.fps || 0) + ' i/s' : '';
     const auto = c.keep === null && c.analyzed ? '<span class="auto">(proposé)</span>' : '';
     return '<div class="rush ' + st + '">' +
       '<div class="rush-thumb" data-rel="' + escapeHtml(c.rel) + '">' +
