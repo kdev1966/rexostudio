@@ -164,8 +164,19 @@ def close(client: Client, scratch_dir: str, wait: float = 30.0) -> None:
 
 def wait_jobs(client: Client, progress=None, timeout: float = 3600, poll: float = 1.0) -> None:
     deadline = time.time() + timeout
+    misses = 0
     while True:
-        running = (client.execute("jobs.list") or {}).get("running") or []
+        try:
+            running = (client.execute("jobs.list", timeout=30) or {}).get("running") or []
+            misses = 0
+        except EffectCraftError as exc:
+            # Pendant un rendu lourd (ou un repli de la carte graphique vers le processeur),
+            # EffectCraft peut repondre « timeout » : on redemande, sans abandonner
+            misses += 1
+            if misses > 30 or time.time() > deadline:
+                raise EffectCraftError("EffectCraft ne répond plus pendant le rendu (%s)" % exc) from exc
+            time.sleep(poll * 2)
+            continue
         if not running:
             return
         if progress:

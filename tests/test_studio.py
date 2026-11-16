@@ -168,7 +168,9 @@ class FakeEffectCraft(object):
             return {"ok": True, "result": {}}
         if command == "jobs.list":
             self.jobs_polls += 1
-            running = [{"fraction": 0.5}] if self.jobs_polls == 1 else []
+            if self.jobs_polls == 2:
+                return {"ok": False, "error": "timeout"}          # EffectCraft occupe : passager
+            running = [{"fraction": 0.5}] if self.jobs_polls in (1, 3) else []
             return {"ok": True, "result": {"running": running, "finished": []}}
         if command == "renderQueue.list":
             return {"ok": True, "result": {"items": [{"id": 1, "status": "Done"}]}}
