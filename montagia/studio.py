@@ -17,12 +17,14 @@ from __future__ import annotations
 
 import datetime
 import os
+import time
 
 from . import blender, effectcraft, effects, filmcraft, tools
 
 CLIPS_DIR = os.path.join("06_Rendus", "Clips_3D")
 WORK_DIR = os.path.join(".rexo", "studio")
 COUPLE_MAX = 2600            # px : largement assez pour des maries en 1080p
+FRAME_PHOTO_MAX = 2000       # px : photo d'un cadre (quelques centaines de px a l'ecran)
 
 MONTHS = ("janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août",
           "septembre", "octobre", "novembre", "décembre")
@@ -91,6 +93,7 @@ def clip_drone(job, event_dir: str, src: str, scene: str = blender.DEFAULT_SCENE
     Emplacements : PHOTO_DEBOUT_MARIES recoit les maries detoures ; chaque PHOTO_CADRE_*
     recoit la photo elle-meme (amelioree)."""
     log = job.add_log
+    started = time.time()
     if not os.path.isfile(src):
         raise StudioError("Photo introuvable")
     if not effectcraft.installed():
@@ -102,6 +105,7 @@ def clip_drone(job, event_dir: str, src: str, scene: str = blender.DEFAULT_SCENE
     full_png = os.path.join(folder, key + "_maries_plein.png")
     couple_png = os.path.join(folder, key + "_maries.png")
     photo_jpg = os.path.join(folder, key + "_photo.jpg")
+    small_jpg = os.path.join(folder, key + "_photo_reduite.jpg")
     out = tools.unique_path(tools.ensure_parent(
         os.path.join(event_dir, CLIPS_DIR, "%s_clip_drone_%s.mp4" % (key, motion))))
     result = {"seconds": seconds, "motion": motion, "scene": scene, "titled": False, "filmcraft": ""}
@@ -109,8 +113,12 @@ def clip_drone(job, event_dir: str, src: str, scene: str = blender.DEFAULT_SCENE
         job.set_progress(0.02, steps[0])
         couple_cutout(src, full_png, folder, key, log)
         effects.trim(full_png, couple_png)
-        effects.segment(["enhance", src, photo_jpg])
+        # Photo des cadres : amelioree et reduite (une photo de 19 Mpx ralentit EffectCraft)
+        # (Core Image lit l'image a la demande : jamais la meme entree et sortie)
+        effects.segment(["orient", src, small_jpg, "--max", str(FRAME_PHOTO_MAX)])
+        effects.segment(["enhance", small_jpg, photo_jpg])
 
+        log("Rexo : photos prêtes en %.0f s" % (time.time() - started))
         job.set_progress(0.08, steps[1])
         generic_dir, info = blender.ensure_generic(scene, motion, seconds, quality, log=log,
                                                    progress=lambda f: job.set_progress(0.08 + 0.6 * f))
@@ -124,6 +132,7 @@ def clip_drone(job, event_dir: str, src: str, scene: str = blender.DEFAULT_SCENE
             raise StudioError("Le modèle « %s » n'a pas d'emplacement PHOTO_DEBOUT_MARIES" % scene)
 
         job.set_progress(0.70, steps[2])
+        mark = time.time()
         client = effectcraft.connect(log)
         try:
             template = ""
@@ -135,6 +144,7 @@ def clip_drone(job, event_dir: str, src: str, scene: str = blender.DEFAULT_SCENE
             result["titled"] = bool(template)
         finally:
             effectcraft.close(client, folder)
+        log("EffectCraft : terminé en %.0f s" % (time.time() - mark))
 
         if to_filmcraft and filmcraft.installed():
             job.set_progress(0.94, steps[3])
@@ -151,9 +161,9 @@ def clip_drone(job, event_dir: str, src: str, scene: str = blender.DEFAULT_SCENE
             raise StudioError(str(exc)) from exc
         raise
     finally:
-        for path in (full_png, couple_png, photo_jpg):
+        for path in (full_png, couple_png, photo_jpg, small_jpg):
             if os.path.exists(path):
                 os.remove(path)
     result["path"] = os.path.relpath(out, event_dir)
-    log("Clip enregistré : %s" % result["path"])
+    log("Clip enregistré : %s (%.0f s en tout)" % (result["path"], time.time() - started))
     return result
