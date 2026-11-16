@@ -40,10 +40,18 @@ SHARED_MODELS="${KDEV_MODELS_DIR:-$HOME/.local/share/kdev-models}"
 mkdir -p "$MODELS_DIR" "$BIN_DIR"
 
 # Telecharge $2 vers $1 et verifie la somme SHA-256 $3 (fichier garde s'il est deja bon).
+# Un modele deja present dans le magasin partage est repris (clone APFS : aucune
+# place en plus sur le meme disque) au lieu d'etre retelecharge.
 fetch() {
   local dest="$1" url="$2" sha="$3"
   if [ -f "$dest" ] && echo "$sha  $dest" | shasum -a 256 -c - >/dev/null 2>&1; then
     ok "$(basename "$dest") deja present (SHA-256 verifie)"
+    return
+  fi
+  local shared="$SHARED_MODELS/$(basename "$dest")"
+  if [ -f "$shared" ] && echo "$sha  $shared" | shasum -a 256 -c - >/dev/null 2>&1; then
+    cp -c "$shared" "$dest" 2>/dev/null || cp "$shared" "$dest"
+    ok "$(basename "$dest") repris de $SHARED_MODELS (SHA-256 verifie)"
     return
   fi
   curl -fL --progress-bar -o "$dest.part" "$url"
@@ -184,11 +192,6 @@ else
   ok "bin/llama-server $LLAMA_TAG compile (autonome)"
 fi
 
-if [ -f "$SHARED_MODELS/$GGUF_FILE" ] && [ ! -f "$MODELS_DIR/$GGUF_FILE" ] \
-   && echo "$GGUF_SHA  $SHARED_MODELS/$GGUF_FILE" | shasum -a 256 -c - >/dev/null 2>&1; then
-  cp "$SHARED_MODELS/$GGUF_FILE" "$MODELS_DIR/$GGUF_FILE"
-  ok "$GGUF_FILE repris de $SHARED_MODELS (SHA-256 verifie)"
-fi
 fetch "$MODELS_DIR/$GGUF_FILE" "$HF/ggml-org/gemma-4-E2B-it-GGUF/resolve/main/$GGUF_FILE" "$GGUF_SHA"
 
 echo ""
