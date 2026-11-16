@@ -20,9 +20,15 @@ Aucune donnée ne sort de la machine, aucune dépendance Python à installer.
 
 ```bash
 cd ~/RexoStudio                 # hors du Bureau : voir la note ci-dessous
-./scripts/install_models.sh     # whisper.cpp statique + modèles + ffmpeg (tout vérifié)
-./scripts/install_launcher.sh   # icône Rexo Studio sur le Bureau
+./scripts/install_models.sh       # whisper.cpp statique + modèles + ffmpeg (tout vérifié)
+./scripts/build_native.sh         # bin/rexo-segment : détourage Apple Vision (effets photo)
+./scripts/install_effects_env.sh  # .effets/ : Python 3.11 autonome + ONNX + MobileSAM, MI-GAN, Depth Anything
+./scripts/install_launcher.sh     # icône Rexo Studio sur le Bureau
+./scripts/check_install.sh        # vérifie tout par de vrais essais
 ```
+
+Procédure complète pour une nouvelle machine, versions figées et mesures de référence :
+**[docs/DEPLOIEMENT.md](docs/DEPLOIEMENT.md)**.
 
 Ne placez pas le dossier du projet sur le Bureau ni dans Documents : macOS interdit à
 l'icône de lancement de lire ces dossiers protégés (« Operation not permitted »).
@@ -38,8 +44,12 @@ L'icône, elle, peut être sur le Bureau.
 | whisper.cpp | transcription | `bin/whisper-cli` (compilé en statique) + `models/` |
 | ffmpeg / ffprobe | média | `bin/` (build statique evermeet, SHA-256 épinglé) |
 | FilmCraft ≥ 0.20 | éditeur vidéo, piloté en direct | `/Applications/FilmCraft.app` |
+| PhotoCraft ≥ 0.23 | éditeur photo, piloté sans interface (`photocraft-cli`) | `/Applications/PhotoCraft.app` |
+| Outils Apple (`swiftc`) | compile `bin/rexo-segment` (Apple Vision) | `xcode-select --install` |
+| Environnement d'effets | ONNX Runtime + modèles d'effets, processus séparé | `.effets/` (`install_effects_env.sh`) |
 
-Aucun `pip install` : le projet n'utilise que la bibliothèque standard Python 3.9.
+Le cœur n'utilise que la bibliothèque standard Python 3.9 (aucun `pip install`). Seuls les
+effets IA (M5) tournent dans un environnement séparé, installé et vérifié par script.
 
 ---
 
@@ -191,10 +201,15 @@ RexoStudio/
 │   ├── prompts.py               prompts et schémas JSON
 │   ├── edit.py                  moteur de rendu ffmpeg
 │   ├── filmcraft.py             pilotage de FilmCraft (projet .fcproj)
+│   ├── photocraft.py            pilotage de PhotoCraft sans interface (photocraft-cli)
+│   ├── effects.py               effets photo : Vision + cadre PhotoCraft, aperçu, rendu
 │   ├── pipeline.py              orchestration
 │   ├── project.py               état d'un projet en cours
 │   ├── jobs.py                  tâches longues + progression
 │   └── cli.py                   mode terminal
+├── native/segment.swift         outil Apple Vision (bin/rexo-segment)
+├── vendor/embedkit/             socle d'IA embarquée repris de rawi (voir vendor/ORIGINE.md)
+├── docs/DEPLOIEMENT.md          installer et vérifier sur une nouvelle machine
 ├── server/
 │   ├── app.py                   serveur HTTP (SSE, threads)
 │   └── static/                  index.html, app.js, style.css
@@ -261,6 +276,9 @@ vidéo → silencedetect → segments de parole
 - **qwen2.5:3b** (secours) — Alibaba, Apache 2.0
 - **whisper.cpp** — MIT (Georgi Gerganov)
 - **Ollama** (secours) — MIT
-- **FilmCraft** — MIT ou Apache-2.0
+- **FilmCraft**, **PhotoCraft** — MIT ou Apache-2.0
+- **MobileSAM** (et décodeur **SAM** de Meta) — Apache-2.0 ; **MI-GAN** — MIT ;
+  **Depth Anything V2 Small** — Apache-2.0 ; **ONNX Runtime** — MIT ; **OpenCV** — Apache-2.0 ;
+  **python-build-standalone** — licence de Python (PSF) ; **embedkit** — Apache-2.0
 - **FFmpeg** (build evermeet.cx) — GPL
 - Vidéos de test : Wikimedia Commons (CC BY-SA) — `~/Desktop/Studio_IA/tests/`

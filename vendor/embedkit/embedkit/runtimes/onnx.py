@@ -57,8 +57,14 @@ class OnnxModel:
         opts = ort.SessionOptions()
         opts.intra_op_num_threads = self.threads or _default_threads()
         opts.log_severity_level = 3
+        # CPU only unless EMBEDKIT_ONNX_PROVIDERS lists others (comma-separated). The PyPI
+        # wheel ships CoreML, which fails at run time on an Iris Pro 6200 (iMac 2015);
+        # every measurement of ADR 0003 is on the CPU provider.
+        wanted = os.environ.get("EMBEDKIT_ONNX_PROVIDERS", "CPUExecutionProvider")
+        available = ort.get_available_providers()
+        providers = [p.strip() for p in wanted.split(",") if p.strip() in available]
         self._session = ort.InferenceSession(
-            str(self.path), opts, providers=ort.get_available_providers()
+            str(self.path), opts, providers=providers or ["CPUExecutionProvider"]
         )
         self.input_names = [i.name for i in self._session.get_inputs()]
         self.output_names = [o.name for o in self._session.get_outputs()]
