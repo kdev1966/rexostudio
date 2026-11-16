@@ -1470,6 +1470,8 @@ function closeFx() {
   if (FX.busy) return;
   $('#fx').classList.add('hidden');
   $('#fx-img').removeAttribute('src');
+  $('#fx-video').pause();
+  $('#fx-video').removeAttribute('src');
   FX.photo = null;
 }
 
@@ -1477,10 +1479,21 @@ function fxRender() {
   const p = FX.photo;
   if (!p) return;
   const showResult = FX.view === 'result' && FX.result;
+  const isVideo = !!(FX.result && FX.result.video);
   const src = showResult ? fileUrl(FX.result.path) + '&t=' + FX.result.stamp
     : (p.viewable ? fileUrl(p.path) : (p.thumb ? fileUrl(p.thumb) : ''));
+  // Photo animee en 3D : le resultat est une video, jouee en boucle dans l'apercu
   const img = $('#fx-img');
-  if (img.getAttribute('src') !== src) img.setAttribute('src', src);
+  const video = $('#fx-video');
+  const playVideo = showResult && isVideo;
+  img.classList.toggle('hidden', playVideo);
+  video.classList.toggle('hidden', !playVideo);
+  if (playVideo) {
+    if (video.getAttribute('src') !== src) { video.setAttribute('src', src); video.play().catch(() => {}); }
+  } else {
+    video.pause();
+    if (img.getAttribute('src') !== src) img.setAttribute('src', src);
+  }
   $$('#fx .fx-view .filter[data-view]').forEach((b) => {
     b.classList.toggle('active', b.dataset.view === FX.view);
     if (b.dataset.view === 'result') b.disabled = !FX.result;
@@ -1517,6 +1530,9 @@ function fxRender() {
   $('#fx-run').textContent = FX.busy ? 'Calcul en cours…' : 'Calculer l’aperçu';
   $('#fx-save').disabled = FX.busy || !FX.result || !!FX.saved;
   $('#fx-save').textContent = FX.saved ? 'Enregistré ✓' : 'Enregistrer dans Rendus';
+  $('#fx-photocraft').disabled = !STATUS.photocraft || FX.busy || isVideo;
+  $('#fx-save').textContent = FX.saved ? 'Enregistré ✓'
+    : (isVideo ? 'Enregistrer dans Rendus (Photos_animees)' : 'Enregistrer dans Rendus');
   $('#fx-photocraft').textContent = FX.result ? 'Affiner dans PhotoCraft (PSD à calques)' : 'Ouvrir la photo dans PhotoCraft';
   $('#fx-photocraft').title = FX.result
     ? 'Crée un PSD : la photo originale + le calque de l’effet avec un masque modifiable au pinceau'

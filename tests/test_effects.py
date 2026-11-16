@@ -492,6 +492,72 @@ class RefineTest(PhotoEventCase):
         self.assertFalse(os.path.exists(self.log) and any(c[0] == "mask" for c in self._calls()))
 
 
+class Photo3DTest(PhotoEventCase):
+    """Photo animee en 3D : masque des personnes puis effects_worker/parallax.py."""
+
+    def setUp(self):
+        super().setUp()
+        self.py_log = os.path.join(self.tmp, "py.log")
+        workers = os.path.join(self.tmp, "effects_worker")
+        os.makedirs(workers)
+        for name in ("erase.py", "parallax.py"):          # pas de refine.py : Vision seul
+            open(os.path.join(workers, name), "w").close()
+        python = os.path.join(self.tmp, "python")
+        with open(python, "w") as fh:
+            fh.write('#!/bin/bash\necho "$@" >> "%s"\ncp "$2" "$4"\n'
+                     'echo \'{"ok":true,"width":1920,"height":1166,"frames":180,"ms":8000}\'\n' % self.py_log)
+        os.chmod(python, 0o755)
+        for name, value in (("EFFECTS_PYTHON", python), ("EFFECTS_WORKER_DIR", workers)):
+            patcher = mock.patch.object(config, name, value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        patcher = mock.patch.object(config, "ffmpeg_bin", return_value="/chemin/ffmpeg")
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _py_calls(self):
+        with open(self.py_log) as fh:
+            return [line.split() for line in fh.read().splitlines()]
+
+    def test_available_and_preview(self):
+        cat = {e["key"]: e for e in effects.catalog()}
+        self.assertTrue(cat["photo-3d-avance"]["available"])
+        r = effects.preview(self.event, self.photo, "photo-3d-glisse", couple=True)
+        self.assertTrue(r["video"])
+        self.assertFalse(r["couple"])                      # toutes les personnes en 3D
+        self.assertTrue(r["path"].endswith("_photo-3d-glisse.mp4"))
+        mask_call = self._calls()[0]
+        self.assertEqual(mask_call[:2], ["mask", self.photo])
+        worker = self._py_calls()[0]
+        self.assertTrue(worker[0].endswith("parallax.py"))
+        self.assertEqual(worker[1:4], [self.photo, mask_call[2], r["path"]])
+        self.assertEqual(worker[4:], ["--ffmpeg", "/chemin/ffmpeg", "--motion", "glisse"])
+        self.assertFalse(os.path.exists(mask_call[2]))     # masque temporaire efface
+
+    def test_enhanced_photo_and_couple_box(self):
+        def fake_mask(src, box, out_png):
+            shutil.copyfile(src, out_png)
+
+        with mock.patch.object(effects, "couple_mask", side_effect=fake_mask), \
+                mock.patch.object(photocraft, "installed", return_value=True):
+            effects.preview(self.event, self.photo, "photo-3d-avance", box=[0.1, 0, 0.8, 1], enhance=True)
+        mask_call, enhance_call = self._calls()
+        self.assertIn("--add-mask", mask_call)
+        self.assertEqual(enhance_call[:2], ["enhance", self.photo])
+        self.assertEqual(self._py_calls()[0][1], enhance_call[2])   # video de la photo amelioree
+
+    def test_save_into_animated_photos(self):
+        effects.preview(self.event, self.photo, "photo-3d-avance")
+        rel = effects.save(self.event, self.photo, "photo-3d-avance", False)
+        self.assertEqual(rel, os.path.join("06_Rendus", "Photos_animees", "IMG_0001_photo-3d-avance.mp4"))
+
+    def test_unavailable_without_ffmpeg(self):
+        with mock.patch.object(config, "ffmpeg_bin", return_value=""):
+            self.assertFalse(effects.available("photo-3d-avance"))
+            with self.assertRaises(effects.EffectError):
+                effects.preview(self.event, self.photo, "photo-3d-avance")
+
+
 class PhotoCraftTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix="rexo-pc-")

@@ -37,7 +37,14 @@ EFFECTS = {
     "effacer": {"label": "Effacer un objet", "tool": "erase", "ext": ".jpg", "needs_box": True},
     "ameliorer": {"label": "Améliorer seulement (lumière, couleurs, blancs, relief)",
                   "tool": "enhance", "ext": ".jpg"},
+    # Photo animee en 3D (parallaxe) : une courte video (effects_worker/parallax.py)
+    "photo-3d-avance": {"label": "Photo 3D : la caméra avance (vidéo)", "tool": "parallax",
+                        "ext": ".mp4", "motion": "avance"},
+    "photo-3d-glisse": {"label": "Photo 3D : glissement (vidéo)", "tool": "parallax",
+                        "ext": ".mp4", "motion": "glisse"},
 }
+# Rendus video des photos animees : 06_Rendus/Photos_animees (dossier de l'evenement)
+ANIMATED_DIR = os.path.join("06_Rendus", "Photos_animees")
 # Formats lus directement par OpenCV dans l'environnement d'effets
 OPENCV_EXT = {".jpg", ".jpeg", ".png", ".tif", ".tiff"}
 CACHE_DIR = os.path.join(".rexo", "effets")
@@ -73,8 +80,12 @@ def env_installed() -> bool:
 
 
 def available(effect: str) -> bool:
-    if EFFECTS[effect]["tool"] == "erase":
+    tool = EFFECTS[effect]["tool"]
+    if tool == "erase":
         return env_installed()
+    if tool == "parallax":
+        return (installed() and env_installed() and bool(config.ffmpeg_bin())
+                and os.path.isfile(os.path.join(config.EFFECTS_WORKER_DIR, "parallax.py")))
     return installed()
 
 
@@ -287,6 +298,43 @@ def erase(src: str, out: str, box, folder: str, key: str) -> dict:
     return _erase(src, out, box, folder, key)
 
 
+def _parallax(src: str, out: str, box, folder: str, key: str, enhance: bool, motion: str,
+              log=None) -> dict:
+    """Photo animee en 3D : masque des personnes (affine par MobileSAM, complete par le
+    cadre des maries), puis effects_worker/parallax.py (decor reconstitue par MI-GAN,
+    mouvement de camera, video H.264)."""
+    if not (env_installed() and config.ffmpeg_bin()):
+        raise EffectError("Photo 3D : environnement d'effets ou ffmpeg absent "
+                          "(./scripts/install_effects_env.sh, ./scripts/install_models.sh)")
+    mask = os.path.join(folder, key + "_tmp_masque3d.png")
+    couple_png = os.path.join(folder, key + "_tmp_objet.png")
+    readable, tmp = src, ""
+    refined = refined_mask(src, folder, key, log=log)          # toutes les personnes
+    try:
+        args = ["mask", src, mask] + (["--use-mask", refined] if refined else [])
+        if box is not None:
+            if log:
+                log("PhotoCraft : sélection d'objet dans le cadre")
+            couple_mask(src, box, couple_png)
+            args += ["--add-mask", couple_png]
+        _segment(args)
+        if enhance:
+            tmp = readable = os.path.join(folder, key + "_tmp_amelioree.jpg")
+            _segment(["enhance", src, tmp])
+        elif os.path.splitext(src)[1].lower() not in OPENCV_EXT:
+            tmp = readable = os.path.join(folder, key + "_tmp_lisible.jpg")
+            _segment(["orient", src, tmp])
+        if log:
+            log("Décor reconstitué (MI-GAN) et vidéo (%s)" % motion)
+        return _run_json([config.EFFECTS_PYTHON, os.path.join(config.EFFECTS_WORKER_DIR, "parallax.py"),
+                          readable, mask, out, "--ffmpeg", config.ffmpeg_bin(), "--motion", motion],
+                         "échec de la photo 3D", env=config.effects_env())
+    finally:
+        for path in (mask, couple_png, refined, tmp):
+            if path and os.path.exists(path):
+                os.remove(path)
+
+
 def preview(event_dir: str, src: str, effect: str, box=None, log=None,
             enhance: bool = False, couple: bool = False) -> dict:
     """Calcule l'apercu d'un effet ; box = cadre en proportions de l'image
@@ -298,8 +346,10 @@ def preview(event_dir: str, src: str, effect: str, box=None, log=None,
     rel = _photo_rel(event_dir, src)
     if spec["tool"] == "enhance":
         box, enhance = None, False          # l'effet est l'amelioration elle-meme
-    if spec["tool"] in ("enhance", "erase") or not refine_available():
-        couple = False                      # sans detourage affine, l'option ne s'applique pas
+    if spec["tool"] in ("enhance", "erase", "parallax") or not refine_available():
+        # Sans detourage affine, l'option ne s'applique pas ; en 3D, une personne retiree
+        # du premier plan resterait dans le decor et se dedoublerait au mouvement
+        couple = False
     if not _LOCK.acquire(blocking=False):
         raise EffectError("Un effet est déjà en cours de calcul : patientez")
     try:
@@ -320,6 +370,11 @@ def preview(event_dir: str, src: str, effect: str, box=None, log=None,
             return dict(common, width=result.get("width"), height=result.get("height"),
                         coverage=1, ms=result.get("ms", 0), object_bounds=None,
                         white_balance=result.get("white_balance"))
+        if spec["tool"] == "parallax":
+            result = _parallax(src, out, box, folder, _key(rel), enhance, spec["motion"], log)
+            return dict(common, width=result.get("width"), height=result.get("height"),
+                        frames=result.get("frames"), ms=result.get("ms", 0), coverage=1,
+                        object_bounds=None, video=True)
         args = [spec["tool"], src, out, "--save-alpha", alpha]
         if enhance:
             args.append("--enhance")
@@ -366,7 +421,8 @@ def save(event_dir: str, src: str, effect: str, framed: bool, enhanced: bool = F
         raise EffectError("Aperçu introuvable : recalculez l'effet")
     stem = tools.safe_component(os.path.splitext(os.path.basename(src))[0], "photo")
     name = "%s_%s%s" % (stem, effect, EFFECTS[effect]["ext"])
-    dest = tools.unique_path(tools.ensure_parent(os.path.join(event_dir, OUTPUT_DIR, name)))
+    folder = ANIMATED_DIR if EFFECTS[effect]["tool"] == "parallax" else OUTPUT_DIR
+    dest = tools.unique_path(tools.ensure_parent(os.path.join(event_dir, folder, name)))
     shutil.copyfile(cached, dest)
     return os.path.relpath(dest, event_dir)
 
