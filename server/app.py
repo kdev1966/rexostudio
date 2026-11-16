@@ -1,4 +1,4 @@
-"""Serveur web local de MontageIA.
+"""Serveur web local de Rexo Studio.
 
 Stdlib uniquement (http.server + urllib) : aucune dependance a installer,
 un demarrage instantane, et un fonctionnement stable sur Python 3.9 / macOS 12.
@@ -139,7 +139,7 @@ class StudioHandler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"       # necessaire pour le streaming SSE
     disable_nagle_algorithm = True       # reponse plus reactive
 
-    server_version = "MontageIA/1.0"
+    server_version = "RexoStudio/1.0"
 
     # -- utilitaires --------------------------------------------------------
     def log_message(self, fmt, *args):  # noqa: A003
@@ -667,7 +667,7 @@ class StudioHandler(BaseHTTPRequestHandler):
             result = pipeline.build_filmcraft_job(
                 j, proj.path, segments, out_path,
                 profile=data.get("profile", "16:9"),
-                title=data.get("title") or ("%s - MontageIA" % proj.name),
+                title=data.get("title") or ("%s - Rexo Studio" % proj.name),
                 notes=notes, subtitle_segments=subs, subtitle_words=sub_words)
             proj.add_export(out_path)
             return result
@@ -761,7 +761,7 @@ def main():
     restored = project.STORE.enable_persistence(config.PROJECTS_DIR)
     status = ai.stats()
     print("")
-    print("  \033[1m\033[38;5;208mMontageIA\033[0m  -  assistant de montage video IA (100% local)")
+    print("  \033[1m\033[38;5;208mRexo Studio\033[0m  -  derushage et post-production assistes par IA (100% local)")
     print("  " + "-" * 62)
     print("  Interface   : http://%s:%d" % (config.HOST, config.PORT))
     engine = "llama.cpp" if config.LLM_BACKEND == "llama" else "Ollama"

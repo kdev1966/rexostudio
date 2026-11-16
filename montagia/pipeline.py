@@ -598,7 +598,7 @@ def render_video(job, source: str, segments: list, out_path: str, fmt: str = "16
 
 
 def build_filmcraft_job(job, source: str, segments: list, out_path: str,
-                        profile: str = "16:9", title: str = "Montage MontageIA",
+                        profile: str = "16:9", title: str = "Montage Rexo Studio",
                         notes: str = "", subtitle_segments: list = None,
                         subtitle_words: list = None) -> dict:
     """Envoie le plan de coupe dans FilmCraft et enregistre le projet .fcproj."""

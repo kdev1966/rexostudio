@@ -1,5 +1,5 @@
 {
-  // Taches de developpement MontageIA (affichees dans le menu Run Task).
+  // Taches de developpement Rexo Studio (affichees dans le menu Run Task).
   //
   // Le PATH est cale sur les binaires de Kdenlive (ffmpeg, ffprobe, melt)
   // car Homebrew n'est pas installe sur cette machine.
@@ -25,7 +25,7 @@
       "problemMatcher": []
     },
     {
-      "label": "Serveur web (MontageIA)",
+      "label": "Serveur web (Rexo Studio)",
       "type": "shell",
       "command": "./start.sh",
       "problemMatcher": [],

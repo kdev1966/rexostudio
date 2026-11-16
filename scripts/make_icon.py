@@ -1,4 +1,4 @@
-"""Dessine l'icone de MontageIA (PNG 1024 x 1024) sans dependance.
+"""Dessine l'icone de Rexo Studio (PNG 1024 x 1024) sans dependance.
 
 Clap de cinema blanc avec un bouton lecture, sur un carre orange aux
 coins arrondis (gabarit des icones macOS). Bords lisses par distance

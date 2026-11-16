@@ -1,47 +1,51 @@
 #!/bin/bash
 # ---------------------------------------------------------------------------
-# Cree l'application "MontageIA" (icone a double-cliquer), sur le bureau par
+# Cree l'application "Rexo Studio" (icone a double-cliquer), sur le bureau par
 # defaut :
-#     ./scripts/install_launcher.sh            -> ~/Desktop/MontageIA.app
+#     ./scripts/install_launcher.sh            -> ~/Desktop/Rexo Studio.app
 #     ./scripts/install_launcher.sh /Applications
 #
 # Au double-clic : demarre le serveur s'il ne tourne pas (sans fenetre de
 # Terminal), attend qu'il reponde, puis ouvre l'interface dans le navigateur.
 # S'il tourne deja, ouvre simplement l'interface. On le quitte avec le bouton
-# "Quitter" de l'interface. Journal : ~/Library/Logs/MontageIA.log
+# "Quitter" de l'interface. Journal : ~/Library/Logs/RexoStudio.log
+# L'ancienne icone "MontageIA.app" (meme projet, avant le renommage) est mise
+# a la Corbeille si elle a ete creee par ce script.
 # ---------------------------------------------------------------------------
 set -eu
 cd "$(dirname "$0")/.."
 PROJECT="$(pwd)"
 DEST="${1:-$HOME/Desktop}"
-APP="$DEST/MontageIA.app"
-BUNDLE_ID="local.montagia.launcher"
+APP="$DEST/Rexo Studio.app"
+BUNDLE_ID="local.rexostudio.launcher"
+OLD_APP="$DEST/MontageIA.app"
+OLD_BUNDLE_ID="local.montagia.launcher"
 PORT="$(python3 -c 'from montagia import config; print(config.PORT)' 2>/dev/null || echo 8080)"
 
 # On ne remplace qu'une application creee par ce script.
 if [ -e "$APP" ]; then
   if [ "$(defaults read "$APP/Contents/Info" CFBundleIdentifier 2>/dev/null)" != "$BUNDLE_ID" ]; then
-    echo "$APP existe et n'a pas ete cree par MontageIA : rien n'est modifie." >&2
+    echo "$APP existe et n'a pas ete cree par Rexo Studio : rien n'est modifie." >&2
     exit 1
   fi
 fi
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
-BUILD="$WORK/MontageIA.app"
+BUILD="$WORK/Rexo Studio.app"
 mkdir -p "$BUILD/Contents/MacOS" "$BUILD/Contents/Resources"
 
 # --- icone -----------------------------------------------------------------
 echo "Icone..."
 python3 scripts/make_icon.py "$WORK/icon.png"
-ICONSET="$WORK/MontageIA.iconset"
+ICONSET="$WORK/RexoStudio.iconset"
 mkdir "$ICONSET"
 for size in 16 32 128 256 512; do
   sips -z "$size" "$size" "$WORK/icon.png" --out "$ICONSET/icon_${size}x${size}.png" >/dev/null
   double=$((size * 2))
   sips -z "$double" "$double" "$WORK/icon.png" --out "$ICONSET/icon_${size}x${size}@2x.png" >/dev/null
 done
-iconutil -c icns "$ICONSET" -o "$BUILD/Contents/Resources/MontageIA.icns"
+iconutil -c icns "$ICONSET" -o "$BUILD/Contents/Resources/RexoStudio.icns"
 
 # --- description de l'application -----------------------------------------
 cat > "$BUILD/Contents/Info.plist" <<PLIST
@@ -49,11 +53,11 @@ cat > "$BUILD/Contents/Info.plist" <<PLIST
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-  <key>CFBundleName</key><string>MontageIA</string>
-  <key>CFBundleDisplayName</key><string>MontageIA</string>
+  <key>CFBundleName</key><string>Rexo Studio</string>
+  <key>CFBundleDisplayName</key><string>Rexo Studio</string>
   <key>CFBundleIdentifier</key><string>$BUNDLE_ID</string>
-  <key>CFBundleExecutable</key><string>MontageIA</string>
-  <key>CFBundleIconFile</key><string>MontageIA</string>
+  <key>CFBundleExecutable</key><string>RexoStudio</string>
+  <key>CFBundleIconFile</key><string>RexoStudio</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>1.0</string>
   <key>LSMinimumSystemVersion</key><string>10.13</string>
@@ -62,12 +66,12 @@ cat > "$BUILD/Contents/Info.plist" <<PLIST
 PLIST
 
 # --- lanceur ----------------------------------------------------------------
-cat > "$BUILD/Contents/MacOS/MontageIA" <<LAUNCHER
+cat > "$BUILD/Contents/MacOS/RexoStudio" <<LAUNCHER
 #!/bin/bash
-# Lanceur de MontageIA (genere par scripts/install_launcher.sh).
+# Lanceur de Rexo Studio (genere par scripts/install_launcher.sh).
 PROJECT="$PROJECT"
 URL="http://127.0.0.1:$PORT"
-LOG="\$HOME/Library/Logs/MontageIA.log"
+LOG="\$HOME/Library/Logs/RexoStudio.log"
 export PATH="/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
 up() { curl -s --max-time 2 -o /dev/null -f "\$URL/api/status"; }
@@ -75,7 +79,7 @@ alert() { osascript -e "display alert \"\$1\" message \"\$2\" as critical" >/dev
 
 if ! up; then
   if [ ! -x "\$PROJECT/start.sh" ]; then
-    alert "MontageIA est introuvable" "Dossier attendu : \$PROJECT"
+    alert "Rexo Studio est introuvable" "Dossier attendu : \$PROJECT"
     exit 1
   fi
   mkdir -p "\$(dirname "\$LOG")"
@@ -88,13 +92,13 @@ if ! up; then
     up && break
   done
   if ! up; then
-    alert "MontageIA n'a pas démarré" "Le journal est ici : \$LOG"
+    alert "Rexo Studio n'a pas démarré" "Le journal est ici : \$LOG"
     exit 1
   fi
 fi
 open "\$URL"
 LAUNCHER
-chmod +x "$BUILD/Contents/MacOS/MontageIA"
+chmod +x "$BUILD/Contents/MacOS/RexoStudio"
 
 # --- installation -----------------------------------------------------------
 mkdir -p "$DEST"
@@ -102,3 +106,10 @@ rm -rf "$APP"
 mv "$BUILD" "$APP"
 touch "$APP"            # le Finder relit l'icone
 echo "Application installee : $APP"
+
+# Ancienne icone d'avant le renommage : a la Corbeille (recuperable), seulement
+# si c'est bien celle creee par ce script.
+if [ -e "$OLD_APP" ] && [ "$(defaults read "$OLD_APP/Contents/Info" CFBundleIdentifier 2>/dev/null)" = "$OLD_BUNDLE_ID" ]; then
+  mv "$OLD_APP" "$HOME/.Trash/MontageIA-$(date +%Y%m%d-%H%M%S).app"
+  echo "Ancienne icone MontageIA mise a la Corbeille"
+fi

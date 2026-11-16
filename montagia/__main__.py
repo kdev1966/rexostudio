@@ -1,4 +1,4 @@
-"""Point d'entree : lance le serveur web MontageIA."""
+"""Point d'entree : lance le serveur web Rexo Studio."""
 from __future__ import annotations
 
 import os

@@ -1,4 +1,4 @@
-/* MontageIA - interface web locale (vanilla JS, aucune dependance) */
+/* Rexo Studio - interface web locale (vanilla JS, aucune dependance) */
 'use strict';
 
 const S = {
@@ -126,7 +126,7 @@ async function loadStatus() {
         (LABELS[m.name] || m.name) + ' (' + m.name + ')</option>').join('');
     sel.value = s.whisper_models.some((m) => m.name === current) ? current : '';
   } catch (e) {
-    $('#status-bar').innerHTML = chip('Serveur injoignable', false, 'Relancez MontageIA');
+    $('#status-bar').innerHTML = chip('Serveur injoignable', false, 'Relancez Rexo Studio');
   }
 }
 
@@ -136,14 +136,14 @@ async function loadStatus() {
 
 $('#btn-quit').addEventListener('click', async () => {
   if (S.busy) { toast('Un traitement est en cours : attendez la fin avant de quitter', true); return; }
-  if (!confirm('Quitter MontageIA ?\nLe modèle IA sera retiré de la mémoire.')) return;
+  if (!confirm('Quitter Rexo Studio ?\nLe modèle IA sera retiré de la mémoire.')) return;
   try {
     await post('/api/quit');
   } catch (e) { toast(e.message, true); return; }
   document.body.innerHTML =
-    '<div class="bye"><div class="logo">🎬</div><h1>MontageIA est arrêté</h1>' +
+    '<div class="bye"><div class="logo">🎬</div><h1>Rexo Studio est arrêté</h1>' +
     '<p>La mémoire est libérée. Vous pouvez fermer cet onglet.</p>' +
-    '<p class="muted">Pour revenir, double-cliquez sur l’icône MontageIA du bureau.</p></div>';
+    '<p class="muted">Pour revenir, double-cliquez sur l’icône Rexo Studio du bureau.</p></div>';
 });
 
 /* ------------------------------------------------------------------ */
@@ -769,7 +769,7 @@ async function sendChat() {
     escapeHtml(question) + '</div></div>');
   const id = 'ai-' + Date.now();
   log.insertAdjacentHTML('beforeend',
-    '<div class="msg" id="' + id + '"><div class="who">MontageIA</div><div class="body" dir="auto"></div></div>');
+    '<div class="msg" id="' + id + '"><div class="who">Rexo Studio</div><div class="body" dir="auto"></div></div>');
   const body = log.querySelector('#' + id + ' .body');
   log.scrollTop = log.scrollHeight;
   try {

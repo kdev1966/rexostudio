@@ -1,4 +1,4 @@
-# Configuration de ruff pour MontageIA.
+# Configuration de ruff pour Rexo Studio.
 # Outil de DEVELOPPEMENT uniquement (venv isole) : le code livre reste
 # 100 % stdlib, aucune dependance d'execution.
 #

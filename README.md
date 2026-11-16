@@ -1,4 +1,7 @@
-# 🎬 MontageIA — assistant de montage vidéo par IA, 100 % local
+# 🎬 Rexo Studio — dérushage et post-production vidéo assistés par IA, 100 % local
+
+> Anciennement **MontageIA** (renommé le 16/11/2026). Le dossier et le module Python
+> gardent leur ancien nom (`~/MontageIA`, `montagia/`) : seul le nom visible change.
 
 Un système d'assistance au montage vidéo qui utilise **Gemma 4 E2B** via **llama.cpp** (local),
 **whisper.cpp** pour la transcription, **ffmpeg** pour le montage réel et **FilmCraft**
@@ -18,7 +21,7 @@ Aucune donnée ne sort de la machine, aucune dépendance Python à installer.
 ```bash
 cd ~/MontageIA                  # hors du Bureau : voir la note ci-dessous
 ./scripts/install_models.sh     # whisper.cpp statique + modèles + ffmpeg (tout vérifié)
-./scripts/install_launcher.sh   # icône MontageIA sur le Bureau
+./scripts/install_launcher.sh   # icône Rexo Studio sur le Bureau
 ```
 
 Ne placez pas le dossier du projet sur le Bureau ni dans Documents : macOS interdit à
@@ -44,10 +47,10 @@ Aucun `pip install` : le projet n'utilise que la bibliothèque standard Python 3
 
 ### Interface web (principale)
 
-**Double-cliquez sur l'icône MontageIA du Bureau** : le serveur démarre en arrière-plan
+**Double-cliquez sur l'icône Rexo Studio du Bureau** : le serveur démarre en arrière-plan
 (sans fenêtre de Terminal) et l'interface s'ouvre dans le navigateur. Un nouveau clic
 rouvre simplement la page. Le bouton **Quitter** de l'interface retire le modèle IA de la
-mémoire et arrête le serveur. Journal : `~/Library/Logs/MontageIA.log`.
+mémoire et arrête le serveur. Journal : `~/Library/Logs/RexoStudio.log`.
 
 Sans l'icône : `./start.sh` (ouvre `http://127.0.0.1:8080`, Ctrl+C pour arrêter).
 
@@ -214,7 +217,7 @@ vidéo → silencedetect → segments de parole
 | Transcription très lente | modèle `small` sélectionné | choisir `base` |
 | Aucun silence détecté | seuil trop strict | `-30 dB` par défaut ; baisser via l'API `noise_db` |
 | Sous-titres décalés | les timecodes sont recalculés automatiquement | — |
-| « FilmCraft est déjà ouvert » | FilmCraft lancé à la main, sans pilotage | enregistrer, quitter FilmCraft ; MontageIA le relance |
+| « FilmCraft est déjà ouvert » | FilmCraft lancé à la main, sans pilotage | enregistrer, quitter FilmCraft ; Rexo Studio le relance |
 | Port 8080 occupé | un autre service | `MONTAGIA_PORT=8090 ./start.sh` |
 | L'icône ne démarre rien, « Operation not permitted » dans le journal | dossier du projet sur le Bureau ou dans Documents | déplacer le dossier (ex. `~/MontageIA`) puis relancer `./scripts/install_launcher.sh` |
 

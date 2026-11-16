@@ -1,6 +1,6 @@
 #!/bin/bash
 # ---------------------------------------------------------------------------
-# MontageIA - lanceur principal.
+# Rexo Studio - lanceur principal.
 #   ./start.sh              -> interface web sur http://127.0.0.1:8080
 #   ./start.sh --cli        -> mode terminal (assistante au montage)
 #   ./start.sh --cli <video> [commande...] -> une seule commande (plan, render 9:16...)
@@ -17,7 +17,7 @@ if [ -z "$PY" ]; then
 fi
 
 # --- Moteur IA -----------------------------------------------------------
-# llama.cpp (bin/llama-server + modele GGUF) : demarre par MontageIA a la
+# llama.cpp (bin/llama-server + modele GGUF) : demarre par Rexo Studio a la
 # premiere demande, rien a lancer ici. Sinon, Ollama en secours.
 GGUF="models/${MONTAGIA_GGUF:-gemma-4-E2B-it-Q4_0.gguf}"
 if [ "${MONTAGIA_LLM_BACKEND:-auto}" != "ollama" ] && [ -x bin/llama-server ] && [ -f "$GGUF" ]; then

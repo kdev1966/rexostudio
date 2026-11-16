@@ -1,5 +1,5 @@
 {
-  // Extensions recommandees pour MontageIA.
+  // Extensions recommandees pour Rexo Studio.
   //
   // A NE PAS INSTALLER : Pylance (ms-python.vscode-pylance).
   //   C'est l'extension Microsoft d'analyse de code, ~1 Go de RAM d'indexation.

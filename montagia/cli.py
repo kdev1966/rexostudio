@@ -154,7 +154,7 @@ class Assistant(object):
         out = os.path.join(config.EXPORTS_DIR, base + ".fcproj")
         result = pipeline.build_filmcraft_job(
             _FakeJob(), self.path, self.cut_plan, out, profile=profile,
-            title="%s - MontageIA" % self.name, subtitle_segments=self.segments,
+            title="%s - Rexo Studio" % self.name, subtitle_segments=self.segments,
             subtitle_words=self.words)
         (ok if result["valid"] else warn)("%s - %s" % (result["path"], result["message"]))
         return result
@@ -244,7 +244,7 @@ def run_command(assistant, cmd: str, parts: list):
 
 
 def interactive():
-    say("%sMontageIA%s - assistant de montage IA en terminal" % (BOLD + ORANGE, RESET))
+    say("%sRexo Studio%s - derushage et post-production assistes par IA, en terminal" % (BOLD + ORANGE, RESET))
     say("%sModele : %s | dossier de travail : %s%s" % (DIM, config.LLM_MODEL, config.WORKSPACE, RESET))
     say("")
     assistant = None

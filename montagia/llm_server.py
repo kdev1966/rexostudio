@@ -1,5 +1,5 @@
 """Serveur llama.cpp (bin/llama-server) : demarre a la demande, arrete apres
-inactivite ou a la sortie de MontageIA.
+inactivite ou a la sortie de Rexo Studio.
 
 Un processus a part, comme whisper-cli : un plantage du moteur n'emporte
 pas l'interface (lecon de Montora, docs/robustness-macos.md), et sa memoire

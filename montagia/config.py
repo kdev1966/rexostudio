@@ -1,4 +1,4 @@
-"""Configuration centrale de MontageIA.
+"""Configuration centrale de Rexo Studio.
 
 Tout est auto-detecte pour tourner sur n'importe quelle machine :
 rien n'est code en dur dans le code metier, tout passe par ce module.

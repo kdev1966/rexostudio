@@ -1,6 +1,6 @@
 {
   // ─────────────────────────────────────────────────────────────
-  // MontageIA — configuration VS Code
+  // Rexo Studio — configuration VS Code
   //
   // Objectif : que VS Code reste LEGER sur ce Mac (i5-5575R, 4 coeurs,
   // 16 Go) pendant qu'Ollama tient qwen2.5:3b en memoire.

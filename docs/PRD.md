@@ -1,7 +1,7 @@
-# PRD — MontageIA pour studios photo et vidéo d'événements
+# PRD — Rexo Studio : dérushage et post-production pour studios photo et vidéo d'événements
 
 **Version du document** : 1.1 — 16 novembre 2026
-**État du code** : MontageIA fonctionnel sur l'iMac du studio (transcription, plan de coupe
+**État du code** : Rexo Studio (anciennement MontageIA) fonctionnel sur l'iMac du studio (transcription, plan de coupe
 pour la parole, rendus 16:9 / 9:16, envoi vers FilmCraft, IA locale llama.cpp + Gemma 4 E2B).
 
 ### Historique
@@ -23,7 +23,7 @@ Aider un studio de photographie qui filme et monte des **mariages, anniversaires
 - **qui prépare sans décider à la place du monteur** : chaque proposition se vérifie, se
   corrige, puis se finit dans le logiciel de montage (FilmCraft).
 
-MontageIA a d'abord été pensé pour des vidéos parlées face caméra (couper hésitations et
+Rexo Studio a d'abord été pensé pour des vidéos parlées face caméra (couper hésitations et
 digressions). Un film de fête est surtout fait de musique, d'ambiance, de danse et de
 quelques discours : ce document réoriente le produit vers ce besoin.
 
@@ -31,7 +31,7 @@ quelques discours : ce document réoriente le produit vers ce besoin.
 
 | Sujet | Décision |
 |---|---|
-| Base | MontageIA évolue (pas de nouveau projet) ; un nouveau nom pourra venir plus tard. |
+| Base | MontageIA évolue (pas de nouveau projet) et devient **Rexo Studio** (nom choisi le 16/11/2026 ; noms internes inchangés). |
 | Public | **Ce studio d'abord** (outil interne) ; élargi à d'autres studios si le projet est confirmé. |
 | Plateformes | **macOS d'abord**, jusqu'à confirmation du projet ; Windows ensuite. |
 | Logiciel de montage | FilmCraft (déjà piloté) ; d'autres plus tard si besoin. |
@@ -67,7 +67,7 @@ quelques discours : ce document réoriente le produit vers ce besoin.
   On note des plans, on ne reconnaît pas des personnes.
 - **Une vraie caméra à 360° autour des mariés** : impossible avec une seule caméra (il manque
   l'arrière de la scène) ; on propose des effets de profondeur réalistes (§5, M4).
-- **Remplacer le logiciel de montage** : pas de timeline d'édition dans MontageIA.
+- **Remplacer le logiciel de montage** : pas de timeline d'édition dans Rexo Studio.
 - **Le cloud** : aucun service en ligne, aucune clé d'API.
 
 ## 5. Modules et exigences
@@ -164,5 +164,5 @@ Priorités : **P1** indispensable au premier lot ; **P2** ensuite ; **P3** maint
 - **Q2** — Volume par événement : heures et gigaoctets de rushes, nombre de fichiers.
 - **Q3** — Arrivée sur l'iMac : copie de la carte mémoire dans un dossier ?
 - **Q4** — Photos : nombre par événement, format (JPEG / RAW).
-- **Q5** — Reprise d'embedkit (rawi) : copie figée dans MontageIA ou dépendance.
+- **Q5** — Reprise d'embedkit (rawi) : copie figée dans Rexo Studio ou dépendance.
 - **Q6** — Musiques des teasers : bibliothèque du studio ou musiques libres de droits ?

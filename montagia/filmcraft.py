@@ -2,7 +2,7 @@
 
 FilmCraft expose un serveur de controle local : une requete JSON par ligne
 sur 127.0.0.1:<port>, authentifiee par un jeton de 64 caracteres hex
-(FILMCRAFT_CONTROL_TOKEN). MontageIA lance FilmCraft avec ce serveur, puis :
+(FILMCRAFT_CONTROL_TOKEN). Rexo Studio lance FilmCraft avec ce serveur, puis :
 importe la video, cree une sequence, place chaque segment retenu, importe
 les sous-titres recales en vraie piste de sous-titres, ajoute un marqueur
 par segment (avec la raison donnee par l'IA) et enregistre le .fcproj.
@@ -26,7 +26,7 @@ from fractions import Fraction
 from . import config, tools
 
 TICKS_PER_SECOND = 254016000000
-AUTHOR = "MontageIA"
+AUTHOR = "Rexo Studio"
 
 # Une seule construction de projet a la fois : FilmCraft n'a qu'un projet
 # ouvert, deux envois simultanes se marcheraient dessus.
@@ -149,7 +149,7 @@ class Client(object):
 
 
 # --------------------------------------------------------------------------
-# Session : lancer FilmCraft ou reprendre celui deja lance par MontageIA
+# Session : lancer FilmCraft ou reprendre celui deja lance par Rexo Studio
 # --------------------------------------------------------------------------
 
 def _session_file() -> str:
@@ -197,7 +197,7 @@ def installed() -> bool:
 
 
 def connect(log=None, launch: bool = True, wait: float = 90.0) -> Client:
-    """Client vers le FilmCraft pilote par MontageIA (le lance si besoin)."""
+    """Client vers le FilmCraft pilote par Rexo Studio (le lance si besoin)."""
     log = log or (lambda _m: None)
     port = config.FILMCRAFT_PORT
     saved = _load_session()
@@ -210,13 +210,13 @@ def connect(log=None, launch: bool = True, wait: float = 90.0) -> Client:
             "Le port %d est deja utilise par un autre programme "
             "(changez MONTAGIA_FILMCRAFT_PORT)." % port)
     if not launch:
-        raise FilmCraftError("FilmCraft n'est pas lance par MontageIA.")
+        raise FilmCraftError("FilmCraft n'est pas lance par Rexo Studio.")
     if not installed():
         raise FilmCraftError("FilmCraft introuvable (%s)." % config.FILMCRAFT_APP)
     if _filmcraft_running():
         raise FilmCraftError(
-            "FilmCraft est deja ouvert sans le pilotage de MontageIA : enregistrez "
-            "votre travail et quittez FilmCraft, MontageIA le relancera.")
+            "FilmCraft est deja ouvert sans le pilotage de Rexo Studio : enregistrez "
+            "votre travail et quittez FilmCraft, Rexo Studio le relancera.")
 
     token = secrets.token_hex(32)
     _save_session(port, token)
@@ -245,7 +245,7 @@ def connect(log=None, launch: bool = True, wait: float = 90.0) -> Client:
 
 def build_project(client: Client, source: str, plan: list, out_path: str,
                   fps: Fraction, info: dict, profile: str = "16:9",
-                  srt_path: str = "", title: str = "Montage MontageIA",
+                  srt_path: str = "", title: str = "Montage Rexo Studio",
                   notes: str = "", log=None) -> dict:
     """Construit le projet dans FilmCraft a partir d'un plan cale sur les images
     (voir frame_plan) et l'enregistre en .fcproj."""
@@ -300,7 +300,7 @@ def build_project(client: Client, source: str, plan: list, out_path: str,
         captions = 0
         if srt_path and os.path.isfile(srt_path):
             result = client.execute("captions.import", {
-                "path": os.path.abspath(srt_path), "name": "Sous-titres MontageIA"})
+                "path": os.path.abspath(srt_path), "name": "Sous-titres Rexo Studio"})
             captions = int(result.get("captions") or 0)
             log("Piste de sous-titres : %d lignes" % captions)
 

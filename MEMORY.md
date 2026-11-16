@@ -1,4 +1,8 @@
-# 🧠 MEMORY — MontageIA
+# 🧠 MEMORY — Rexo Studio (anciennement MontageIA)
+
+> **Renommé Rexo Studio le 16/11/2026** (nom visible : interface, icône, docs). Noms internes
+> inchangés : dossier `MontageIA`, module `montagia`, variables `MONTAGIA_*`.
+> Orientation produit : `docs/PRD.md` (studio photo, mariages : dérushage et post-production).
 
 > **Fichier de reprise.** À lire en premier quand on reprend le projet.
 > Dernière mise à jour : 15 novembre 2026.
@@ -196,7 +200,7 @@ Test de non-régression : `tests/fixtures/cafe_words.json` (vrais mots de cette 
 5. **Bande-annonce (trailer)** : 181 s, c'est lent — réduire le nombre de candidats.
 6. **Correction des sous-titres** : 135 s — découpage par lots de 25 lignes.
 7. ~~Supprimer `bin/whisper-cli.bak`~~ ✅ (et modèles medium / large-v3-turbo, 16/11/2026).
-8. Lancement : icône `~/Desktop/MontageIA.app` (scripts/install_launcher.sh), bouton Quitter
+8. Lancement : icône `~/Desktop/Rexo Studio.app` (scripts/install_launcher.sh), bouton Quitter
    dans l'interface (décharge le modèle), modèle déchargé après 5 min d'inactivité.
 
 ### Éventuel (améliorations)
@@ -214,7 +218,7 @@ Test de non-régression : `tests/fixtures/cafe_words.json` (vrais mots de cette 
 ## 6. Commandes de reprise
 
 ```bash
-# Interface web : icône MontageIA du Bureau, ou
+# Interface web : icône Rexo Studio du Bureau, ou
 cd ~/MontageIA && ./start.sh                  # http://127.0.0.1:8080
 
 # Mode terminal
