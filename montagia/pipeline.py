@@ -438,9 +438,37 @@ def ai_trailer(job, candidates: list, duration: float, transcript: str,
     result = cached_ai("trailer", payload, compute)
     job.set_progress(0.85, "Sélection des moments")
     segments = resolve_selection(result.get("segments", []), candidates)
-    segments.sort(key=lambda s: s["start"])
+    scores = {}
+    for item in result.get("segments") or []:
+        try:
+            scores[str(item.get("id", "")).strip().upper()] = float(item.get("score") or 0)
+        except (AttributeError, TypeError, ValueError):
+            continue
+    segments = fit_to_duration(segments, scores, target_seconds)
     job.set_progress(1.0, "Meilleurs moments sélectionnés")
     return {"segments": segments, "rationale": result.get("rationale", "")}
+
+
+TRAILER_TOLERANCE = 1.15
+
+
+def fit_to_duration(segments: list, scores: dict, target: float) -> list:
+    """Meilleurs moments ramenes a la duree demandee : les mieux notes par
+    l'IA d'abord, jusqu'a la cible (+15 %) ; un premier moment trop long est
+    raccourci. Le modele 3B / Gemma depassait la cible (54 s pour 30 s)."""
+    if target <= 0:
+        return sorted(segments, key=lambda s: s["start"])
+    ranked = sorted(segments, key=lambda s: -scores.get(s["id"], 0.0))   # tri stable
+    kept, total = [], 0.0
+    for seg in ranked:
+        length = seg["end"] - seg["start"]
+        if total + length <= target * TRAILER_TOLERANCE:
+            kept.append(seg)
+            total += length
+        elif not kept:
+            kept.append(dict(seg, end=round(seg["start"] + target, 3)))
+            total = target
+    return sorted(kept, key=lambda s: s["start"])
 
 
 def ai_pack(job, transcript: str, segments: list, duration: float,

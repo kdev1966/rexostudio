@@ -137,3 +137,21 @@ class ChatPromptTest(unittest.TestCase):
             self.assertEqual("".join(pipeline.ai_chat(None, "q ?", "transcription", 10.0)), "ok")
         self.assertNotIn("schema", seen["system"])
         self.assertIn("ni JSON", seen["system"])
+
+
+class TrailerDurationTest(unittest.TestCase):
+    def seg(self, cid, start, end):
+        return {"id": cid, "start": start, "end": end, "reason": ""}
+
+    def test_best_scored_moments_fill_the_target(self):
+        segs = [self.seg("S1", 0, 10), self.seg("S2", 20, 32), self.seg("S3", 40, 50),
+                self.seg("S4", 60, 75)]
+        scores = {"S1": 5, "S2": 9, "S3": 8, "S4": 7}
+        kept = pipeline.fit_to_duration(segs, scores, 30)
+        # S2 + S3 = 22 s ; S4 (15 s) depasserait 34,5 s, S1 (10 s) tient encore.
+        self.assertEqual([s["id"] for s in kept], ["S1", "S2", "S3"])
+        self.assertLessEqual(sum(s["end"] - s["start"] for s in kept), 30 * 1.15)
+
+    def test_single_long_moment_is_shortened(self):
+        kept = pipeline.fit_to_duration([self.seg("S1", 5, 65)], {"S1": 9}, 30)
+        self.assertEqual((kept[0]["start"], kept[0]["end"]), (5, 35))
