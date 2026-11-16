@@ -102,6 +102,8 @@ function chip(text, on, title) {
     escapeHtml(text) + '</span>';
 }
 
+const STATUS = { effects: true, photocraft: true };
+
 async function loadStatus() {
   try {
     const s = await api('/api/status');
@@ -115,7 +117,10 @@ async function loadStatus() {
       chip('Transcription', !!s.whisper && s.whisper_models.length > 0,
            'whisper.cpp, modèles : ' + (names || 'aucun') + (s.vad_model ? ', détection de la parole' : '')),
       chip('FilmCraft', !!s.filmcraft, s.filmcraft ? 'FilmCraft installé' : 'FilmCraft non installé'),
+      chip('PhotoCraft', !!s.photocraft, s.photocraft ? 'PhotoCraft installé (moteur sans interface prêt)' : 'PhotoCraft non installé'),
     ].join('');
+    STATUS.effects = !!s.effects;
+    STATUS.photocraft = !!s.photocraft;
 
     const sel = $('#whisper-model');
     const LABELS = { tiny: 'Très rapide', base: 'Rapide', small: 'Précise', medium: 'Très précise' };
@@ -1064,7 +1069,7 @@ $('#ev-form').addEventListener('submit', async (e) => {
 /* Derushage d'un evenement (M1)                                       */
 /* ------------------------------------------------------------------ */
 
-const EVD = { id: '', event: null, clips: [], photos: [], cards: [], issues: {}, filter: 'all' };
+const EVD = { id: '', event: null, clips: [], photos: [], cards: [], issues: {}, filter: 'all', effects: [] };
 
 function fileUrl(path) {
   return '/api/file?path=' + encodeURIComponent(path);
@@ -1089,6 +1094,7 @@ async function loadDerush() {
     EVD.photos = data.photos || [];
     EVD.cards = data.cards || [];
     EVD.imports = data.imports || [];
+    EVD.effects = data.effects || [];
     const e = data.event;
     $('#evd-type').textContent = e.type_label;
     $('#evd-type').className = 'ev-type t-' + e.type;
@@ -1356,6 +1362,7 @@ function renderPhotos() {
       '<a ' + (p.viewable ? 'href="' + fileUrl(p.path) + '" target="_blank" rel="noopener"' : 'class="noview"') + '>' +
       (p.thumb ? '<img loading="lazy" src="' + fileUrl(p.thumb) + '" alt="">' : '<span class="muted">' + escapeHtml(p.name) + '</span>') +
       '</a><div class="photo-bar"><span>' + escapeHtml(p.name) + '</span>' +
+      '<button class="fx-open" data-rel="' + escapeHtml(p.rel) + '" title="Effets IA : détourage, fond noir et blanc, fond flou">✨</button>' +
       '<button class="del" data-rel="' + escapeHtml(p.rel) + '" title="Mettre à la Corbeille">🗑</button></div></div>'
     ).join('');
 }
@@ -1370,6 +1377,8 @@ $('#evd-clips').addEventListener('click', (ev) => {
 }, true);
 
 $('#evd-photos').addEventListener('click', (ev) => {
+  const fx = ev.target.closest('.fx-open');
+  if (fx) { openFx(fx.dataset.rel); return; }
   const b = ev.target.closest('.del');
   if (!b) return;
   trashInEvent({ rel: b.dataset.rel }, 'Mettre la photo « ' + b.dataset.rel.split('/').pop() + ' » à la Corbeille ?');
@@ -1393,6 +1402,186 @@ $('#evd-folders').addEventListener('click', (ev) => {
   }
   const open = ev.target.closest('.ev-folder');
   if (open) openEvent(EVD.id, open.dataset.sub);
+});
+
+/* ------------------------------------------------------------------ */
+/* Effets IA sur une photo (M5) : apercu, cadre PhotoCraft, rendu      */
+/* ------------------------------------------------------------------ */
+
+const FX = { photo: null, effect: 'detourage', framing: false, box: null, drag: null,
+  result: null, saved: '', busy: false, view: 'orig' };
+
+function openFx(rel) {
+  const p = EVD.photos.find((x) => x.rel === rel);
+  if (!p) return;
+  Object.assign(FX, { photo: p, framing: false, box: null, drag: null, result: null, saved: '', view: 'orig' });
+  $('#fx-name').textContent = p.name;
+  $('#fx-effects').innerHTML = EVD.effects.map((e) =>
+    '<button class="filter" data-effect="' + escapeHtml(e.key) + '">' + escapeHtml(e.label) + '</button>').join('');
+  const info = $('#fx-info');
+  info.className = 'tiny' + (STATUS.effects ? '' : ' err');
+  info.textContent = STATUS.effects ? '' : 'Outil d’effets absent : lancez ./scripts/build_native.sh';
+  $('#fx-frame').disabled = !STATUS.photocraft;
+  $('#fx-frame').title = STATUS.photocraft ? '' : 'PhotoCraft n’est pas installé';
+  $('#fx-photocraft').disabled = !STATUS.photocraft;
+  fxRender();
+  $('#fx').classList.remove('hidden');
+}
+
+function closeFx() {
+  if (FX.busy) return;
+  $('#fx').classList.add('hidden');
+  $('#fx-img').removeAttribute('src');
+  FX.photo = null;
+}
+
+function fxRender() {
+  const p = FX.photo;
+  if (!p) return;
+  const showResult = FX.view === 'result' && FX.result;
+  const src = showResult ? fileUrl(FX.result.path) + '&t=' + FX.result.stamp
+    : (p.viewable ? fileUrl(p.path) : (p.thumb ? fileUrl(p.thumb) : ''));
+  const img = $('#fx-img');
+  if (img.getAttribute('src') !== src) img.setAttribute('src', src);
+  $$('#fx .fx-view .filter').forEach((b) => {
+    b.classList.toggle('active', b.dataset.view === FX.view);
+    if (b.dataset.view === 'result') b.disabled = !FX.result;
+  });
+  $$('#fx-effects .filter').forEach((b) => b.classList.toggle('active', b.dataset.effect === FX.effect));
+  $('#fx-stage').classList.toggle('framing', FX.framing && !showResult);
+  $('#fx-frame').classList.toggle('active', FX.framing);
+  $('#fx-frame').textContent = FX.box ? '✕ Retirer le cadre'
+    : (FX.framing ? 'Tracez le cadre sur la photo…' : '▭ Tracer un cadre autour des mariés');
+  $('#fx-frame-hint').classList.toggle('hidden', !FX.framing);
+  const box = $('#fx-box');
+  const b = FX.drag || FX.box;
+  box.classList.toggle('hidden', !b || !!showResult);
+  if (b) {
+    box.style.left = (b[0] * 100) + '%';
+    box.style.top = (b[1] * 100) + '%';
+    box.style.width = (b[2] * 100) + '%';
+    box.style.height = (b[3] * 100) + '%';
+  }
+  $('#fx-run').disabled = FX.busy || !STATUS.effects;
+  $('#fx-run').textContent = FX.busy ? 'Calcul en cours…' : 'Calculer l’aperçu';
+  $('#fx-save').disabled = FX.busy || !FX.result || !!FX.saved;
+  $('#fx-save').textContent = FX.saved ? 'Enregistré ✓' : 'Enregistrer dans Rendus';
+  $('#fx-photocraft').textContent = FX.saved ? 'Ouvrir le rendu dans PhotoCraft' : 'Ouvrir la photo dans PhotoCraft';
+}
+
+function fxInvalidate() {
+  FX.result = null;
+  FX.saved = '';
+  FX.view = 'orig';
+}
+
+function fxPoint(ev) {
+  const r = $('#fx-img').getBoundingClientRect();
+  return [Math.min(1, Math.max(0, (ev.clientX - r.left) / r.width)),
+    Math.min(1, Math.max(0, (ev.clientY - r.top) / r.height))];
+}
+
+$('#fx-stage').addEventListener('mousedown', (ev) => {
+  if (!FX.framing || FX.view !== 'orig' || FX.busy) return;
+  ev.preventDefault();
+  const start = fxPoint(ev);
+  FX.drag = [start[0], start[1], 0, 0];
+  const move = (e) => {
+    const pt = fxPoint(e);
+    FX.drag = [Math.min(start[0], pt[0]), Math.min(start[1], pt[1]),
+      Math.abs(pt[0] - start[0]), Math.abs(pt[1] - start[1])];
+    fxRender();
+  };
+  const up = () => {
+    window.removeEventListener('mousemove', move);
+    window.removeEventListener('mouseup', up);
+    const d = FX.drag;
+    FX.drag = null;
+    if (d && d[2] > 0.03 && d[3] > 0.03) {
+      FX.box = d;
+      FX.framing = false;
+      fxInvalidate();
+    }
+    fxRender();
+  };
+  window.addEventListener('mousemove', move);
+  window.addEventListener('mouseup', up);
+});
+
+$('#fx-frame').addEventListener('click', () => {
+  if (FX.busy) return;
+  if (FX.box) { FX.box = null; FX.framing = false; fxInvalidate(); } else { FX.framing = !FX.framing; FX.view = 'orig'; }
+  fxRender();
+});
+
+$('#fx-effects').addEventListener('click', (ev) => {
+  const b = ev.target.closest('[data-effect]');
+  if (!b || FX.busy || b.dataset.effect === FX.effect) return;
+  FX.effect = b.dataset.effect;
+  fxInvalidate();
+  fxRender();
+});
+
+$$('#fx .fx-view .filter').forEach((b) => b.addEventListener('click', () => {
+  if (b.disabled) return;
+  FX.view = b.dataset.view;
+  fxRender();
+}));
+
+$('#fx-run').addEventListener('click', async () => {
+  if (FX.busy || !FX.photo) return;
+  FX.busy = true;
+  FX.framing = false;
+  const info = $('#fx-info');
+  info.className = 'tiny muted';
+  info.textContent = FX.box ? 'Vision + PhotoCraft (sélection dans le cadre)…' : 'Vision : détourage des personnes…';
+  fxRender();
+  try {
+    const r = await post('/api/events/effect', { id: EVD.id, rel: FX.photo.rel, effect: FX.effect, box: FX.box });
+    FX.result = Object.assign(r, { stamp: Date.now() });
+    FX.saved = '';
+    FX.view = 'result';
+    const secs = (r.ms / 1000).toFixed(1).replace('.', ',');
+    if (r.coverage < 0.01) {
+      info.className = 'tiny err';
+      info.textContent = 'Personne n’a été trouvé sur cette photo : effet non conseillé.';
+    } else {
+      info.className = 'tiny muted';
+      info.textContent = 'Aperçu calculé en ' + secs + ' s' + (r.framed ? ' (avec le cadre PhotoCraft)' : '') +
+        '. Vérifiez les contours, puis enregistrez.' + (r.framed ? '' : ' Robe coupée : tracez un cadre et recalculez.');
+    }
+  } catch (err) {
+    info.className = 'tiny err';
+    info.textContent = err.message;
+  }
+  FX.busy = false;
+  fxRender();
+});
+
+$('#fx-save').addEventListener('click', async () => {
+  if (!FX.result || FX.busy) return;
+  try {
+    const r = await post('/api/events/effect/save',
+      { id: EVD.id, rel: FX.photo.rel, effect: FX.result.effect, framed: FX.result.framed });
+    FX.saved = r.rel;
+    toast('Enregistré : ' + r.rel);
+    loadDerush();
+  } catch (err) { toast(err.message, true); }
+  fxRender();
+});
+
+$('#fx-photocraft').addEventListener('click', async () => {
+  if (!FX.photo) return;
+  try {
+    await post('/api/events/photocraft', { id: EVD.id, rel: FX.saved || FX.photo.rel });
+    toast('Ouverture dans PhotoCraft…');
+  } catch (err) { toast(err.message, true); }
+});
+
+$('#fx-close').addEventListener('click', closeFx);
+$('#fx').addEventListener('click', (ev) => { if (ev.target.id === 'fx') closeFx(); });
+document.addEventListener('keydown', (ev) => {
+  if (ev.key === 'Escape' && !$('#fx').classList.contains('hidden')) closeFx();
 });
 
 /* ------------------------------------------------------------------ */

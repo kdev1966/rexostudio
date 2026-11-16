@@ -32,7 +32,7 @@ archiver d'un bloc.
    ├── 03_Audio/        musiques choisies, enregistrements à part
    ├── 04_Proxies/      copies allégées pour le montage (recréables, effaçables)
    ├── 05_Montage/      projets FilmCraft, sélections
-   ├── 06_Rendus/       Film_complet/, Teaser/, Photos_animees/
+   ├── 06_Rendus/       Film_complet/, Teaser/, Photos_animees/, Photos_effets/
    ├── 07_Livraison/    ce qui part chez le client
    └── .rexo/           données de Rexo Studio (fiche, analyses, décisions), masqué
    ```

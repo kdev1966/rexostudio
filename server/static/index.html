@@ -342,6 +342,42 @@
   </section>
 </main>
 
+<!-- ============ EFFETS IA SUR UNE PHOTO (M5) ============ -->
+<div id="fx" class="fx-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="fx-title">
+  <div class="fx-panel">
+    <div class="fx-head">
+      <h2 id="fx-title">Effets IA</h2>
+      <span id="fx-name" class="muted"></span>
+      <button class="del" id="fx-close" title="Fermer (Échap)">✕</button>
+    </div>
+    <div class="fx-body">
+      <div class="fx-stage-wrap">
+        <div id="fx-stage" class="fx-stage">
+          <img id="fx-img" alt="">
+          <div id="fx-box" class="fx-box hidden"></div>
+        </div>
+        <div class="fx-view">
+          <button class="filter active" data-view="orig">Original</button>
+          <button class="filter" data-view="result" disabled>Résultat</button>
+        </div>
+      </div>
+      <div class="fx-side">
+        <p class="tiny muted">Effet</p>
+        <div id="fx-effects" class="fx-effects"></div>
+        <p class="tiny muted">La robe ou la traîne est coupée ?</p>
+        <button class="btn btn-sec" id="fx-frame">▭ Tracer un cadre autour des mariés</button>
+        <p id="fx-frame-hint" class="tiny muted hidden">Glissez sur la photo pour entourer les mariés, robe et traîne comprises. PhotoCraft complète alors le détourage.</p>
+        <button class="btn btn-primary" id="fx-run">Calculer l'aperçu</button>
+        <p id="fx-info" class="tiny"></p>
+        <div class="btn-row">
+          <button class="btn btn-sec" id="fx-save" disabled>Enregistrer dans Rendus</button>
+          <button class="btn btn-sec" id="fx-photocraft" title="Retoucher à la main dans PhotoCraft">Ouvrir dans PhotoCraft</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div id="toast" class="toast"></div>
 
 <script src="/static/app.js"></script>

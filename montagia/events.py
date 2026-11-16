@@ -2,7 +2,7 @@
 
     <racine>/AAAA-MM-JJ_Type_Noms/
         01_Rushes/ 02_Photos/ 03_Audio/ 04_Proxies/ 05_Montage/
-        06_Rendus/{Film_complet,Teaser,Photos_animees}/ 07_Livraison/
+        06_Rendus/{Film_complet,Teaser,Photos_animees,Photos_effets}/ 07_Livraison/
         .rexo/evenement.json      fiche (type, date, noms, lieu, notes)
 
 Le dossier est la verite : la liste est relue sur le disque a chaque demande,
@@ -44,7 +44,7 @@ FOLDERS = (
     ("07_Livraison", "Livraison"),
 )
 FOLDER_NAMES = tuple(name for name, _ in FOLDERS)
-RENDER_SUBDIRS = ("Film_complet", "Teaser", "Photos_animees")
+RENDER_SUBDIRS = ("Film_complet", "Teaser", "Photos_animees", "Photos_effets")
 
 NAMES_MAX = 60
 # Interdits sur macOS ou Windows (le portage Windows reste possible).

@@ -20,8 +20,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from montagia import (ai, config, events, filmcraft, media, pipeline, project,  # noqa: E402
-                      rushes, tools, transcribe, trash)
+from montagia import (ai, config, effects, events, filmcraft, media, photocraft,  # noqa: E402
+                      pipeline, project, rushes, tools, transcribe, trash)
 from montagia.jobs import MANAGER  # noqa: E402
 
 MAX_BODY = config.MAX_UPLOAD_BYTES
@@ -318,6 +318,12 @@ class StudioHandler(BaseHTTPRequestHandler):
                 return self._api_event_delete()
             if route == "/api/events/trash":
                 return self._api_event_trash()
+            if route == "/api/events/effect":
+                return self._api_event_effect()
+            if route == "/api/events/effect/save":
+                return self._api_event_effect_save()
+            if route == "/api/events/photocraft":
+                return self._api_event_photocraft()
             if route == "/api/project/delete":
                 return self._api_project_delete()
             if route == "/api/quit":
@@ -422,6 +428,8 @@ class StudioHandler(BaseHTTPRequestHandler):
             "whisper_models": whisper_models,
             "vad_model": config.whisper_vad_model(),
             "filmcraft": filmcraft.installed(),
+            "photocraft": photocraft.installed(),
+            "effects": effects.installed(),
             "model": config.LLM_MODEL,
             "num_ctx": config.LLM_NUM_CTX,
             "workspace": config.WORKSPACE,
@@ -806,7 +814,54 @@ class StudioHandler(BaseHTTPRequestHandler):
             "cards": rushes.card_list(event_dir),
             "issues": rushes.ISSUES,
             "imports": state.get("imports", []),
+            "effects": effects.catalog(),
         })
+
+    def _event_photo(self, data):
+        """(dossier de l'evenement, chemin verifie de la photo designee par rel)."""
+        event_id = str(data.get("id") or "")
+        event_dir = self._event_dir(event_id)
+        return event_dir, events.item_path(config.EVENTS_DIR, event_id, str(data.get("rel") or ""))
+
+    def _api_event_effect(self):
+        """Apercu d'un effet photo (quelques secondes : calcule pendant la requete)."""
+        data = self._body_json()
+        try:
+            event_dir, src = self._event_photo(data)
+            box = data.get("box")
+            result = effects.preview(event_dir, src, str(data.get("effect") or ""),
+                                     box if box else None)
+        except events.EventError as exc:
+            return self._error(exc, 404)
+        except effects.EffectError as exc:
+            return self._error(exc, 409 if "en cours" in str(exc) else 400)
+        return self._json(result)
+
+    def _api_event_effect_save(self):
+        data = self._body_json()
+        try:
+            event_dir, src = self._event_photo(data)
+            rel = effects.save(event_dir, src, str(data.get("effect") or ""),
+                               bool(data.get("framed")))
+        except events.EventError as exc:
+            return self._error(exc, 404)
+        except effects.EffectError as exc:
+            return self._error(exc, 400)
+        return self._json({"ok": True, "rel": rel, "path": os.path.join(event_dir, rel)})
+
+    def _api_event_photocraft(self):
+        """Ouvre une photo ou un rendu de l'evenement dans PhotoCraft."""
+        data = self._body_json()
+        try:
+            _event_dir, path = self._event_photo(data)
+            if not os.path.isfile(path):
+                return self._error("Fichier introuvable", 404)
+            photocraft.open_in_app(path)
+        except events.EventError as exc:
+            return self._error(exc, 404)
+        except photocraft.PhotoCraftError as exc:
+            return self._error(exc, 500)
+        return self._json({"ok": True})
 
     def _event_job(self, kind: str, title: str, func):
         """Traitement de fond sur un evenement : func(job, dossier, donnees)."""

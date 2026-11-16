@@ -167,6 +167,18 @@ FILMCRAFT_BIN = os.path.join(FILMCRAFT_APP, "Contents", "MacOS", "FilmCraft")
 FILMCRAFT_PORT = int(os.environ.get("MONTAGIA_FILMCRAFT_PORT", "9877"))
 
 # --------------------------------------------------------------------------
+# PhotoCraft (editeur photo du meme editeur que FilmCraft, voir montagia/photocraft.py)
+# --------------------------------------------------------------------------
+PHOTOCRAFT_APP = os.environ.get("REXO_PHOTOCRAFT_APP", "/Applications/PhotoCraft.app")
+# Moteur sans interface livre dans l'application : run, batch, serve...
+PHOTOCRAFT_CLI = os.path.join(PHOTOCRAFT_APP, "Contents", "MacOS", "photocraft-cli")
+
+# --------------------------------------------------------------------------
+# Effets photo (M5) : bin/rexo-segment, compile par scripts/build_native.sh
+# --------------------------------------------------------------------------
+SEGMENT_BIN = os.path.join(BIN_DIR, "rexo-segment")
+
+# --------------------------------------------------------------------------
 # Decouverte des binaires
 # --------------------------------------------------------------------------
 _BINARY_EXTRA_PATHS = [
