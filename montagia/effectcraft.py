@@ -416,6 +416,7 @@ def assemble(client: Client, parts: list, out: str, size: tuple = (1920, 1080), 
 
 MATTE_MODEL = "sam2.1-hiera-tiny"
 MATTE_MAX_FRAMES = 600            # limite d'Object Matte par suivi
+MATTE_STALL = 120                 # s sans nouvelle image : le suivi est fige
 
 
 def matte_ready(client: Client) -> bool:
@@ -449,25 +450,34 @@ def detour_video(client: Client, video: str, point: tuple, start: float, duratio
     first = int(round(start * fps))
     frames = int(round(duration * fps))
     px = [round(point[0] * width), round(point[1] * height)]
+    # La tete de lecture sur l'image de depart : l'affichage ne demande alors a SAM 2 que
+    # l'image deja calculee. Sinon il lance son propre calcul sur la carte graphique en
+    # meme temps que le suivi, et les deux s'attendent sans fin (constate sur l'iMac).
+    client.script("(function(){for (var j=1;j<=app.project.numItems;j++){var it=app.project.item(j);"
+                  "if (it.id==%d) { it.time=%r; return 1; }} return 0;})()" % (comp, first / fps))
     if log:
         log("EffectCraft : suivi de la personne (SAM 2.1) sur %d images" % frames)
     applied = client.execute("objectMatte.apply", {"layer": 1, "point": px, "frame": first,
                                                    "before": 0, "after": frames}) or {}
     # Le suivi part en tache de fond : on le suit, sans jamais le relancer
     deadline = time.time() + timeout
+    last, last_change = -1, time.time()
     while True:
         st = client.execute("objectMatte.status", {"layer": 1}) or {}
         computed = len(st.get("computed") or [])
+        if computed != last:
+            last, last_change = computed, time.time()
         if progress:
             progress(min(1.0, computed / float(frames + 1)) * 0.7)
         if not st.get("running") and not st.get("pending"):
             break
-        if time.time() > deadline:
-            client.execute("roto.cancel")
-            raise EffectCraftError("Le suivi dépasse %d min : arrêté" % (timeout // 60))
+        if time.time() > deadline or time.time() - last_change > MATTE_STALL:
+            client.execute("jobs.cancel", {"job": "all"})
+            raise EffectCraftError("Le suivi n'avance plus (%d images sur %d) : arrêté ; relancez le détourage"
+                                   % (computed, frames + 1))
         time.sleep(1.0)
-    if st.get("error") or st.get("banner"):
-        raise EffectCraftError("Suivi impossible : %s" % (st.get("error") or st.get("banner")))
+    if st.get("error"):
+        raise EffectCraftError("Suivi impossible : %s" % st["error"])
     render(client, comp, out, fmt="prores", proresProfile="4444", channels="rgba", audio="off",
            timeSpan="custom", start=start, end=start + duration,
            progress=(lambda f: progress(0.7 + 0.3 * f)) if progress else None)

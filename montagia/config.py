@@ -207,6 +207,12 @@ GENERICS_DIR = os.environ.get("REXO_GENERICS_DIR") or os.path.join(PROJECT_DIR, 
 # Modeles de titres EffectCraft (.ectemplate, champs « Title » et « Subtitle »)
 TITLES_DIR = os.environ.get("REXO_TITLES_DIR") or os.path.join(PROJECT_DIR, "modeles", "titres")
 
+# Textures PBR des modeles (une sous-dossier par materiau), faites par TextureCraft
+TEXTURES_DIR = os.environ.get("REXO_TEXTURES_DIR") or os.path.join(PROJECT_DIR, "modeles", "textures")
+TEXTURECRAFT_APP = os.environ.get("REXO_TEXTURECRAFT_APP", "/Applications/TextureCraft.app")
+TEXTURECRAFT_BIN = os.path.join(TEXTURECRAFT_APP, "Contents", "MacOS", "TextureCraft")
+TEXTURECRAFT_PORT = int(os.environ.get("REXO_TEXTURECRAFT_PORT", "9881"))
+
 # EffectCraft (motion design, meme editeur que PhotoCraft et FilmCraft) : serveur de
 # controle local, une requete JSON par ligne (voir montagia/effectcraft.py)
 EFFECTCRAFT_APP = os.environ.get("REXO_EFFECTCRAFT_APP", "/Applications/EffectCraft.app")

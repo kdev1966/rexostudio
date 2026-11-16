@@ -21,6 +21,7 @@ Contrat d'un modele de scene Rexo Studio (blender/export_generic.py s'appuie des
     a part avec transparence et pose par-dessus dans EffectCraft.
 """
 import math
+import os
 import random
 import sys
 
@@ -46,6 +47,51 @@ def material(name, color, roughness=0.5, emission=None, strength=0.0, metallic=0
     return mat
 
 
+# Textures PBR faites par TextureCraft (scripts/prepare_textures.py) ; sans elles, le
+# modele garde ses couleurs unies
+TEXTURES = os.environ.get("REXO_TEXTURES_DIR") or os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "..", "modeles", "textures")
+
+
+def textured(name, texture, color, repeat=1.0, roughness=0.5, metallic=0.0):
+    """Materiau aux textures TextureCraft (couleur, metal, rugosite, normale), repetees
+    `repeat` fois ; couleur unie si la texture manque."""
+    folder = os.path.join(TEXTURES, texture)
+    base = os.path.join(folder, texture + "_BaseColor.png")
+    if not os.path.isfile(base):
+        return material(name, color, roughness, metallic=metallic)
+    mat = bpy.data.materials.new(name)
+    mat.use_nodes = True
+    nodes, links = mat.node_tree.nodes, mat.node_tree.links
+    p = nodes.get("Principled BSDF")
+    coord, mapping = nodes.new("ShaderNodeTexCoord"), nodes.new("ShaderNodeMapping")
+    mapping.inputs["Scale"].default_value = (repeat, repeat, repeat)
+    links.new(coord.outputs["UV"], mapping.inputs["Vector"])
+
+    def image(kind, data):
+        path = os.path.join(folder, "%s_%s.png" % (texture, kind))
+        if not os.path.isfile(path):
+            return None
+        node = nodes.new("ShaderNodeTexImage")
+        node.image = bpy.data.images.load(path)
+        if data:
+            node.image.colorspace_settings.name = "Non-Color"
+        links.new(mapping.outputs["Vector"], node.inputs["Vector"])
+        return node
+
+    links.new(image("BaseColor", False).outputs["Color"], p.inputs["Base Color"])
+    for kind, socket in (("Metallic", "Metallic"), ("Roughness", "Roughness")):
+        node = image(kind, True)
+        if node:
+            links.new(node.outputs["Color"], p.inputs[socket])
+    node = image("Normal", True)
+    if node:
+        normal = nodes.new("ShaderNodeNormalMap")
+        links.new(node.outputs["Color"], normal.inputs["Color"])
+        links.new(normal.outputs["Normal"], p.inputs["Normal"])
+    return mat
+
+
 def add(obj, mat, name=None):
     obj.data.materials.append(mat)
     if name:
@@ -55,8 +101,8 @@ def add(obj, mat, name=None):
 
 # Sol, colonnes (derriere), arche fleurie, petites lumieres au loin (halos avec la mise au point)
 bpy.ops.mesh.primitive_plane_add(size=80)
-add(bpy.context.active_object, material("sol", (0.80, 0.78, 0.75), roughness=0.12), "Sol")
-white = material("colonnes", (0.92, 0.90, 0.86), roughness=0.35)
+add(bpy.context.active_object, textured("sol", "marble", (0.80, 0.78, 0.75), repeat=30, roughness=0.12), "Sol")
+white = textured("colonnes", "plaster", (0.92, 0.90, 0.86), repeat=2, roughness=0.35)
 # Colonnes en demi-cercle derriere les maries : la camera vole devant (+-40 degres)
 # et ne passe jamais entre une colonne et les maries
 for i in range(7):
@@ -66,7 +112,8 @@ for i in range(7):
     add(bpy.context.active_object, white, "Colonne")
 bpy.ops.mesh.primitive_torus_add(major_radius=2.1, minor_radius=0.09, location=(0, 1.3, 0),
                                  rotation=(math.radians(90), 0, 0))
-add(bpy.context.active_object, material("arche", (0.85, 0.75, 0.55), 0.3, metallic=0.8), "Arche")
+add(bpy.context.active_object, textured("arche", "gold_polished", (0.85, 0.75, 0.55), repeat=4, roughness=0.3,
+                                        metallic=0.8), "Arche")
 flowers = [material("rose_blanche", (0.95, 0.93, 0.92), 0.6), material("rose_rose", (0.90, 0.45, 0.55), 0.6),
            material("rose_rouge", (0.65, 0.04, 0.08), 0.6), material("feuillage", (0.10, 0.30, 0.12), 0.7)]
 for _ in range(70):
@@ -104,7 +151,7 @@ for v in couple.data.vertices:                 # cercle du plan XY -> ovale debo
 couple.data.materials.append(material("emplacement_maries", (0.9, 0.9, 0.9)))
 
 # Un chevalet a cote de l'arche avec un cadre : emplacement d'une photo a plat
-wood = material("bois", (0.35, 0.22, 0.12), 0.6)
+wood = textured("bois", "wood_oak", (0.35, 0.22, 0.12), roughness=0.6)
 easel_at, easel_yaw = (2.9, 0.4, 0.0), math.radians(-25)
 for dx, tilt in ((-0.35, 8), (0.35, -8)):
     bpy.ops.mesh.primitive_cube_add(size=1, location=(easel_at[0] + dx * math.cos(easel_yaw),
@@ -117,7 +164,7 @@ bpy.ops.mesh.primitive_cube_add(size=1, location=(easel_at[0], easel_at[1] + 0.0
 border = bpy.context.active_object
 border.scale = (0.82, 0.04, 1.02)
 border.rotation_euler = (0, 0, easel_yaw)
-add(border, material("cadre_dore", (0.8, 0.62, 0.3), 0.3, metallic=0.9), "Cadre")
+add(border, textured("cadre_dore", "gold_polished", (0.8, 0.62, 0.3), roughness=0.3, metallic=0.9), "Cadre")
 bpy.ops.mesh.primitive_plane_add(size=1, location=(easel_at[0], easel_at[1], 1.35))
 frame = bpy.context.active_object
 frame.name = "PHOTO_CADRE_PHOTO"
@@ -148,5 +195,6 @@ face.target, face.track_axis, face.lock_axis = cam, "TRACK_NEGATIVE_Y", "LOCK_Z"
 scene.view_settings.view_transform = "Standard"
 scene.render.engine = "BLENDER_EEVEE"
 scene.eevee.use_bloom, scene.eevee.bloom_threshold, scene.eevee.bloom_intensity = True, 1.0, 0.05
+bpy.ops.file.pack_all()                     # textures dans le .blend : modele autonome
 bpy.ops.wm.save_as_mainfile(filepath=out_blend)
 print("MODELE enregistre : %s" % out_blend)

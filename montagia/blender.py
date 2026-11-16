@@ -130,6 +130,12 @@ def ensure_generic(scene: str, motion: str = "sequence", seconds: float = 9.0, q
         raise BlenderError("Qualité inconnue : %s" % quality)
     folder = os.path.join(config.GENERICS_DIR, generic_id(scene, motion, seconds, quality))
     info = generic_info(folder)
+    blend_file = os.path.join(config.SCENES_3D_DIR, scene + ".blend")
+    if info and os.path.isfile(blend_file) and \
+            os.path.getmtime(blend_file) > os.path.getmtime(os.path.join(folder, "scene.json")):
+        info = None                     # modele retouche depuis : l'animation est a refaire
+        if log:
+            log("Blender : le modèle « %s » a changé, nouvelle animation générique" % scene)
     if info:
         if log:
             log("Blender : animation générique déjà prête (%s)" % os.path.basename(folder))
