@@ -53,9 +53,10 @@ TEXTURES = os.environ.get("REXO_TEXTURES_DIR") or os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "modeles", "textures")
 
 
-def textured(name, texture, color, repeat=1.0, roughness=0.5, metallic=0.0):
+def textured(name, texture, color, repeat=1.0, roughness=0.5, metallic=0.0, metal_scale=1.0):
     """Materiau aux textures TextureCraft (couleur, metal, rugosite, normale), repetees
-    `repeat` fois ; couleur unie si la texture manque."""
+    `repeat` fois ; couleur unie si la texture manque. metal_scale attenue la carte de
+    metal : dans une scene de nuit, un metal pur ne reflete que le ciel noir."""
     folder = os.path.join(TEXTURES, texture)
     base = os.path.join(folder, texture + "_BaseColor.png")
     if not os.path.isfile(base):
@@ -80,10 +81,15 @@ def textured(name, texture, color, repeat=1.0, roughness=0.5, metallic=0.0):
         return node
 
     links.new(image("BaseColor", False).outputs["Color"], p.inputs["Base Color"])
-    for kind, socket in (("Metallic", "Metallic"), ("Roughness", "Roughness")):
-        node = image(kind, True)
-        if node:
-            links.new(node.outputs["Color"], p.inputs[socket])
+    node = image("Metallic", True)
+    if node:
+        scale = nodes.new("ShaderNodeMath")
+        scale.operation, scale.inputs[1].default_value = "MULTIPLY", metal_scale
+        links.new(node.outputs["Color"], scale.inputs[0])
+        links.new(scale.outputs["Value"], p.inputs["Metallic"])
+    node = image("Roughness", True)
+    if node:
+        links.new(node.outputs["Color"], p.inputs["Roughness"])
     node = image("Normal", True)
     if node:
         normal = nodes.new("ShaderNodeNormalMap")
@@ -113,7 +119,7 @@ for i in range(7):
 bpy.ops.mesh.primitive_torus_add(major_radius=2.1, minor_radius=0.09, location=(0, 1.3, 0),
                                  rotation=(math.radians(90), 0, 0))
 add(bpy.context.active_object, textured("arche", "gold_polished", (0.85, 0.75, 0.55), repeat=4, roughness=0.3,
-                                        metallic=0.8), "Arche")
+                                        metallic=0.8, metal_scale=0.3), "Arche")
 flowers = [material("rose_blanche", (0.95, 0.93, 0.92), 0.6), material("rose_rose", (0.90, 0.45, 0.55), 0.6),
            material("rose_rouge", (0.65, 0.04, 0.08), 0.6), material("feuillage", (0.10, 0.30, 0.12), 0.7)]
 for _ in range(70):
@@ -164,7 +170,8 @@ bpy.ops.mesh.primitive_cube_add(size=1, location=(easel_at[0], easel_at[1] + 0.0
 border = bpy.context.active_object
 border.scale = (0.82, 0.04, 1.02)
 border.rotation_euler = (0, 0, easel_yaw)
-add(border, textured("cadre_dore", "gold_polished", (0.8, 0.62, 0.3), roughness=0.3, metallic=0.9), "Cadre")
+add(border, textured("cadre_dore", "gold_polished", (0.8, 0.62, 0.3), roughness=0.3, metallic=0.9,
+                     metal_scale=0.3), "Cadre")
 bpy.ops.mesh.primitive_plane_add(size=1, location=(easel_at[0], easel_at[1], 1.35))
 frame = bpy.context.active_object
 frame.name = "PHOTO_CADRE_PHOTO"
