@@ -105,6 +105,9 @@ dans un dossier temporaire affiché à la fin.
 | MI-GAN : effacement de l'objet (vase, photo 1) | 1,0 s | 16/11/2026 |
 | Essais de `check_install.sh` (image 640 px) : MobileSAM / MI-GAN / Depth Anything | 1,2 s / 0,9 s / 0,9 s | 16/11/2026 |
 | `install_effects_env.sh` complet (téléchargements compris) | 1 min 18 s | 16/11/2026 |
+| **Pleine résolution** (Nikon D780, 5368 × 3579, 19 Mpx) : détourage / noir et blanc / fond flou | 3,4 / 2,6 / 2,7 s | 16/11/2026 |
+| Pleine résolution, avec cadre PhotoCraft : fond flou / détourage | 4,8 / 5,7 s | 16/11/2026 |
+| Pleine résolution : effacer un objet (galerie) | 4,1 s (155 s avant la correction du 16/11) | 16/11/2026 |
 
 `check_install.sh` affiche les temps de MobileSAM, MI-GAN et Depth Anything : reporter
 ici ceux d'une nouvelle machine de production pour les comparer.
