@@ -340,6 +340,40 @@ class ServerTest(unittest.TestCase):
             self.assertIn("Date invalide", body)
             self.assertEqual(popen.call_count, 1)
 
+    def test_event_import_detail_keep_and_files(self):
+        root = tempfile.mkdtemp(prefix="rexo-events-")
+        self.addCleanup(shutil.rmtree, root, True)
+        card = os.path.join(root, "..", os.path.basename(root) + "-carte")
+        os.makedirs(card)
+        self.addCleanup(shutil.rmtree, card, True)
+        with open(os.path.join(card, "C0001.MP4"), "wb") as fh:
+            fh.write(b"pas une vraie video")
+        with mock.patch.object(app.config, "EVENTS_DIR", root):
+            event_id = app.events.create(root, "Henne", "2026-11-20", "Rim")["id"]
+            status, body = self.request("POST", "/api/events/import",
+                                        {"id": event_id, "source": card})
+            self.assertEqual(status, 200, body)
+            job = MANAGER.get(json.loads(body)["job_id"])
+            for _ in range(200):
+                if job.status in ("done", "error"):
+                    break
+                time.sleep(0.02)
+            self.assertEqual(job.status, "done", job.error)
+            self.assertEqual(job.result["copied"], 1)
+            status, body = self.request("GET", "/api/events/detail?id=" + urllib.parse.quote(event_id))
+            clips = json.loads(body)["clips"]
+            self.assertEqual([c["name"] for c in clips], ["C0001.MP4"])
+            status, body = self.request("POST", "/api/events/keep",
+                                        {"id": event_id, "rel": clips[0]["rel"], "keep": False})
+            self.assertEqual((status, json.loads(body)["kept"]), (200, False))
+            status, body = self.request("GET", "/api/file?path=" + urllib.parse.quote(clips[0]["path"]))
+            self.assertEqual((status, body), (200, "pas une vraie video"))
+            status, _ = self.request("POST", "/api/events/keep",
+                                     {"id": event_id, "rel": "../../etc/passwd", "keep": True})
+            self.assertEqual(status, 404)
+            status, _ = self.request("GET", "/api/events/detail?id=..")
+            self.assertEqual(status, 404)
+
     def test_quit_unloads_model_then_stops(self):
         stopped = threading.Event()
         with mock.patch.object(app.ai, "unload") as unload, \

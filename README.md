@@ -63,6 +63,28 @@ accent) ; les puces filtrent par type. « Nouvel événement » crée le dossier
 `docs/adr/0001-evenement-dossier.md`) ; chaque carte ouvre l'événement ou un sous-dossier dans
 le Finder. Les dossiers des clients ne sont jamais versionnés (`.gitignore`).
 
+**Dérushage** (bouton « 🎬 Dérushage » d'un événement, `montagia/rushes.py`) :
+
+1. **Importer une carte mémoire** : les cartes branchées sont détectées dans `/Volumes` (ou
+   indiquer un dossier). Vidéos vers `01_Rushes/Carte_n/`, photos vers `02_Photos/Carte_n/`,
+   arborescence de la carte conservée. Chaque fichier est copié, **relu et comparé (SHA-256)**,
+   n'apparaît qu'une fois vérifié et garde sa date d'origine ; la carte n'est jamais modifiée.
+   Relancer l'import d'une carte ne recopie rien ; un même fichier sur deux cartes est repéré.
+2. **Analyser les rushes** (automatique après un import) : heure de tournage (celle écrite par la
+   caméra), vignette, et une passe ffmpeg sur l'image réduite qui mesure luminosité
+   (`signalstats`), netteté (`blurdetect`) et tremblement (`vidstabdetect`). Défauts signalés :
+   noir / cache objectif, trop sombre, surexposé, flou, tremblé, très court. Les rushes sans
+   défaut sont **proposés** comme gardés ; la case « Garder » permet de changer d'avis (rien
+   n'est supprimé).
+3. **Créer les proxies** : copies 960 px dans `04_Proxies/` (lecture fluide, formats que le
+   navigateur ne lit pas).
+4. **Sélection → FilmCraft** : les rushes gardés, dans l'ordre de tournage, bout à bout avec un
+   marqueur chacun, enregistrés dans `05_Montage/Selection_<date>.fcproj` puis ouverts.
+
+Seuils de qualité étalonnés sur des rushes simulés et sur 4 films de mariage réels (aucun faux
+défaut sur 81 extraits, nuit et danse caméra à l'épaule comprises) ; à réajuster sur les
+rushes bruts du studio. Pour tester sans images de clients : `./scripts/make_demo_event.sh`.
+
 L'onglet **Montage vidéo** garde le parcours d'une vidéo parlée :
 
 1. **Vidéo** — déposez votre rush (une vidéo déjà importée rouvre son projet).

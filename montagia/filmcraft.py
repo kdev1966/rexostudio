@@ -322,6 +322,57 @@ def build_project(client: Client, source: str, plan: list, out_path: str,
                 "clips": len(video_clips), "captions": captions}
 
 
+def build_selection(client: Client, clips: list, out_path: str, fps: Fraction,
+                    size: tuple, title: str = "Sélection Rexo Studio", notes: str = "",
+                    log=None) -> dict:
+    """Derushage : les rushes retenus, bout a bout dans l'ordre donne, chacun
+    en entier, avec un marqueur (nom, heure de tournage). clips :
+    [{"path", "duration", "name", "has_audio", "note"}]."""
+    log = log or (lambda _m: None)
+    if not clips:
+        raise FilmCraftError("Aucun rush retenu : rien à envoyer à FilmCraft.")
+    with _LOCK:
+        try:
+            backup = client.execute("file.autoSaveNow").get("path", "")
+            if backup:
+                log("Copie de secours du projet precedent : %s" % backup)
+        except FilmCraftError as exc:
+            log("Copie de secours impossible (%s)" % exc)
+        client.execute("file.newProject", {"name": title})
+        sequence = client.execute("file.newSequence", {
+            "name": title, "width": size[0], "height": size[1], "fps": float(fps),
+        }).get("sequence")
+        position = placed = 0
+        for clip in clips:
+            frames = int(round(float(clip.get("duration") or 0) * fps))
+            if frames <= 0:
+                continue
+            imported = client.execute("file.import", {"paths": [os.path.abspath(clip["path"])]})
+            if imported.get("errors") or not imported.get("items"):
+                log("Import refuse par FilmCraft : %s" % clip.get("name"))
+                continue
+            params = {"item": imported["items"][0], "track": "V1",
+                      "time": frames_to_ticks(position, fps), "insert": False,
+                      "sourceIn": 0, "duration": frames_to_ticks(frames, fps),
+                      "audio": bool(clip.get("has_audio"))}
+            if clip.get("has_audio"):
+                params["audioTrack"] = "A1"
+            if client.execute("timeline.place", params).get("clips"):
+                client.execute("markers.add", {
+                    "target": "program", "time": frames_to_ticks(position, fps),
+                    "name": (clip.get("name") or "Rush")[:120],
+                    "comment": clip.get("note", ""), "author": AUTHOR})
+                position += frames
+                placed += 1
+        log("%d rushes places sur la timeline (%.1f s)" % (placed, float(position / fps)))
+        if notes:
+            client.execute("project.setNotes", {"text": notes})
+        tools.ensure_parent(out_path)
+        saved = client.execute("file.saveAs", {"path": os.path.abspath(out_path)})
+        return {"path": saved.get("path") or out_path, "sequence": sequence,
+                "clips": placed, "duration": round(float(position / fps), 3)}
+
+
 def read_project(path: str) -> dict:
     """Relit un .fcproj enregistre et resume ses sequences (verification)."""
     with open(path, "r", encoding="utf-8") as fh:

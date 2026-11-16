@@ -64,6 +64,63 @@
   <p id="ev-root" class="tiny muted ev-root"></p>
 </section>
 
+<!-- ============ DERUSHAGE D'UN EVENEMENT ============ -->
+<section id="view-event" class="events-view hidden">
+  <div class="evd-head">
+    <button class="btn btn-sec btn-small" id="evd-back">← Tous les événements</button>
+    <div class="evd-title">
+      <span class="ev-type" id="evd-type"></span>
+      <h2 id="evd-names" dir="auto"></h2>
+      <span class="tiny muted" id="evd-date"></span>
+    </div>
+    <button class="btn btn-sec btn-small" id="evd-open">📂 Ouvrir le dossier</button>
+  </div>
+
+  <div class="evd-cols">
+    <div class="card">
+      <h2>1 · Importer une carte mémoire</h2>
+      <div class="row evd-source-row">
+        <select id="evd-source"></select>
+        <button class="btn btn-sec btn-small" id="evd-refresh" title="Chercher les cartes branchées">↻</button>
+      </div>
+      <label class="field"><span>ou le chemin d'un dossier</span>
+        <input type="text" id="evd-path" placeholder="/Volumes/NOM_DE_LA_CARTE"></label>
+      <button class="btn btn-primary btn-big" id="evd-import">Copier et vérifier</button>
+      <p class="tiny muted hint">Chaque fichier est copié puis relu et comparé à l'original (empreinte
+        SHA-256). La carte n'est jamais modifiée. Un fichier déjà importé n'est pas recopié.</p>
+      <div id="evd-imports" class="tiny muted"></div>
+    </div>
+
+    <div class="card">
+      <h2>2 · Trier les rushes</h2>
+      <div class="btn-row">
+        <button class="btn btn-sec" id="evd-analyze">Analyser les rushes</button>
+        <button class="btn btn-sec" id="evd-proxies">Créer les proxies</button>
+        <button class="btn btn-primary" id="evd-filmcraft">Sélection → FilmCraft</button>
+      </div>
+      <div id="evd-job" class="hidden">
+        <div class="bar"><div id="evd-job-fill"></div></div>
+        <p id="evd-job-label" class="tiny"></p>
+        <details class="tech"><summary>Détails techniques</summary><pre id="evd-job-log" class="log"></pre></details>
+      </div>
+      <p id="evd-summary" class="plan-summary"></p>
+    </div>
+  </div>
+
+  <div id="evd-player-box" class="card hidden">
+    <video id="evd-player" controls preload="metadata"></video>
+    <p id="evd-player-label" class="tiny muted"></p>
+  </div>
+
+  <div class="ev-filters" id="evd-filters">
+    <button class="filter active" data-f="all">Tous <span></span></button>
+    <button class="filter" data-f="kept">Gardés <span></span></button>
+    <button class="filter" data-f="out">Écartés <span></span></button>
+    <button class="filter" data-f="new">Non analysés <span></span></button>
+  </div>
+  <div id="evd-clips" class="rush-grid"></div>
+</section>
+
 <main id="view-montage" class="hidden">
   <!-- ============ COLONNE GAUCHE ============ -->
   <section class="col">

@@ -1,6 +1,6 @@
 # PRD — Rexo Studio : dérushage et post-production pour studios photo et vidéo d'événements
 
-**Version du document** : 1.3 — 16 novembre 2026
+**Version du document** : 1.4 — 16 novembre 2026
 **État du code** : Rexo Studio (anciennement MontageIA) fonctionnel sur l'iMac du studio (transcription, plan de coupe
 pour la parole, rendus 16:9 / 9:16, envoi vers FilmCraft, IA locale llama.cpp + Gemma 4 E2B).
 
@@ -10,6 +10,7 @@ pour la parole, rendus 16:9 / 9:16, envoi vers FilmCraft, IA locale llama.cpp + 
 |---|---|
 | 1.0 | Première version : réorientation vers les studios d'événements. |
 | 1.2 | **Un événement = un dossier de projet** (ADR 0001) : `~/RexoStudio/Evenements/AAAA-MM-JJ_Type_Noms/` avec 01_Rushes … 07_Livraison ; types Mariage, Fiançailles, Henné, Anniversaire, Fête. |
+| 1.4 | **M1 dérushage, première version codée** : import vérifié (SHA-256) des cartes, heure de tournage, défauts (noir, sombre, surexposé, flou, tremblé, très court), choix « Garder », proxies, sélection vers FilmCraft. Restent pour M1 : quasi-doublons, plan figé, critères validés par le monteur sur de vrais rushes. |
 | 1.3 | **L'accueil de l'interface = la liste des événements** avec une recherche (noms, lieu, notes, type, date, sans accents) et un filtre par type ; création d'un événement et ouverture de ses dossiers dans le Finder (M0, première version codée). |
 | 1.1 | **Le dérushage et la post-production des vidéos de mariage deviennent le cœur du projet** : dérushage complet (import, proxies, sélection) et post-production (son, stabilisation, couleurs, bruit) en P1 ; le teaser suit ; effets IA ensuite. |
 

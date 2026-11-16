@@ -55,8 +55,10 @@ function escapeHtml(s) {
 async function api(url, options) {
   const res = await fetch(url, options);
   let data = null;
-  try { data = await res.json(); } catch (e) { /* pas de JSON */ }
+  let invalid = false;
+  try { data = await res.json(); } catch (e) { invalid = true; }
   if (!res.ok) throw new Error((data && data.error) || ('Erreur HTTP ' + res.status));
+  if (invalid) throw new Error('Réponse illisible du serveur (' + url.split('?')[0] + ')');
   return data;
 }
 
@@ -812,9 +814,13 @@ async function sendChat() {
 /* ------------------------------------------------------------------ */
 
 function showView(name) {
-  $$('.view-btn').forEach((b) => b.classList.toggle('active', b.dataset.view === name));
+  // La page de derushage d'un evenement fait partie de l'onglet Evenements.
+  const tab = name === 'event' ? 'events' : name;
+  $$('.view-btn').forEach((b) => b.classList.toggle('active', b.dataset.view === tab));
   $('#view-events').classList.toggle('hidden', name !== 'events');
+  $('#view-event').classList.toggle('hidden', name !== 'event');
   $('#view-montage').classList.toggle('hidden', name !== 'montage');
+  if (name !== 'event') $('#evd-player').pause();
   if (name === 'events') loadEvents();
 }
 
@@ -875,8 +881,10 @@ function highlight(text, words) {
   return out + escapeHtml(text.slice(pos));
 }
 
+const PLURALS = { rush: 'rushes', proxy: 'proxies' };
+
 function plural(n, word) {
-  return n + ' ' + word + (n > 1 ? 's' : '');
+  return n + ' ' + (n > 1 ? (PLURALS[word] || word + 's') : word);
 }
 
 function evStats(e) {
@@ -935,7 +943,7 @@ function renderEvents() {
       '<button class="ev-folder" data-id="' + id + '" data-sub="' + escapeHtml(f.name) +
       '" title="Ouvrir ' + escapeHtml(f.name) + ' dans le Finder">' + escapeHtml(f.label) +
       (f.files ? ' <b>' + f.files + '</b>' : '') + '</button>').join('');
-    return '<div class="ev-card">' +
+    return '<div class="ev-card" data-id="' + id + '">' +
       '<div class="ev-head"><span class="ev-date">' + highlight(evDate(e.date).text, words) + '</span>' +
       '<span class="ev-type t-' + escapeHtml(e.type) + '">' + escapeHtml(e.type_label) + '</span></div>' +
       '<p class="ev-names" dir="auto">' + highlight(e.names, words) + '</p>' +
@@ -943,8 +951,9 @@ function renderEvents() {
       (e.notes ? '<p class="ev-notes" dir="auto">' + highlight(e.notes, words) + '</p>' : '') +
       '<div class="ev-stats">' + escapeHtml(evStats(e)) + '</div>' +
       '<div class="ev-folders">' + folders + '</div>' +
-      '<button class="btn btn-sec btn-small ev-open" data-id="' + id +
-      '">📂 Ouvrir le dossier</button>' +
+      '<div class="btn-row ev-actions">' +
+      '<button class="btn btn-primary btn-small ev-derush" data-id="' + id + '">🎬 Dérushage</button>' +
+      '<button class="btn btn-sec btn-small ev-open" data-id="' + id + '">📂 Dossier</button></div>' +
       '</div>';
   }).join('');
 }
@@ -956,6 +965,8 @@ async function openEvent(id, sub) {
 }
 
 $('#ev-list').addEventListener('click', (ev) => {
+  const derush = ev.target.closest('.ev-derush, .ev-names');
+  if (derush) { openDerush(derush.dataset.id || derush.closest('.ev-card').dataset.id); return; }
   const btn = ev.target.closest('.ev-folder, .ev-open');
   if (btn) openEvent(btn.dataset.id, btn.dataset.sub);
 });
@@ -1044,6 +1055,227 @@ $('#ev-form').addEventListener('submit', async (e) => {
     btn.disabled = false;
   }
 });
+
+
+/* ------------------------------------------------------------------ */
+/* Derushage d'un evenement (M1)                                       */
+/* ------------------------------------------------------------------ */
+
+const EVD = { id: '', event: null, clips: [], issues: {}, filter: 'all' };
+
+function fileUrl(path) {
+  return '/api/file?path=' + encodeURIComponent(path);
+}
+
+async function openDerush(id) {
+  EVD.id = id;
+  showView('event');
+  $('#evd-player-box').classList.add('hidden');
+  $('#evd-player').pause();
+  await loadDerush();
+  loadSources();
+}
+
+async function loadDerush() {
+  if (!EVD.id) return;
+  try {
+    const data = await api('/api/events/detail?id=' + encodeURIComponent(EVD.id));
+    EVD.event = data.event;
+    EVD.clips = data.clips || [];
+    EVD.issues = data.issues || {};
+    const e = data.event;
+    $('#evd-type').textContent = e.type_label;
+    $('#evd-type').className = 'ev-type t-' + e.type;
+    $('#evd-names').textContent = e.names;
+    $('#evd-date').textContent = evDate(e.date).text + (e.place ? ' — ' + e.place : '');
+    $('#evd-imports').innerHTML = (data.imports || []).map((i) =>
+      escapeHtml(i.card + ' : ' + i.copied + ' fichier' + (i.copied > 1 ? 's' : '') + ' copié' +
+        (i.copied > 1 ? 's' : '') + ' depuis ' + i.source)).join('<br>');
+    renderDerush();
+  } catch (err) {
+    toast(err.message, true);
+  }
+}
+
+function clipState(c) {
+  if (!c.analyzed) return 'new';
+  return c.kept ? 'kept' : 'out';
+}
+
+function renderDerush() {
+  const clips = EVD.clips;
+  const count = { all: clips.length, kept: 0, out: 0, new: 0 };
+  let keptSeconds = 0;
+  clips.forEach((c) => {
+    count[clipState(c)]++;
+    if (clipState(c) === 'kept') keptSeconds += c.duration || 0;
+  });
+  $$('#evd-filters .filter').forEach((b) => {
+    b.classList.toggle('active', b.dataset.f === EVD.filter);
+    b.querySelector('span').textContent = count[b.dataset.f];
+  });
+  const total = clips.reduce((t, c) => t + (c.duration || 0), 0);
+  $('#evd-summary').textContent = !clips.length
+    ? 'Aucun rush : importez une carte mémoire (ou copiez des vidéos dans 01_Rushes, puis « Analyser »).'
+    : plural(clips.length, 'rush') + ' (' + fmtDuration(total) + ') · ' + count.kept + ' gardé' +
+      (count.kept > 1 ? 's' : '') + ' (' + fmtDuration(keptSeconds) + ') · ' + count.out + ' écarté' +
+      (count.out > 1 ? 's' : '') + (count.new ? ' · ' + count.new + ' à analyser' : '');
+  $('#evd-filmcraft').disabled = !count.kept;
+
+  const shown = clips.filter((c) => EVD.filter === 'all' || clipState(c) === EVD.filter);
+  const box = $('#evd-clips');
+  if (!shown.length) {
+    box.innerHTML = clips.length ? '<p class="empty">Aucun rush dans ce filtre.</p>' : '';
+    return;
+  }
+  box.innerHTML = shown.map((c) => {
+    const st = clipState(c);
+    const issues = !c.analyzed ? '<span class="issue">À analyser</span>'
+      : c.issues.length ? c.issues.map((i) => '<span class="issue">' + escapeHtml(EVD.issues[i] || i) + '</span>').join('')
+        : '<span class="issue ok">Bon</span>';
+    const time = (c.shot_at || '').slice(11, 19);
+    const res = c.height ? (c.height >= 2160 ? '4K' : c.height + 'p') + ' ' + Math.round(c.fps || 0) + ' i/s' : '';
+    const auto = c.keep === null && c.analyzed ? '<span class="auto">(proposé)</span>' : '';
+    return '<div class="rush ' + st + '">' +
+      '<div class="rush-thumb" data-rel="' + escapeHtml(c.rel) + '">' +
+      (c.thumb ? '<img loading="lazy" src="' + fileUrl(c.thumb) + '" alt="">' : '') +
+      '<span class="play">▶</span>' +
+      (c.duration ? '<span class="dur">' + fmtDuration(c.duration) + '</span>' : '') + '</div>' +
+      '<div class="rush-body">' +
+      '<div class="rush-name">' + escapeHtml(c.name) + '</div>' +
+      '<div class="rush-meta">' + escapeHtml([c.card.replace('_', ' '), time, res].filter(Boolean).join(' · ')) + '</div>' +
+      '<div class="rush-issues">' + issues + '</div>' +
+      (c.analyzed ? '<label class="rush-keep"><input type="checkbox" data-rel="' + escapeHtml(c.rel) + '"' +
+        (c.kept ? ' checked' : '') + '> Garder ' + auto + '</label>' : '') +
+      '</div></div>';
+  }).join('');
+}
+
+$('#evd-filters').addEventListener('click', (ev) => {
+  const b = ev.target.closest('.filter');
+  if (!b) return;
+  EVD.filter = b.dataset.f;
+  renderDerush();
+});
+
+$('#evd-clips').addEventListener('click', (ev) => {
+  const thumb = ev.target.closest('.rush-thumb');
+  if (!thumb) return;
+  const c = EVD.clips.find((x) => x.rel === thumb.dataset.rel);
+  if (!c) return;
+  const player = $('#evd-player');
+  player.src = fileUrl(c.proxy || c.path);
+  $('#evd-player-label').textContent = c.name + (c.proxy ? ' (proxy)' : '') + ' — ' + c.rel;
+  $('#evd-player-box').classList.remove('hidden');
+  $('#evd-player-box').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  player.play().catch(() => {});        // lecture auto refusee : le bouton ▶ du lecteur reste
+});
+
+// Format que le navigateur ne sait pas lire (XAVC 4K, HEVC 10 bits, MXF...).
+$('#evd-player').addEventListener('error', () => {
+  if ($('#evd-player').getAttribute('src')) {
+    toast('Lecture impossible dans le navigateur : créez les proxies', true);
+  }
+});
+
+$('#evd-clips').addEventListener('change', async (ev) => {
+  const box = ev.target.closest('input[type=checkbox]');
+  if (!box) return;
+  try {
+    await post('/api/events/keep', { id: EVD.id, rel: box.dataset.rel, keep: box.checked });
+    const c = EVD.clips.find((x) => x.rel === box.dataset.rel);
+    if (c) { c.keep = box.checked; c.kept = box.checked; }
+    renderDerush();
+  } catch (err) {
+    toast(err.message, true);
+    box.checked = !box.checked;
+  }
+});
+
+/* -- traitements de fond -- */
+
+function derushJob(url, body, onDone) {
+  if (S.busy) { toast('Un traitement est déjà en cours', true); return; }
+  S.busy = true;
+  document.body.classList.add('busy');
+  const fill = $('#evd-job-fill');
+  const label = $('#evd-job-label');
+  const log = $('#evd-job-log');
+  const setP = (v, step) => {
+    fill.style.width = Math.round((v || 0) * 100) + '%';
+    label.textContent = (step || '') + ' — ' + Math.round((v || 0) * 100) + ' %';
+  };
+  $('#evd-job').classList.remove('hidden');
+  log.textContent = '';
+  setP(0, 'Démarrage');
+  const finish = () => { S.busy = false; document.body.classList.remove('busy'); loadDerush(); };
+  post(url, Object.assign({ id: EVD.id }, body || {})).then((data) => {
+    const es = new EventSource('/api/jobs/' + data.job_id + '/events');
+    es.onmessage = (m) => {
+      let e;
+      try { e = JSON.parse(m.data); } catch (err) { return; }
+      if (e.type === 'snapshot' && e.job) {
+        setP(e.job.progress, e.job.step);
+        if (e.job.log) log.textContent = e.job.log.join('\n') + '\n';
+      } else if (e.type === 'progress') {
+        setP(e.progress, e.step);
+      } else if (e.type === 'log') {
+        log.textContent += e.message + '\n';
+        log.scrollTop = log.scrollHeight;
+      } else if (e.type === 'done') {
+        setP(1, 'Terminé');
+        es.close();
+        finish();
+        if (onDone) onDone(e.result || {});
+      } else if (e.type === 'error') {
+        log.textContent += 'ERREUR : ' + e.error + '\n';
+        setP(0, 'Échec');
+        toast(e.error, true);
+        es.close();
+        finish();
+      }
+    };
+    es.onerror = () => { es.close(); finish(); };
+  }).catch((err) => { toast(err.message, true); finish(); });
+}
+
+async function loadSources() {
+  const sel = $('#evd-source');
+  sel.innerHTML = '<option value="">Recherche des cartes…</option>';
+  try {
+    const data = await api('/api/sources');
+    const list = data.sources || [];
+    sel.innerHTML = list.length
+      ? list.map((s) => '<option value="' + escapeHtml(s.path) + '">💾 ' + escapeHtml(s.name) + ' — ' +
+          s.videos + ' vidéo' + (s.videos > 1 ? 's' : '') + ', ' + s.photos + ' photo' + (s.photos > 1 ? 's' : '') +
+          ' (' + fmtSize(s.size) + ')</option>').join('')
+      : '<option value="">Aucune carte détectée : branchez-la puis ↻</option>';
+  } catch (err) {
+    sel.innerHTML = '<option value="">' + escapeHtml(err.message) + '</option>';
+  }
+}
+
+$('#evd-refresh').addEventListener('click', loadSources);
+$('#evd-back').addEventListener('click', () => { $('#evd-player').pause(); showView('events'); });
+$('#evd-open').addEventListener('click', () => openEvent(EVD.id, ''));
+
+$('#evd-import').addEventListener('click', () => {
+  const source = $('#evd-path').value.trim() || $('#evd-source').value;
+  if (!source) { toast('Choisissez une carte ou indiquez un dossier', true); return; }
+  derushJob('/api/events/import', { source: source }, (r) => {
+    if (!r.copied) { toast('Rien de nouveau : cette carte est déjà importée'); return; }
+    toast(r.copied + ' fichier' + (r.copied > 1 ? 's' : '') + ' copié' + (r.copied > 1 ? 's' : '') +
+      ' et vérifié' + (r.copied > 1 ? 's' : '') + ' dans ' + r.card);
+    $('#evd-path').value = '';
+  });
+});
+$('#evd-analyze').addEventListener('click', () => derushJob('/api/events/analyze', {}, (r) =>
+  toast(r.analyzed + ' rush' + (r.analyzed > 1 ? 's' : '') + ' analysé' + (r.analyzed > 1 ? 's' : '') +
+    ', ' + r.issues + ' avec un défaut')));
+$('#evd-proxies').addEventListener('click', () => derushJob('/api/events/proxies', {}, (r) =>
+  toast(plural(r.made, 'proxy') + ' créé' + (r.made > 1 ? 's' : ''))));
+$('#evd-filmcraft').addEventListener('click', () => derushJob('/api/events/filmcraft', {}, (r) =>
+  toast('Sélection ouverte dans FilmCraft : ' + r.clips + ' rushes, ' + fmtDuration(r.duration))));
 
 /* ------------------------------------------------------------------ */
 

@@ -20,7 +20,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from montagia import ai, config, events, filmcraft, media, pipeline, project, tools, transcribe  # noqa: E402
+from montagia import (ai, config, events, filmcraft, media, pipeline, project,  # noqa: E402
+                      rushes, tools, transcribe)
 from montagia.jobs import MANAGER  # noqa: E402
 
 MAX_BODY = config.MAX_UPLOAD_BYTES
@@ -94,6 +95,13 @@ def _do_plan(j, proj, data: dict) -> dict:
     proj.results["plan_rationale"] = result.get("rationale", "")
     proj.results["plan_decisions"] = result.get("decisions", [])
     proj.results["plan_style"] = result.get("style", "")
+    return result
+
+
+def _do_import(job, event_dir: str, data: dict) -> dict:
+    """Copie verifiee d'une carte, puis analyse des nouveaux rushes."""
+    result = rushes.import_card(event_dir, str(data.get("source") or ""), _Stage(job, 0.0, 0.8))
+    result["analysis"] = rushes.analyze(event_dir, _Stage(job, 0.8, 1.0))
     return result
 
 
@@ -245,6 +253,10 @@ class StudioHandler(BaseHTTPRequestHandler):
                 return self._api_status()
             if route == "/api/events":
                 return self._api_events()
+            if route == "/api/events/detail":
+                return self._api_event_detail(query)
+            if route == "/api/sources":
+                return self._json({"sources": rushes.list_sources()})
             if route == "/api/projects":
                 return self._json({"projects": project.STORE.list()})
             if route == "/api/project":
@@ -289,6 +301,19 @@ class StudioHandler(BaseHTTPRequestHandler):
                 return self._api_event_create()
             if route == "/api/events/open":
                 return self._api_event_open()
+            if route == "/api/events/import":
+                return self._event_job("import", "Import de carte", _do_import)
+            if route == "/api/events/analyze":
+                return self._event_job("rushes", "Analyse des rushes",
+                                       lambda j, d, data: rushes.analyze(d, j, bool(data.get("force"))))
+            if route == "/api/events/proxies":
+                return self._event_job("proxies", "Proxies",
+                                       lambda j, d, _data: rushes.make_proxies(d, j))
+            if route == "/api/events/filmcraft":
+                return self._event_job("filmcraft", "Sélection vers FilmCraft",
+                                       lambda j, d, _data: rushes.send_to_filmcraft(d, j))
+            if route == "/api/events/keep":
+                return self._api_event_keep()
             if route == "/api/project/delete":
                 return self._api_project_delete()
             if route == "/api/quit":
@@ -338,7 +363,8 @@ class StudioHandler(BaseHTTPRequestHandler):
         if not target:
             return self._error("Chemin manquant")
         target = os.path.abspath(target)
-        if not tools.is_within(config.WORKSPACE, target):
+        if not (tools.is_within(config.WORKSPACE, target)
+                or tools.is_within(config.EVENTS_DIR, target)):
             return self._error("Accès refusé (hors espace de travail)", 403)
         if not os.path.isfile(target):
             return self._error("Fichier introuvable", 404)
@@ -757,6 +783,44 @@ class StudioHandler(BaseHTTPRequestHandler):
             return self._error(exc, 404)
         subprocess.Popen(["open", path])
         return self._json({"ok": True})
+
+    @staticmethod
+    def _event_dir(event_id) -> str:
+        return events.event_path(config.EVENTS_DIR, str(event_id or ""))
+
+    def _api_event_detail(self, query):
+        event_id = (query.get("id") or [""])[0]
+        try:
+            event_dir = self._event_dir(event_id)
+        except events.EventError as exc:
+            return self._error(exc, 404)
+        state = rushes.load_state(event_dir)
+        return self._json({
+            "event": events.summary(config.EVENTS_DIR, event_id),
+            "clips": rushes.clip_list(event_dir),
+            "issues": rushes.ISSUES,
+            "imports": state.get("imports", []),
+        })
+
+    def _event_job(self, kind: str, title: str, func):
+        """Traitement de fond sur un evenement : func(job, dossier, donnees)."""
+        data = self._body_json()
+        try:
+            event_dir = self._event_dir(data.get("id"))
+        except events.EventError as exc:
+            return self._error(exc, 404)
+        job = MANAGER.create(kind, "%s : %s" % (title, os.path.basename(event_dir)))
+        MANAGER.run_async(job, lambda j: func(j, event_dir, data))
+        return self._json({"job_id": job.id})
+
+    def _api_event_keep(self):
+        data = self._body_json()
+        try:
+            event_dir = self._event_dir(data.get("id"))
+            clip = rushes.set_keep(event_dir, str(data.get("rel") or ""), data.get("keep"))
+        except (events.EventError, rushes.RushError) as exc:
+            return self._error(exc, 404)
+        return self._json({"keep": clip.get("keep"), "kept": rushes.is_kept(clip)})
 
     # -- jobs --------------------------------------------------------------
     def _job_status(self, job_id):
