@@ -7,13 +7,15 @@
 Dernier argument facultatif « image » : rend une seule image (au milieu du mouvement)
 en JPEG, pour mesurer ou previsualiser rapidement.
 """
-import math
 import os
 import sys
 import time
 
 import bpy
 import numpy as np
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from drone_paths import animate_camera, apply_quality  # noqa: E402
 
 argv = sys.argv[sys.argv.index("--") + 1:]
 couple_png, out_path = argv[0], argv[1]
@@ -51,42 +53,10 @@ for loop in couple.data.loops:
     co = couple.data.vertices[loop.vertex_index].co
     uv[loop.index].uv = (u1 if co.x > 0 else u0, v1 if co.z > height / 2 else v0)
 
-# Mouvements de drone : points de passage (angle depuis l'avant en degres, distance m,
-# hauteur m) ; rotation limitee a +-40 degres (la photo reste credible)
-PATHS = {
-    "approche": [(-8, 14, 7), (0, 4.2, 1.6)],
-    "orbite": [(-38, 4.6, 1.7), (38, 4.6, 1.7)],
-    "envol": [(0, 3.6, 1.4), (12, 10, 6)],
-    "spirale": [(-40, 11, 6), (0, 7, 3.5), (35, 4.2, 1.6)],
-    "sequence": [(-10, 15, 8), (0, 4.4, 1.7), (35, 4.4, 1.6), (15, 10, 6)],
-}
-cam = scene.camera
-points = PATHS.get(motion, PATHS["sequence"])
-scene.frame_start, scene.frame_end = 1, frames
-for i, (ang, dist, z) in enumerate(points):
-    f = 1 + round(i * (frames - 1) / (len(points) - 1))
-    a = math.radians(ang)
-    cam.location = (dist * math.sin(a), -dist * math.cos(a), z)
-    cam.keyframe_insert("location", frame=f)
-for fc in cam.animation_data.action.fcurves:
-    for kp in fc.keyframe_points:
-        kp.interpolation = "BEZIER"
-        kp.handle_left_type = kp.handle_right_type = "AUTO_CLAMPED"
-
-# Qualite : ce qui coute le plus cher sur l'Iris Pro de l'iMac
+# Mouvement de drone et qualite (communs avec export_generic.py)
+animate_camera(scene, motion, seconds, fps)
 ev = scene.eevee
-# Le flou de mise au point d'EEVEE domine sur l'iMac (3 s/image avec, 1,1 s sans en
-# brouillon, mesure du 16/11/2026) et ne se voyait pas sur ce decor : il est reserve
-# a la qualite « fin ». Un flou d'arriere-plan moins cher viendra avec les vrais decors.
-QUALITY = {
-    "brouillon": {"samples": 8, "ssr": False, "soft": False, "gtao": False, "dof": False},
-    "normal": {"samples": 16, "ssr": False, "soft": True, "gtao": True, "dof": False},
-    "fin": {"samples": 32, "ssr": True, "soft": True, "gtao": True, "dof": True},
-}
-q = QUALITY.get(quality, QUALITY["normal"])
-ev.taa_render_samples = q["samples"]
-ev.use_ssr, ev.use_soft_shadows, ev.use_gtao = q["ssr"], q["soft"], q["gtao"]
-scene.camera.data.dof.use_dof = q["dof"]
+apply_quality(scene, quality)
 # Diagnostic des temps : REXO_BLENDER_SANS="flou,halo,ombres,ombre_maries" coupe ces postes
 off = set(filter(None, os.environ.get("REXO_BLENDER_SANS", "").split(",")))
 if "flou" in off:
