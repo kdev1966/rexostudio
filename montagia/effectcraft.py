@@ -417,6 +417,9 @@ def assemble(client: Client, parts: list, out: str, size: tuple = (1920, 1080), 
 MATTE_MODEL = "sam2.1-hiera-tiny"
 MATTE_MAX_FRAMES = 600            # limite d'Object Matte par suivi
 MATTE_STALL = 120                 # s sans nouvelle image : le suivi est fige
+# Le premier suivi prepare d'abord SAM 2 sur la carte graphique : environ 50 s a 0 %
+# sur le MacBook (mesure du 16/11/2026), davantage sur l'iMac
+MATTE_WARMUP = 300
 
 
 def matte_ready(client: Client) -> bool:
@@ -471,7 +474,8 @@ def detour_video(client: Client, video: str, point: tuple, start: float, duratio
             progress(min(1.0, computed / float(frames + 1)) * 0.7)
         if not st.get("running") and not st.get("pending"):
             break
-        if time.time() > deadline or time.time() - last_change > MATTE_STALL:
+        patience = MATTE_WARMUP if computed == 0 else MATTE_STALL
+        if time.time() > deadline or time.time() - last_change > patience:
             client.execute("jobs.cancel", {"job": "all"})
             raise EffectCraftError("Le suivi n'avance plus (%d images sur %d) : arrêté ; relancez le détourage"
                                    % (computed, frames + 1))
