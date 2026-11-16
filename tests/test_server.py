@@ -5,6 +5,7 @@ Lance un vrai serveur sur un port libre (aucun appel a Ollama ni ffmpeg).
 import http.client
 import json
 import os
+import shutil
 import socket
 import tempfile
 import sys
@@ -313,6 +314,31 @@ class ServerTest(unittest.TestCase):
         self.assertTrue(os.path.exists(outside))       # hors du dossier des videos
         self.assertIsNone(project.STORE.get(a.id))
         os.remove(outside)
+
+    def test_events_create_list_open(self):
+        root = tempfile.mkdtemp(prefix="rexo-events-")
+        self.addCleanup(shutil.rmtree, root, True)
+        with mock.patch.object(app.config, "EVENTS_DIR", root), \
+                mock.patch.object(app.subprocess, "Popen") as popen:
+            status, body = self.request("POST", "/api/events/create", {
+                "type": "Mariage", "date": "2026-11-22", "names": "Sarra et Ahmed"})
+            self.assertEqual(status, 200, body)
+            event_id = json.loads(body)["id"]
+            status, body = self.request("GET", "/api/events")
+            data = json.loads(body)
+            self.assertEqual([e["id"] for e in data["events"]], [event_id])
+            self.assertIn("Fiançailles", [t["label"] for t in data["types"]])
+            status, _ = self.request("POST", "/api/events/open",
+                                     {"id": event_id, "sub": "01_Rushes"})
+            self.assertEqual(status, 200)
+            popen.assert_called_once_with(["open", os.path.join(root, event_id, "01_Rushes")])
+            status, _ = self.request("POST", "/api/events/open", {"id": "../..", "sub": ""})
+            self.assertEqual(status, 404)
+            status, body = self.request("POST", "/api/events/create", {
+                "type": "Mariage", "date": "demain", "names": "X"})
+            self.assertEqual(status, 400)
+            self.assertIn("Date invalide", body)
+            self.assertEqual(popen.call_count, 1)
 
     def test_quit_unloads_model_then_stops(self):
         stopped = threading.Event()

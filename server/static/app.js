@@ -640,9 +640,9 @@ function renderPlan() {
   highlightPlaying();
 }
 
-$$('.filter').forEach((b) => b.addEventListener('click', () => {
+$$('#passages-box .filter').forEach((b) => b.addEventListener('click', () => {
   S.filter = b.dataset.filter;
-  $$('.filter').forEach((x) => x.classList.toggle('active', x === b));
+  $$('#passages-box .filter').forEach((x) => x.classList.toggle('active', x === b));
   renderPlan();
 }));
 
@@ -806,10 +806,250 @@ async function sendChat() {
   }
 }
 
+
+/* ------------------------------------------------------------------ */
+/* Vues : Evenements (accueil) / Montage video                         */
+/* ------------------------------------------------------------------ */
+
+function showView(name) {
+  $$('.view-btn').forEach((b) => b.classList.toggle('active', b.dataset.view === name));
+  $('#view-events').classList.toggle('hidden', name !== 'events');
+  $('#view-montage').classList.toggle('hidden', name !== 'montage');
+  if (name === 'events') loadEvents();
+}
+
+$$('.view-btn').forEach((b) => b.addEventListener('click', () => showView(b.dataset.view)));
+
+/* ------------------------------------------------------------------ */
+/* Evenements : un evenement = un dossier (docs/adr/0001)              */
+/* ------------------------------------------------------------------ */
+
+const EV = { items: [], types: [], type: '', root: '' };
+const MONTHS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août',
+  'septembre', 'octobre', 'novembre', 'décembre'];
+const DAYS = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];
+
+// Recherche sans accents ni majuscules : "henne" trouve "Henné", "fevrier" trouve "février".
+function fold(s) {
+  return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+}
+
+function evDate(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || '');
+  if (!m) return { text: iso || '', words: '' };
+  const d = new Date(+m[1], +m[2] - 1, +m[3]);
+  const text = DAYS[d.getDay()] + ' ' + (+m[3]) + ' ' + MONTHS[+m[2] - 1] + ' ' + m[1];
+  return { text: text, words: text + ' ' + m[3] + '/' + m[2] + '/' + m[1] };
+}
+
+function evHaystack(e) {
+  return fold([e.names, e.place, e.notes, e.type_label, e.type, e.date, evDate(e.date).words, e.id]
+    .join(' '));
+}
+
+function evMatches(e, words) {
+  if (EV.type && e.type !== EV.type) return false;
+  const hay = evHaystack(e);
+  return words.every((w) => hay.includes(w));
+}
+
+// Surligne les mots cherches (comparaison sans accents).
+function highlight(text, words) {
+  text = String(text || '');
+  const folded = fold(text);
+  // NFD peut changer la longueur (lettres composees) : pas de surlignage alors.
+  if (!words.length || folded.length !== text.length) return escapeHtml(text);
+  const marks = [];
+  words.forEach((w) => {
+    let i = folded.indexOf(w);
+    while (i >= 0) { marks.push([i, i + w.length]); i = folded.indexOf(w, i + w.length); }
+  });
+  marks.sort((a, b) => a[0] - b[0]);
+  let out = '';
+  let pos = 0;
+  marks.forEach(([a, b]) => {
+    if (a < pos) return;
+    out += escapeHtml(text.slice(pos, a)) + '<mark>' + escapeHtml(text.slice(a, b)) + '</mark>';
+    pos = b;
+  });
+  return out + escapeHtml(text.slice(pos));
+}
+
+function plural(n, word) {
+  return n + ' ' + word + (n > 1 ? 's' : '');
+}
+
+function evStats(e) {
+  const files = {};
+  (e.folders || []).forEach((f) => { files[f.name] = f.files; });
+  const parts = [
+    plural(files['01_Rushes'] || 0, 'rush'),
+    plural(files['02_Photos'] || 0, 'photo'),
+    plural(files['06_Rendus'] || 0, 'rendu'),
+  ];
+  if (files['07_Livraison']) parts.push('livré');
+  return parts.join(' · ') + (e.size ? ' — ' + fmtSize(e.size) : '');
+}
+
+function renderEventTypes() {
+  const counts = {};
+  EV.items.forEach((e) => { counts[e.type] = (counts[e.type] || 0) + 1; });
+  const chips = [{ key: '', label: 'Tous', n: EV.items.length }]
+    .concat(EV.types.map((t) => ({ key: t.key, label: t.label, n: counts[t.key] || 0 })));
+  $('#ev-types').innerHTML = chips.map((c) =>
+    '<button class="filter' + (EV.type === c.key ? ' active' : '') + '" data-type="' +
+    escapeHtml(c.key) + '">' + escapeHtml(c.label) + ' <span class="muted">' + c.n + '</span></button>'
+  ).join('');
+}
+
+$('#ev-types').addEventListener('click', (ev) => {
+  const b = ev.target.closest('.filter');
+  if (!b) return;
+  EV.type = b.dataset.type;
+  renderEventTypes();
+  renderEvents();
+});
+
+function renderEvents() {
+  const q = $('#ev-search').value;
+  const words = fold(q).split(/\s+/).filter(Boolean);
+  const shown = EV.items.filter((e) => evMatches(e, words));
+  const list = $('#ev-list');
+  if (!EV.items.length) {
+    $('#ev-count').textContent = '';
+    list.innerHTML = '<p class="empty">Aucun événement pour l’instant. Cliquez sur ' +
+      '« Nouvel événement » pour créer le dossier du premier.</p>';
+    return;
+  }
+  $('#ev-count').textContent = shown.length === EV.items.length
+    ? plural(EV.items.length, 'événement')
+    : shown.length + ' sur ' + plural(EV.items.length, 'événement');
+  if (!shown.length) {
+    list.innerHTML = '<p class="empty">Aucun événement ne correspond' +
+      (q.trim() ? ' à « ' + escapeHtml(q.trim()) + ' »' : '') + '.</p>';
+    return;
+  }
+  list.innerHTML = shown.map((e) => {
+    const id = escapeHtml(e.id);
+    const folders = (e.folders || []).map((f) =>
+      '<button class="ev-folder" data-id="' + id + '" data-sub="' + escapeHtml(f.name) +
+      '" title="Ouvrir ' + escapeHtml(f.name) + ' dans le Finder">' + escapeHtml(f.label) +
+      (f.files ? ' <b>' + f.files + '</b>' : '') + '</button>').join('');
+    return '<div class="ev-card">' +
+      '<div class="ev-head"><span class="ev-date">' + highlight(evDate(e.date).text, words) + '</span>' +
+      '<span class="ev-type t-' + escapeHtml(e.type) + '">' + escapeHtml(e.type_label) + '</span></div>' +
+      '<p class="ev-names" dir="auto">' + highlight(e.names, words) + '</p>' +
+      (e.place ? '<p class="ev-place" dir="auto">📍 ' + highlight(e.place, words) + '</p>' : '') +
+      (e.notes ? '<p class="ev-notes" dir="auto">' + highlight(e.notes, words) + '</p>' : '') +
+      '<div class="ev-stats">' + escapeHtml(evStats(e)) + '</div>' +
+      '<div class="ev-folders">' + folders + '</div>' +
+      '<button class="btn btn-sec btn-small ev-open" data-id="' + id +
+      '">📂 Ouvrir le dossier</button>' +
+      '</div>';
+  }).join('');
+}
+
+async function openEvent(id, sub) {
+  try {
+    await post('/api/events/open', { id: id, sub: sub || '' });
+  } catch (e) { toast(e.message, true); }
+}
+
+$('#ev-list').addEventListener('click', (ev) => {
+  const btn = ev.target.closest('.ev-folder, .ev-open');
+  if (btn) openEvent(btn.dataset.id, btn.dataset.sub);
+});
+
+async function loadEvents() {
+  try {
+    const data = await api('/api/events');
+    EV.items = data.events || [];
+    EV.types = data.types || [];
+    EV.root = data.root || '';
+    if (!$('#ev-type').options.length) {
+      $('#ev-type').innerHTML = EV.types.map((t) =>
+        '<option value="' + escapeHtml(t.key) + '">' + escapeHtml(t.label) + '</option>').join('');
+    }
+    $('#ev-root').textContent = 'Dossiers rangés dans ' + EV.root;
+    renderEventTypes();
+    renderEvents();
+  } catch (e) {
+    $('#ev-list').innerHTML = '<p class="empty">' + escapeHtml(e.message) + '</p>';
+  }
+}
+
+$('#ev-search').addEventListener('input', renderEvents);
+$('#ev-search').addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') { e.target.value = ''; renderEvents(); }
+});
+
+/* -- creation -- */
+
+// Meme nettoyage que montagia/events.clean_names (apercu seulement :
+// le serveur fait foi et ajoute _2, _3 si le dossier existe deja).
+function cleanNames(text) {
+  return String(text || '').normalize('NFC').replace(/&/g, ' et ')
+    .replace(/[\\/:*?"<>|\u0000-\u001f\u007f]/g, ' ').trim().replace(/\s+/g, '-')
+    .replace(/-{2,}/g, '-').replace(/^[-.]+|[-.]+$/g, '').slice(0, 60).replace(/[-.]+$/, '');
+}
+
+function folderPreview() {
+  const names = cleanNames($('#ev-names').value);
+  const date = $('#ev-date').value;
+  $('#ev-folder-preview').textContent = names && date
+    ? date + '_' + $('#ev-type').value + '_' + names : '—';
+}
+
+function todayIso() {
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' +
+    String(d.getDate()).padStart(2, '0');
+}
+
+function showEventForm(show) {
+  $('#ev-form').classList.toggle('hidden', !show);
+  if (show) {
+    if (!$('#ev-date').value) $('#ev-date').value = todayIso();
+    folderPreview();
+    $('#ev-names').focus();
+  }
+}
+
+$('#btn-ev-new').addEventListener('click', () =>
+  showEventForm($('#ev-form').classList.contains('hidden')));
+$('#btn-ev-cancel').addEventListener('click', () => showEventForm(false));
+['#ev-names', '#ev-date', '#ev-type'].forEach((sel) => {
+  $(sel).addEventListener('input', folderPreview);
+  $(sel).addEventListener('change', folderPreview);
+});
+
+$('#ev-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const btn = $('#btn-ev-create');
+  btn.disabled = true;
+  try {
+    const ev = await post('/api/events/create', {
+      type: $('#ev-type').value, date: $('#ev-date').value, names: $('#ev-names').value,
+      place: $('#ev-place').value, notes: $('#ev-notes').value,
+    });
+    ['#ev-names', '#ev-place', '#ev-notes'].forEach((sel) => { $(sel).value = ''; });
+    showEventForm(false);
+    $('#ev-search').value = '';
+    EV.type = '';
+    await loadEvents();
+    toast('Dossier créé : ' + ev.id);
+  } catch (err) {
+    toast(err.message, true);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
 /* ------------------------------------------------------------------ */
 
 loadStatus();
 setInterval(loadStatus, 15000);
+loadEvents();
 renderPlan();
 loadProjects().then(() => {
   const id = lastProject();

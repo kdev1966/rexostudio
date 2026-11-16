@@ -1,6 +1,6 @@
 # PRD — Rexo Studio : dérushage et post-production pour studios photo et vidéo d'événements
 
-**Version du document** : 1.2 — 16 novembre 2026
+**Version du document** : 1.3 — 16 novembre 2026
 **État du code** : Rexo Studio (anciennement MontageIA) fonctionnel sur l'iMac du studio (transcription, plan de coupe
 pour la parole, rendus 16:9 / 9:16, envoi vers FilmCraft, IA locale llama.cpp + Gemma 4 E2B).
 
@@ -10,6 +10,7 @@ pour la parole, rendus 16:9 / 9:16, envoi vers FilmCraft, IA locale llama.cpp + 
 |---|---|
 | 1.0 | Première version : réorientation vers les studios d'événements. |
 | 1.2 | **Un événement = un dossier de projet** (ADR 0001) : `~/RexoStudio/Evenements/AAAA-MM-JJ_Type_Noms/` avec 01_Rushes … 07_Livraison ; types Mariage, Fiançailles, Henné, Anniversaire, Fête. |
+| 1.3 | **L'accueil de l'interface = la liste des événements** avec une recherche (noms, lieu, notes, type, date, sans accents) et un filtre par type ; création d'un événement et ouverture de ses dossiers dans le Finder (M0, première version codée). |
 | 1.1 | **Le dérushage et la post-production des vidéos de mariage deviennent le cœur du projet** : dérushage complet (import, proxies, sélection) et post-production (son, stabilisation, couleurs, bruit) en P1 ; le teaser suit ; effets IA ensuite. |
 
 ---
@@ -81,7 +82,7 @@ Priorités : **P1** indispensable au premier lot ; **P2** ensuite ; **P3** maint
 
 | Module | Priorité | Ce que voit le monteur |
 |---|---|---|
-| **M0 — Événements** | **P1** | Créer un événement (type, date, noms, lieu) : son dossier et ses sous-dossiers sont créés ; liste des événements ; ouvrir le dossier dans le Finder ; archiver (déplacer vers un disque) ; libérer la place des proxies après livraison. |
+| **M0 — Événements** | **P1** | **Page d'accueil** : les dossiers d'événements en cartes, avec une **recherche** (noms, lieu, notes, type, date ou mois) et un filtre par type. Créer un événement (type, date, noms, lieu) : son dossier et ses sous-dossiers sont créés ; ouvrir le dossier dans le Finder ; archiver (déplacer vers un disque) ; libérer la place des proxies après livraison. |
 | **M1 — Dérushage** | **P1** | **Import** du dossier de la carte mémoire dans `01_Rushes/Carte_n/` (copie vérifiée, rushes jamais modifiés) ; **classement par heure de tournage** ; **note de qualité** par plan (flou, tremblé, trop sombre / brûlé, plan noir ou figé, trop court) ; **doublons et quasi-doublons** repérés ; **sélection** : à garder / à vérifier / à écarter (jamais supprimé) ; **proxies** (copies allégées) pour un montage fluide sur l'iMac ; envoi de la sélection classée dans FilmCraft, avec marqueurs. |
 | **M2 — Moments forts** | **P1** | Moments notés et écoutables (▶) : youyous, applaudissements et cris de joie, départ de musique, mouvement intense (danse, cortège), discours ; chapitres de l'événement (préparatifs, entrée, cérémonie, gâteau, danse). Ils guident le dérushage, le teaser et le film complet. |
 | **M3 — Post-production** | **P1** | **Son** : volume égalisé, musique baissée sous les discours, réduction du bruit (vent, brouhaha). **Image** : stabilisation des plans tremblés, couleurs harmonisées d'un plan à l'autre (exposition, balance des blancs), correction du scintillement des éclairages de salle, réduction du bruit des plans de soirée, « looks » couleur. Appliqué plan par plan ou sur toute la sélection, avec aperçu avant / après. |

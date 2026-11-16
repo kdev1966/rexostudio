@@ -20,11 +20,14 @@ MEDIA_DIR = os.path.join(WORKSPACE, "media")
 PROJECTS_DIR = os.path.join(WORKSPACE, "projects")
 EXPORTS_DIR = os.path.join(WORKSPACE, "exports")
 CACHE_DIR = os.path.join(WORKSPACE, "cache")
+# Un evenement = un dossier (docs/adr/0001) ; REXO_EVENTS_DIR pour une autre racine.
+EVENTS_DIR = os.environ.get("REXO_EVENTS_DIR") or os.path.join(PROJECT_DIR, "Evenements")
 MODELS_DIR = os.path.join(PROJECT_DIR, "models")
 BIN_DIR = os.path.join(PROJECT_DIR, "bin")
 STATIC_DIR = os.path.join(PROJECT_DIR, "server", "static")
 
-ALL_DIRS = [WORKSPACE, MEDIA_DIR, PROJECTS_DIR, EXPORTS_DIR, CACHE_DIR, MODELS_DIR, BIN_DIR]
+ALL_DIRS = [WORKSPACE, MEDIA_DIR, PROJECTS_DIR, EXPORTS_DIR, CACHE_DIR, MODELS_DIR, BIN_DIR,
+            EVENTS_DIR]
 
 
 def ensure_dirs() -> None:

@@ -20,7 +20,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from montagia import ai, config, filmcraft, media, pipeline, project, tools, transcribe  # noqa: E402
+from montagia import ai, config, events, filmcraft, media, pipeline, project, tools, transcribe  # noqa: E402
 from montagia.jobs import MANAGER  # noqa: E402
 
 MAX_BODY = config.MAX_UPLOAD_BYTES
@@ -243,6 +243,8 @@ class StudioHandler(BaseHTTPRequestHandler):
                 return self._serve_static(route[len("/static/"):])
             if route == "/api/status":
                 return self._api_status()
+            if route == "/api/events":
+                return self._api_events()
             if route == "/api/projects":
                 return self._json({"projects": project.STORE.list()})
             if route == "/api/project":
@@ -283,6 +285,10 @@ class StudioHandler(BaseHTTPRequestHandler):
                 return self._api_plan()
             if route == "/api/prepare":
                 return self._api_prepare()
+            if route == "/api/events/create":
+                return self._api_event_create()
+            if route == "/api/events/open":
+                return self._api_event_open()
             if route == "/api/project/delete":
                 return self._api_project_delete()
             if route == "/api/quit":
@@ -724,6 +730,34 @@ class StudioHandler(BaseHTTPRequestHandler):
         subprocess.Popen(["open", path])
         return self._json({"ok": True})
 
+    # -- evenements --------------------------------------------------------
+    def _api_events(self):
+        return self._json({
+            "root": config.EVENTS_DIR,
+            "types": [{"key": k, "label": v} for k, v in events.TYPES],
+            "events": events.list_events(config.EVENTS_DIR),
+        })
+
+    def _api_event_create(self):
+        data = self._body_json()
+        try:
+            event = events.create(config.EVENTS_DIR, data.get("type", ""), data.get("date", ""),
+                                  data.get("names", ""), data.get("place", ""),
+                                  data.get("notes", ""))
+        except events.EventError as exc:
+            return self._error(exc)
+        return self._json(event)
+
+    def _api_event_open(self):
+        """Ouvre l'evenement (ou un de ses sous-dossiers) dans le Finder."""
+        data = self._body_json()
+        try:
+            path = events.event_path(config.EVENTS_DIR, data.get("id", ""), data.get("sub", ""))
+        except events.EventError as exc:
+            return self._error(exc, 404)
+        subprocess.Popen(["open", path])
+        return self._json({"ok": True})
+
     # -- jobs --------------------------------------------------------------
     def _job_status(self, job_id):
         job = MANAGER.get(job_id)
@@ -782,6 +816,8 @@ def main():
     print("  whisper.cpp : %s" % (config.whisper_bin() or "INTROUVABLE"))
     print("  FilmCraft   : %s" % ("installe" if filmcraft.installed() else "absent"))
     print("  Espace      : %s" % config.WORKSPACE)
+    print("  Evenements  : %s (%d)" % (config.EVENTS_DIR,
+                                     len(events.list_events(config.EVENTS_DIR))))
     print("  Projets     : %d repris du disque" % restored)
     print("  " + "-" * 62)
     print("  Ctrl+C pour arreter.")

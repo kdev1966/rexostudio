@@ -54,7 +54,16 @@ mémoire et arrête le serveur. Journal : `~/Library/Logs/RexoStudio.log`.
 
 Sans l'icône : `./start.sh` (ouvre `http://127.0.0.1:8080`, Ctrl+C pour arrêter).
 
-Le parcours :
+**L'accueil, ce sont les événements** (onglet « Événements ») : un dossier par mariage,
+henné, fiançailles, anniversaire ou fête, rangé dans `~/RexoStudio/Evenements/`
+(`REXO_EVENTS_DIR` pour une autre racine). La barre de recherche filtre en direct sur les
+noms, le lieu, les notes, le type et la date (« novembre », « 2026-07 », « henne » sans
+accent) ; les puces filtrent par type. « Nouvel événement » crée le dossier
+`AAAA-MM-JJ_Type_Noms` et ses sous-dossiers (`01_Rushes` … `07_Livraison`, voir
+`docs/adr/0001-evenement-dossier.md`) ; chaque carte ouvre l'événement ou un sous-dossier dans
+le Finder. Les dossiers des clients ne sont jamais versionnés (`.gitignore`).
+
+L'onglet **Montage vidéo** garde le parcours d'une vidéo parlée :
 
 1. **Vidéo** — déposez votre rush (une vidéo déjà importée rouvre son projet).
 2. **Préparer le montage** — un seul bouton : analyse, transcription (Whisper), puis plan de

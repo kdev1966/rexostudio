@@ -16,13 +16,55 @@
       <p>Dérushage et post-production assistés par IA — tout reste sur cet ordinateur</p>
     </div>
   </div>
+  <nav class="views">
+    <button class="view-btn active" data-view="events">📁 Événements</button>
+    <button class="view-btn" data-view="montage">🎞 Montage vidéo</button>
+  </nav>
   <div class="header-right">
     <div id="status-bar" class="status-bar"></div>
     <button class="btn btn-quit" id="btn-quit" title="Arrêter Rexo Studio et libérer la mémoire">⏻ Quitter</button>
   </div>
 </header>
 
-<main>
+<!-- ============ EVENEMENTS (accueil) ============ -->
+<section id="view-events" class="events-view">
+  <div class="ev-toolbar">
+    <div class="ev-search">
+      <span class="ev-search-icon">🔍</span>
+      <input type="search" id="ev-search" autocomplete="off"
+             placeholder="Rechercher : noms, lieu, date, mois, type…">
+    </div>
+    <button class="btn btn-primary" id="btn-ev-new">＋ Nouvel événement</button>
+  </div>
+  <div class="ev-filters" id="ev-types"></div>
+
+  <form id="ev-form" class="card ev-form hidden" autocomplete="off">
+    <h2>Nouvel événement</h2>
+    <div class="row">
+      <label class="field"><span>Type</span><select id="ev-type"></select></label>
+      <label class="field"><span>Date</span><input type="date" id="ev-date" required></label>
+    </div>
+    <label class="field"><span>Noms</span>
+      <input type="text" id="ev-names" dir="auto" placeholder="ex : Sarra et Ahmed" required></label>
+    <div class="row">
+      <label class="field"><span>Lieu (facultatif)</span>
+        <input type="text" id="ev-place" dir="auto" placeholder="ex : Salle des fêtes, Sousse"></label>
+      <label class="field"><span>Notes (facultatif)</span>
+        <input type="text" id="ev-notes" dir="auto" placeholder="ex : 2 cartes, drone, livraison avant le 15"></label>
+    </div>
+    <p class="tiny muted">Dossier créé : <b id="ev-folder-preview">—</b></p>
+    <div class="btn-row">
+      <button type="button" class="btn btn-sec" id="btn-ev-cancel">Annuler</button>
+      <button type="submit" class="btn btn-primary" id="btn-ev-create">Créer le dossier</button>
+    </div>
+  </form>
+
+  <p id="ev-count" class="tiny muted ev-count"></p>
+  <div id="ev-list" class="ev-grid"></div>
+  <p id="ev-root" class="tiny muted ev-root"></p>
+</section>
+
+<main id="view-montage" class="hidden">
   <!-- ============ COLONNE GAUCHE ============ -->
   <section class="col">
 
