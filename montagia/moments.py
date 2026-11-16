@@ -7,7 +7,8 @@ de quelques secondes notees sur la qualite de l'image :
     stabilite (tremblement)       camera posee ou mouvement regulier
     exposition (luminance)        ni sombre ni brule
 La meilleure fenetre de chaque rush est ensuite verifiee par Apple Vision (place des
-personnes dans l'image) : un mariage se raconte par ses gens. On garde les meilleurs
+personnes dans l'image : masque des personnes, ou silhouettes pour une mariee voilee
+vue de dos) : un mariage se raconte par ses gens. On garde les meilleurs
 moments, un par rush, dans l'ordre du tournage ; EffectCraft les enchaine ensuite.
 
 Resultat dans <evenement>/.rexo/moments.json (chemins relatifs a l'evenement).
@@ -98,7 +99,12 @@ def people_share(path: str, at: float, work: str) -> float:
         tools.run([config.ffmpeg_bin(), "-hide_banner", "-v", "error", "-nostdin", "-y",
                    "-ss", "%.2f" % at, "-i", path, "-frames:v", "1", "-vf", "scale=640:-2", frame],
                   timeout=60)
-        return float(effects.segment(["mask", frame, mask]).get("coverage") or 0.0)
+        info = effects.segment(["mask", frame, mask, "--persons"])
+        # Le masque de Vision ne voit pas une mariee entierement voilee vue de dos (pas de
+        # visage ni de peau) ; le detecteur de silhouettes, si. Un cadre deborde du corps :
+        # on en compte la moitie.
+        boxes = sum(b[2] * b[3] for b in info.get("persons") or [] if len(b) == 4)
+        return min(1.0, max(float(info.get("coverage") or 0.0), 0.5 * boxes))
     except (tools.CommandError, effects.EffectError):
         return 0.0
     finally:

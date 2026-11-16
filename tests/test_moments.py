@@ -48,6 +48,20 @@ class WindowScoreCase(unittest.TestCase):
         self.assertEqual(moments.orientation([horizontal, vertical]), (1920, 1080))
 
 
+class PeopleShareCase(unittest.TestCase):
+    def test_silhouettes_count_when_the_mask_sees_nobody(self):
+        work = tempfile.mkdtemp(prefix="rexo-gens-")
+        self.addCleanup(shutil.rmtree, work, True)
+        veiled = {"ok": True, "coverage": 0, "persons": [[0.23, 0.34, 0.32, 0.52]]}
+        with mock.patch.object(moments.tools, "run"), \
+                mock.patch.object(moments.effects, "segment", return_value=veiled):
+            self.assertAlmostEqual(moments.people_share("/r/a.mp4", 3.0, work), 0.5 * 0.32 * 0.52, places=4)
+        seen = {"ok": True, "coverage": 0.56, "persons": [[0.1, 0.1, 0.4, 0.8]]}
+        with mock.patch.object(moments.tools, "run"), \
+                mock.patch.object(moments.effects, "segment", return_value=seen):
+            self.assertEqual(moments.people_share("/r/a.mp4", 3.0, work), 0.56)
+
+
 class FindCase(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix="rexo-moments-")
