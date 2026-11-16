@@ -101,13 +101,16 @@ dans un dossier temporaire affiché à la fin.
 | Vision : détourage / noir et blanc / fond flou, photo 2048 px | 2,1 à 2,3 s (premier appel ≈ 3,2 s) | 16/11/2026 |
 | Vision + cadre PhotoCraft (robe et traîne) | 3,0 à 4,3 s | 16/11/2026 |
 | Plan de coupe, llama.cpp + Gemma 4 E2B | film002 82 s, cafe 16 s | 16/11/2026 |
+| MobileSAM : sélection d'un objet dans un cadre, photo 2048 px | 1,2 s | 16/11/2026 |
+| MI-GAN : effacement de l'objet (vase, photo 1) | 1,0 s | 16/11/2026 |
+| Essais de `check_install.sh` (image 640 px) : MobileSAM / MI-GAN / Depth Anything | 1,2 s / 0,9 s / 0,9 s | 16/11/2026 |
+| `install_effects_env.sh` complet (téléchargements compris) | 1 min 18 s | 16/11/2026 |
 
-Les mesures de l'environnement d'effets sur l'iMac sont ajoutées par
-`check_install.sh` (lignes MobileSAM, MI-GAN, Depth Anything) ; reporter ici celles d'une
-nouvelle machine de production.
+`check_install.sh` affiche les temps de MobileSAM, MI-GAN et Depth Anything : reporter
+ici ceux d'une nouvelle machine de production pour les comparer.
 
 ## 7. Journal des installations
 
 | Date | Machine | Résultat |
 |---|---|---|
-| 16/11/2026 | iMac (production) | voir ci-dessous |
+| 16/11/2026 | iMac (production) | `check_install.sh` tout vert : 162 tests, outils, Vision, FilmCraft 0.20.1, PhotoCraft 0.23.1, environnement d'effets. Premier passage : échec de MobileSAM par CoreML (Iris Pro) → embedkit forcé sur le processeur (vendor/ORIGINE.md). |
