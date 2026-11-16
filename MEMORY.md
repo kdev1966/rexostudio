@@ -1,7 +1,7 @@
 # 🧠 MEMORY — Rexo Studio (anciennement MontageIA)
 
 > **Renommé Rexo Studio le 16/11/2026** (nom visible : interface, icône, docs). Noms internes
-> inchangés : dossier `MontageIA`, module `montagia`, variables `MONTAGIA_*`.
+> inchangés : module `montagia`, variables `MONTAGIA_*` (le dossier, lui, est devenu `RexoStudio`).
 > Orientation produit : `docs/PRD.md` (studio photo, mariages : dérushage et post-production).
 
 > **Fichier de reprise.** À lire en premier quand on reprend le projet.
@@ -11,7 +11,8 @@
 
 ## 1. Où en est-on
 
-**Projet :** `~/Desktop/PythonProjects/MontageIA/` (MacBook, dev) et `~/MontageIA/` (iMac, déploiement) — assistant de montage vidéo par IA, 100 % local.
+**Projet :** `~/Desktop/PythonProjects/RexoStudio/` (MacBook, dev) et `~/RexoStudio/` (iMac, déploiement ;
+renommés depuis `MontageIA` le 16/11/2026) — assistant de montage vidéo par IA, 100 % local.
 **Ancien projet conservé :** `~/Desktop/Studio_IA/` (Python + Gradio + `ollama run` en CLI).
 **Instantané Git :** commit `57992a0` — « MontageIA v1 ».
 
@@ -191,7 +192,7 @@ Test de non-régression : `tests/fixtures/cafe_words.json` (vrais mots de cette 
 1. ~~Déployer sur l'iMac + parcours complet~~ ✅ fait (par l'API) : upload, analyse 1,6 s,
    transcription 6 s, plan 25 s, rendu 16:9 3,5 s, 9:16 5,2 s, FilmCraft 0,5 s.
    Déploiement : `git push imac <branche>:refs/heads/deploy-incoming` puis, sur l'iMac
-   (`~/MontageIA`, déplacé du Bureau le 16/11/2026 : macOS interdisait à l'icône de lire
+   (`~/RexoStudio`, ex-`~/MontageIA` déplacé du Bureau le 16/11/2026 : macOS interdisait à l'icône de lire
    le Bureau), `git merge --ff-only deploy-incoming` et redémarrage du serveur.
 2. ~~Tester le mode terminal sur l'iMac~~ ✅ (16/11/2026) : `render 9:16` du café 43 s,
    `plan` de film002 8 min ; corrigés : suggestions en arabe, arguments de `start.sh --cli`.
@@ -219,10 +220,10 @@ Test de non-régression : `tests/fixtures/cafe_words.json` (vrais mots de cette 
 
 ```bash
 # Interface web : icône Rexo Studio du Bureau, ou
-cd ~/MontageIA && ./start.sh                  # http://127.0.0.1:8080
+cd ~/RexoStudio && ./start.sh                 # http://127.0.0.1:8080
 
 # Mode terminal
-cd ~/MontageIA && ./start.sh --cli
+cd ~/RexoStudio && ./start.sh --cli
 
 # Test rapide sans navigateur
 python3 -m montagia.cli ~/Desktop/Studio_IA/tests/vlog_valentijn.webm plan

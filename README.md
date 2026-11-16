@@ -1,7 +1,7 @@
 # 🎬 Rexo Studio — dérushage et post-production vidéo assistés par IA, 100 % local
 
-> Anciennement **MontageIA** (renommé le 16/11/2026). Le dossier et le module Python
-> gardent leur ancien nom (`~/MontageIA`, `montagia/`) : seul le nom visible change.
+> Anciennement **MontageIA** (renommé le 16/11/2026, dossier compris : `~/RexoStudio` sur
+> l'iMac). Le module Python garde son ancien nom (`montagia/`, variables `MONTAGIA_*`).
 
 Un système d'assistance au montage vidéo qui utilise **Gemma 4 E2B** via **llama.cpp** (local),
 **whisper.cpp** pour la transcription, **ffmpeg** pour le montage réel et **FilmCraft**
@@ -19,7 +19,7 @@ Aucune donnée ne sort de la machine, aucune dépendance Python à installer.
 ## 1. Installation
 
 ```bash
-cd ~/MontageIA                  # hors du Bureau : voir la note ci-dessous
+cd ~/RexoStudio                 # hors du Bureau : voir la note ci-dessous
 ./scripts/install_models.sh     # whisper.cpp statique + modèles + ffmpeg (tout vérifié)
 ./scripts/install_launcher.sh   # icône Rexo Studio sur le Bureau
 ```
@@ -145,7 +145,7 @@ Détails qui comptent :
 ## 5. Architecture
 
 ```
-MontageIA/
+RexoStudio/
 ├── start.sh                     lanceur (serveur + navigateur ; Ollama si pas de llama.cpp)
 ├── scripts/install_models.sh    installation whisper.cpp + modèles
 ├── bin/whisper-cli              binaire natif
@@ -219,7 +219,7 @@ vidéo → silencedetect → segments de parole
 | Sous-titres décalés | les timecodes sont recalculés automatiquement | — |
 | « FilmCraft est déjà ouvert » | FilmCraft lancé à la main, sans pilotage | enregistrer, quitter FilmCraft ; Rexo Studio le relance |
 | Port 8080 occupé | un autre service | `MONTAGIA_PORT=8090 ./start.sh` |
-| L'icône ne démarre rien, « Operation not permitted » dans le journal | dossier du projet sur le Bureau ou dans Documents | déplacer le dossier (ex. `~/MontageIA`) puis relancer `./scripts/install_launcher.sh` |
+| L'icône ne démarre rien, « Operation not permitted » dans le journal | dossier du projet sur le Bureau ou dans Documents | déplacer le dossier (ex. `~/RexoStudio`) puis relancer `./scripts/install_launcher.sh` |
 
 ---
 
