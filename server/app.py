@@ -968,12 +968,13 @@ class StudioHandler(BaseHTTPRequestHandler):
             else:
                 rel = str(data.get("rel") or "")
                 events.item_path(config.EVENTS_DIR, os.path.basename(event_dir), rel)   # chemin verifie
-                point = data.get("point") or []
+                point = data.get("point") or None
+                box = data.get("box") or None
                 start = max(0.0, float(data.get("start") or 0))
                 duration = min(20.0, max(1.0, float(data.get("duration") or 10)))
                 name = os.path.basename(rel)
                 func = lambda j: studio.detour_video(j, event_dir, rel, point, start, duration,  # noqa: E731
-                                                     to_filmcraft=to_fc)
+                                                     to_filmcraft=to_fc, box=box)
         except events.EventError as exc:
             return self._error(exc, 404)
         except (TypeError, ValueError):

@@ -267,6 +267,13 @@ class EffectCraftCase(unittest.TestCase):
                          ("custom", 3.0, 13.0))
         self.assertEqual(result["frames"], 300)
 
+    def test_detour_video_box_becomes_pixels(self):
+        out = os.path.join(self.tmp, "Videos_detourees", "cadre.mov")
+        with mock.patch("time.sleep"):
+            effectcraft.detour_video(self.client, "/r/rush.mp4", (0.2, 0.6), 3.0, 2.0, out, box=(0.0, 0.25, 0.5, 0.5))
+        apply = next(c for c in self.fake.calls if c["command"] == "objectMatte.apply")
+        self.assertEqual(apply["params"]["box"], [0, 320, 360, 960])
+
     def test_close_saves_before_quitting_and_cleans_up(self):
         with mock.patch.object(effectcraft, "_running", return_value=False):
             effectcraft.close(self.client, self.tmp)
@@ -396,6 +403,21 @@ class ClipDroneCase(unittest.TestCase):
             result = studio.detour_video(Job("studio"), self.event, "01_Rushes/1.mp4", [0.4, 0.3], 3, 10)
         self.assertEqual(result["path"], os.path.join("06_Rendus", "Videos_detourees", "1_detoure_3s.mov"))
         self.assertEqual(self.to_fc.call_args[1]["bin_name"], "Détourages")
+
+    def test_detour_video_box_alone_uses_its_centre_and_rejects_bad_frames(self):
+        rush = os.path.join(self.event, "01_Rushes", "1.mp4")
+        os.makedirs(os.path.dirname(rush))
+        _write(rush, b"mp4")
+        detour = mock.Mock(side_effect=lambda _c, _v, _p, s, d, out, **_k: (
+            _write(out), {"frames": 60, "start": s, "duration": d})[1])
+        with mock.patch.object(effectcraft, "detour_video", detour):
+            studio.detour_video(Job("studio"), self.event, "01_Rushes/1.mp4", None, 1, 2, box=[0.1, 0.2, 0.4, 0.6])
+            with self.assertRaises(studio.StudioError):
+                studio.detour_video(Job("studio"), self.event, "01_Rushes/1.mp4", None, 1, 2, box=[0.9, 0.2, 0.4, 0.6])
+        x, y = detour.call_args[0][2]
+        self.assertAlmostEqual(x, 0.3)
+        self.assertAlmostEqual(y, 0.5)
+        self.assertEqual(detour.call_args[1]["box"], (0.1, 0.2, 0.4, 0.6))
 
     def test_french_date(self):
         self.assertEqual(studio.french_date("2026-11-16"), "16 novembre 2026")

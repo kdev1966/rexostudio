@@ -429,7 +429,7 @@ def matte_ready(client: Client, model: str = None) -> bool:
 
 
 def detour_video(client: Client, video: str, point: tuple, start: float, duration: float, out: str,
-                 log=None, progress=None, timeout: float = 1800, model: str = None) -> dict:
+                 log=None, progress=None, timeout: float = 1800, model: str = None, box=None) -> dict:
     """Detoure la personne designee (point en proportions de l'image, au debut de
     l'extrait) sur [start, start + duration] ; rend en ProRes 4444 avec transparence."""
     model = model or MATTE_MODEL
@@ -468,8 +468,12 @@ def detour_video(client: Client, video: str, point: tuple, start: float, duratio
                   "if (it.id==%d) { it.time=%r; return 1; }} return 0;})()" % (comp, first / fps))
     if log:
         log("EffectCraft : suivi de la personne (SAM 2.1) sur %d images" % frames)
-    applied = client.execute("objectMatte.apply", {"layer": 1, "point": px, "frame": first,
-                                                   "before": 0, "after": frames}) or {}
+    params = {"layer": 1, "point": px, "frame": first, "before": 0, "after": frames}
+    if box is not None:
+        # Cadre [x, y, largeur, hauteur] en proportions -> [x0, y0, x1, y1] en pixels du rush
+        params["box"] = [round(box[0] * width), round(box[1] * height),
+                         round((box[0] + box[2]) * width), round((box[1] + box[3]) * height)]
+    applied = client.execute("objectMatte.apply", params) or {}
     # Le suivi part en tache de fond : on le suit, sans jamais le relancer
     deadline = time.time() + timeout
     last, last_change = -1, time.time()

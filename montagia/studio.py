@@ -257,15 +257,27 @@ def generique(job, event_dir: str, count: int = 6, window: float = moments.WINDO
     return result
 
 
-def detour_video(job, event_dir: str, rel: str, point, start: float = 0.0, duration: float = 10.0,
-                 to_filmcraft: bool = True) -> dict:
-    """Personne designee (point en proportions de l'image a l'instant start) detouree
-    sur l'extrait, video avec transparence (ProRes 4444) dans 06_Rendus/Videos_detourees,
-    puis dans le chutier « Détourages » de FilmCraft."""
+def detour_video(job, event_dir: str, rel: str, point=None, start: float = 0.0, duration: float = 10.0,
+                 to_filmcraft: bool = True, box=None) -> dict:
+    """Personne designee a l'instant start (proportions de l'image) detouree sur
+    l'extrait, video avec transparence (ProRes 4444) dans 06_Rendus/Videos_detourees,
+    puis dans le chutier « Détourages » de FilmCraft. point : un clic sur la personne ;
+    box : [x, y, largeur, hauteur], un cadre autour d'elle, qui laisse dehors un voisin
+    colle a elle (sans point, le centre du cadre sert de point)."""
     log = job.add_log
     started = time.time()
     if not effectcraft.installed():
         raise StudioError("EffectCraft n'est pas installé : il suit la personne d'image en image")
+    if box is not None:
+        try:
+            bx, by, bw, bh = (float(v) for v in box)
+        except (TypeError, ValueError):
+            raise StudioError("Cadre invalide") from None
+        if not (0 <= bx < 1 and 0 <= by < 1 and 0.02 < bw <= 1 - bx + 1e-6 and 0.02 < bh <= 1 - by + 1e-6):
+            raise StudioError("Cadre hors de l'image ou trop petit")
+        box = (bx, by, bw, bh)
+    if point is None and box is not None:
+        point = (box[0] + box[2] / 2, box[1] + box[3] / 2)
     try:
         x, y = float(point[0]), float(point[1])
     except (TypeError, ValueError, IndexError):
@@ -286,7 +298,7 @@ def detour_video(job, event_dir: str, rel: str, point, start: float = 0.0, durat
         client = effectcraft.connect(log)
         try:
             done = effectcraft.detour_video(client, src, (x, y), float(start), float(duration), out, log=log,
-                                            progress=lambda f: job.set_progress(0.02 + 0.9 * f))
+                                            progress=lambda f: job.set_progress(0.02 + 0.9 * f), box=box)
         finally:
             effectcraft.close(client, folder)
     except Exception as exc:

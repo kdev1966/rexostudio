@@ -1920,6 +1920,9 @@ $('#evd-clips').addEventListener('click', (ev) => {
   if (!c) return;
   DV.clip = c;
   DV.point = null;
+  DV.box = null;
+  DV.drag = null;
+  $('#dv-box').classList.add('hidden');
   // La vignette du rush est prise a la moitie, au plus a 3 s : le suivi part de la
   DV.start = Math.min((c.duration || 0) / 2, 3);
   $('#dv-name').textContent = c.name;
@@ -1933,17 +1936,50 @@ $('#evd-clips').addEventListener('click', (ev) => {
   $('#dv').classList.remove('hidden');
 }, true);
 
-$('#dv-stage').addEventListener('click', (ev) => {
+// Clic : la personne ; glisser : un cadre autour d'elle seule (laisse dehors un voisin colle)
+function dvPos(ev) {
   const r = $('#dv-img').getBoundingClientRect();
-  const x = (ev.clientX - r.left) / r.width;
-  const y = (ev.clientY - r.top) / r.height;
-  if (x < 0 || x > 1 || y < 0 || y > 1) return;
-  DV.point = [x, y];
+  return [Math.min(1, Math.max(0, (ev.clientX - r.left) / r.width)),
+    Math.min(1, Math.max(0, (ev.clientY - r.top) / r.height))];
+}
+
+function dvRender() {
   const dot = $('#dv-dot');
-  dot.style.left = (100 * x) + '%';
-  dot.style.top = (100 * y) + '%';
-  dot.classList.remove('hidden');
-  $('#dv-run').disabled = !(EVD.studio && EVD.studio.effectcraft);
+  dot.classList.toggle('hidden', !DV.point);
+  if (DV.point) { dot.style.left = (100 * DV.point[0]) + '%'; dot.style.top = (100 * DV.point[1]) + '%'; }
+  const b = DV.drag ? DV.drag.box : DV.box;
+  const el = $('#dv-box');
+  el.classList.toggle('hidden', !b);
+  if (b) {
+    el.style.left = (100 * b[0]) + '%'; el.style.top = (100 * b[1]) + '%';
+    el.style.width = (100 * b[2]) + '%'; el.style.height = (100 * b[3]) + '%';
+  }
+  $('#dv-run').disabled = !(DV.point || DV.box) || !(EVD.studio && EVD.studio.effectcraft);
+}
+
+$('#dv-stage').addEventListener('mousedown', (ev) => {
+  ev.preventDefault();
+  DV.drag = { from: dvPos(ev), box: null };
+});
+
+document.addEventListener('mousemove', (ev) => {
+  if (!DV.drag) return;
+  const [x, y] = dvPos(ev);
+  const [x0, y0] = DV.drag.from;
+  DV.drag.box = [Math.min(x, x0), Math.min(y, y0), Math.abs(x - x0), Math.abs(y - y0)];
+  dvRender();
+});
+
+document.addEventListener('mouseup', (ev) => {
+  if (!DV.drag) return;
+  const b = DV.drag.box;
+  if (b && b[2] > 0.03 && b[3] > 0.03) {
+    DV.box = b;                     // cadre trace
+  } else {
+    DV.point = dvPos(ev);           // simple clic
+  }
+  DV.drag = null;
+  dvRender();
 });
 
 function closeDv() { $('#dv').classList.add('hidden'); }
@@ -1951,8 +1987,8 @@ $('#dv-close').addEventListener('click', closeDv);
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('#dv').classList.contains('hidden')) closeDv(); });
 
 $('#dv-run').addEventListener('click', () => {
-  if (!DV.clip || !DV.point) return;
-  const body = { recipe: 'detour-video', rel: DV.clip.rel, point: DV.point, start: DV.start,
+  if (!DV.clip || !(DV.point || DV.box)) return;
+  const body = { recipe: 'detour-video', rel: DV.clip.rel, point: DV.point, box: DV.box, start: DV.start,
     duration: +$('#dv-duration').value, filmcraft: $('#dv-filmcraft').checked };
   closeDv();
   toast('Détourage vidéo lancé en tâche de fond : il arrivera dans 06_Rendus/Videos_detourees');

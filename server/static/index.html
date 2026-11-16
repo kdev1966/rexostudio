@@ -434,8 +434,9 @@
       <span id="dv-name" class="muted"></span>
       <button class="del" id="dv-close" title="Fermer (Échap)">✕</button>
     </div>
-    <p class="tiny muted">Cliquez sur la personne à détourer (image du rush à <span id="dv-at"></span>). EffectCraft la suit d'image en image (SAM 2.1) et rend une vidéo avec transparence, ajoutée au projet FilmCraft (chutier « Détourages »).</p>
-    <div class="dv-stage" id="dv-stage"><img id="dv-img" alt=""><span id="dv-dot" class="dv-dot hidden"></span></div>
+    <p class="tiny muted">Désignez la personne à détourer (image du rush à <span id="dv-at"></span>). EffectCraft la suit d'image en image (SAM 2.1) et rend une vidéo avec transparence, ajoutée au projet FilmCraft (chutier « Détourages »).</p>
+    <div class="dv-stage" id="dv-stage"><img id="dv-img" alt="" draggable="false"><span id="dv-box" class="dv-box hidden"></span><span id="dv-dot" class="dv-dot hidden"></span></div>
+    <p class="tiny muted" id="dv-hint">Cliquez sur la personne. Si quelqu'un la touche (voisine, invité), glissez pour tracer un cadre autour d'elle seule : le voisin restera dehors.</p>
     <div class="btn-row">
       <label class="tiny">Durée <select id="dv-duration"><option value="5">5 s</option><option value="10" selected>10 s</option><option value="20">20 s</option></select></label>
       <label class="fx-enhance tiny"><input type="checkbox" id="dv-filmcraft" checked> Ajouter au projet FilmCraft</label>
