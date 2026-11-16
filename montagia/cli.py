@@ -163,7 +163,7 @@ class Assistant(object):
         step("Question : %s" % question)
         self.ensure_analyzed()
         self.ensure_transcribed()
-        system = prompts.system_message(self.transcript, prompts.SYS_ANALYST)
+        system = prompts.system_message(self.transcript, prompts.SYS_CHAT)
         user = prompts.build_chat_prompt(question, self.duration)
         for piece in ai.chat_stream(system, user):
             sys.stdout.write(piece)

@@ -159,6 +159,13 @@ SYS_ANALYST = (
     "factuelle, en JSON conforme au schema demande."
 )
 
+# Questions libres (chat) : pas de schema, donc pas de JSON. Gemma suivait
+# a la lettre la consigne JSON de SYS_ANALYST et repondait en JSON.
+SYS_CHAT = (
+    "Tu es un analyste video francophone. Tu reponds de maniere concrete et "
+    "factuelle, en texte simple : ni JSON, ni balises, ni bloc de code."
+)
+
 
 # --------------------------------------------------------------------------
 # Construction des messages

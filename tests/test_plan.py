@@ -121,3 +121,19 @@ class ParseSrtTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ChatPromptTest(unittest.TestCase):
+    def test_chat_asks_for_plain_text_not_json(self):
+        # Gemma suivait la consigne JSON du persona d'analyse et repondait en JSON.
+        seen = {}
+
+        def fake_stream(system, user, **_k):
+            seen["system"] = system
+            yield "ok"
+
+        with mock.patch.object(pipeline.ai, "chat_stream", side_effect=fake_stream), \
+                mock.patch.object(pipeline, "cached_ai", lambda *_a: None):
+            self.assertEqual("".join(pipeline.ai_chat(None, "q ?", "transcription", 10.0)), "ok")
+        self.assertNotIn("schema", seen["system"])
+        self.assertIn("ni JSON", seen["system"])

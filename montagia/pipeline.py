@@ -513,7 +513,7 @@ def ai_fix_subtitles(job, segments: list, chunk_size: int = 25) -> dict:
 
 def ai_chat(job, question: str, transcript: str, duration: float):
     """Chat en flux sur la transcription. Yield des fragments de texte."""
-    system = prompts.system_message(transcript, prompts.SYS_ANALYST)
+    system = prompts.system_message(transcript, prompts.SYS_CHAT)
     user = prompts.build_chat_prompt(question, duration)
     buffer = []
     for piece in ai.chat_stream(system, user, temperature=0.6):

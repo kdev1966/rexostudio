@@ -76,8 +76,10 @@ LLM_BACKEND = _llm_backend()
 # Nom du modele : etiquette affichee, et partie de la cle du cache IA.
 LLM_MODEL = os.environ.get("MONTAGIA_MODEL") or (
     os.path.splitext(os.path.basename(LLM_GGUF))[0] if LLM_BACKEND == "llama" else "qwen2.5:3b")
-# 4096 suffit largement et evite d'exploser la RAM (16 Go) avec le cache KV.
-LLM_NUM_CTX = int(os.environ.get("MONTAGIA_NUM_CTX", "4096"))
+# 8192 : la demande des meilleurs moments de film002 (7 min d'arabe) fait
+# 4415 tokens avec Gemma, qui decoupe l'arabe plus finement que Qwen.
+# Cout memoire faible (Gemma 4 E2B, flash attention).
+LLM_NUM_CTX = int(os.environ.get("MONTAGIA_NUM_CTX", "8192"))
 LLM_THREADS = int(os.environ.get("MONTAGIA_LLM_THREADS", "0")) or _physical_cores()
 # Modele garde en memoire 5 min apres sa derniere utilisation (enchainements
 # rapides), puis decharge (llama-server arrete, ou keep_alive d'Ollama).
