@@ -414,7 +414,8 @@ def assemble(client: Client, parts: list, out: str, size: tuple = (1920, 1080), 
 # Detourage video : Object Matte (SAM 2.1) suit une personne d'image en image
 # --------------------------------------------------------------------------
 
-MATTE_MODEL = "sam2.1-hiera-tiny"
+# Taille de SAM 2.1 pour le detourage video : tiny (le plus rapide), small, base-plus
+MATTE_MODEL = os.environ.get("REXO_MATTE_MODEL", "sam2.1-hiera-tiny")
 MATTE_MAX_FRAMES = 600            # limite d'Object Matte par suivi
 MATTE_STALL = 120                 # s sans nouvelle image : le suivi est fige
 # Le premier suivi prepare d'abord SAM 2 sur la carte graphique : environ 50 s a 0 %
@@ -422,19 +423,21 @@ MATTE_STALL = 120                 # s sans nouvelle image : le suivi est fige
 MATTE_WARMUP = 300
 
 
-def matte_ready(client: Client) -> bool:
+def matte_ready(client: Client, model: str = None) -> bool:
     models = (client.execute("roto.models") or {}).get("models") or []
-    return any(m.get("id") == MATTE_MODEL and m.get("installed") for m in models)
+    return any(m.get("id") == (model or MATTE_MODEL) and m.get("installed") for m in models)
 
 
 def detour_video(client: Client, video: str, point: tuple, start: float, duration: float, out: str,
-                 log=None, progress=None, timeout: float = 1800) -> dict:
+                 log=None, progress=None, timeout: float = 1800, model: str = None) -> dict:
     """Detoure la personne designee (point en proportions de l'image, au debut de
     l'extrait) sur [start, start + duration] ; rend en ProRes 4444 avec transparence."""
-    if not matte_ready(client):
-        raise EffectCraftError("Modèle SAM 2.1 absent d'EffectCraft : ./scripts/install_sam2_effectcraft.sh")
+    model = model or MATTE_MODEL
+    if not matte_ready(client, model):
+        raise EffectCraftError("Modèle %s absent d'EffectCraft : ./scripts/install_sam2_effectcraft.sh %s"
+                               % (model, model.replace("sam2.1-hiera-", "")))
     out = os.path.abspath(out)
-    client.execute("roto.model.select", {"id": MATTE_MODEL, "wait": True})
+    client.execute("roto.model.select", {"id": model, "wait": True})
     client.execute("file.newProject")
     imported = client.execute("file.import", {"paths": [os.path.abspath(video)], "newComp": True}) or {}
     if imported.get("errors") or not imported.get("items"):
