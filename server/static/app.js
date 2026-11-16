@@ -103,10 +103,12 @@ function chip(text, on, title) {
 async function loadStatus() {
   try {
     const s = await api('/api/status');
-    const o = s.ollama || {};
+    const o = s.llm || {};
+    const engine = o.backend === 'llama' ? 'llama.cpp' : 'Ollama';
     const names = s.whisper_models.map((m) => m.name).join(', ');
     $('#status-bar').innerHTML = [
-      chip(o.up ? 'IA prête' : 'IA arrêtée', o.up, 'Modèle ' + (s.model || '') + (o.up ? '' : ' : Ollama ne répond pas')),
+      chip(o.up ? 'IA prête' : 'IA indisponible', o.up, 'Modèle ' + (o.model || '') + ' (' + engine + ')' +
+           (o.up ? (o.running ? ', en mémoire' : ', démarre à la première demande') : ' : moteur absent ou arrêté')),
       chip('Vidéo', !!(s.ffmpeg && s.ffprobe), 'ffmpeg : ' + (s.ffmpeg || 'introuvable')),
       chip('Transcription', !!s.whisper && s.whisper_models.length > 0,
            'whisper.cpp, modèles : ' + (names || 'aucun') + (s.vad_model ? ', détection de la parole' : '')),

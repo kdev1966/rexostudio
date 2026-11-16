@@ -368,7 +368,7 @@ class StudioHandler(BaseHTTPRequestHandler):
             if path:
                 whisper_models.append({"name": name, "size": os.path.getsize(path)})
         info = {
-            "ollama": ai.stats(),
+            "llm": ai.stats(),
             "ffmpeg": config.ffmpeg_bin(),
             "ffprobe": config.ffprobe_bin(),
             "whisper": config.whisper_bin(),
@@ -764,7 +764,9 @@ def main():
     print("  \033[1m\033[38;5;208mMontageIA\033[0m  -  assistant de montage video IA (100% local)")
     print("  " + "-" * 62)
     print("  Interface   : http://%s:%d" % (config.HOST, config.PORT))
-    print("  Modele IA   : %s %s" % (config.LLM_MODEL, "(pret)" if status.get("up") else "(HORS LIGNE)"))
+    engine = "llama.cpp" if config.LLM_BACKEND == "llama" else "Ollama"
+    print("  Modele IA   : %s via %s %s" % (config.LLM_MODEL, engine,
+                                            "(pret)" if status.get("up") else "(INDISPONIBLE)"))
     print("  ffmpeg      : %s" % (config.ffmpeg_bin() or "INTROUVABLE"))
     print("  whisper.cpp : %s" % (config.whisper_bin() or "INTROUVABLE"))
     print("  FilmCraft   : %s" % ("installe" if filmcraft.installed() else "absent"))
@@ -774,7 +776,10 @@ def main():
     print("  Ctrl+C pour arreter.")
     print("")
     if not status.get("up"):
-        print("  [!] Ollama ne repond pas. Lancez 'ollama serve' dans un autre terminal.")
+        if config.LLM_BACKEND == "llama":
+            print("  [!] Moteur IA absent : lancez ./scripts/install_models.sh")
+        else:
+            print("  [!] Ollama ne repond pas. Lancez 'ollama serve' dans un autre terminal.")
         print("")
     httpd = ThreadingHTTPServer((config.HOST, config.PORT), StudioHandler)
     httpd.daemon_threads = True

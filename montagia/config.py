@@ -39,15 +39,50 @@ HOST = "127.0.0.1"
 PORT = int(os.environ.get("MONTAGIA_PORT", "8080"))
 
 # --------------------------------------------------------------------------
-# IA (Ollama local)
+# IA locale : llama.cpp (bin/llama-server + modele GGUF), Ollama en secours
 # --------------------------------------------------------------------------
+# Mesure du 16/11/2026 sur l'iMac (plan de coupe, memes appels) :
+#   Ollama + qwen2.5:3b        film002 180 s, cafe 40 s
+#   llama.cpp + gemma-4-E2B    film002  82 s, cafe 16 s, references conformes
+# MONTAGIA_LLM_BACKEND=llama|ollama force un moteur ; par defaut llama.cpp
+# s'il est installe (scripts/install_models.sh), sinon Ollama.
+LLAMA_SERVER_BIN = os.path.join(BIN_DIR, "llama-server")
+LLM_GGUF = os.path.join(MODELS_DIR, os.environ.get("MONTAGIA_GGUF", "gemma-4-E2B-it-Q4_0.gguf"))
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434")
-LLM_MODEL = os.environ.get("MONTAGIA_MODEL", "qwen2.5:3b")
+
+
+def _llm_backend() -> str:
+    choice = os.environ.get("MONTAGIA_LLM_BACKEND", "auto")
+    if choice in ("llama", "ollama"):
+        return choice
+    ready = os.access(LLAMA_SERVER_BIN, os.X_OK) and os.path.isfile(LLM_GGUF)
+    return "llama" if ready else "ollama"
+
+
+def _physical_cores() -> int:
+    """Coeurs physiques : au-dela, llama.cpp ne va pas plus vite (mesure
+    Codewright, docs/VISION.md : 8 fils jamais plus rapides que 4 sur 4 coeurs)."""
+    try:
+        out = subprocess.run(["sysctl", "-n", "hw.physicalcpu"], capture_output=True,
+                             text=True, timeout=3).stdout.strip()
+        if out.isdigit():
+            return int(out)
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return max(1, (os.cpu_count() or 2) // 2)
+
+
+LLM_BACKEND = _llm_backend()
+# Nom du modele : etiquette affichee, et partie de la cle du cache IA.
+LLM_MODEL = os.environ.get("MONTAGIA_MODEL") or (
+    os.path.splitext(os.path.basename(LLM_GGUF))[0] if LLM_BACKEND == "llama" else "qwen2.5:3b")
 # 4096 suffit largement et evite d'exploser la RAM (16 Go) avec le cache KV.
 LLM_NUM_CTX = int(os.environ.get("MONTAGIA_NUM_CTX", "4096"))
+LLM_THREADS = int(os.environ.get("MONTAGIA_LLM_THREADS", "0")) or _physical_cores()
 # Modele garde en memoire 5 min apres sa derniere utilisation (enchainements
-# rapides), puis decharge par Ollama : ~2,4 Go rendus au systeme.
-LLM_KEEP_ALIVE = os.environ.get("MONTAGIA_KEEP_ALIVE", "5m")
+# rapides), puis decharge (llama-server arrete, ou keep_alive d'Ollama).
+LLM_IDLE_SECONDS = int(os.environ.get("MONTAGIA_LLM_IDLE", "300"))
+LLM_KEEP_ALIVE = "%ds" % LLM_IDLE_SECONDS
 LLM_TIMEOUT = 600
 
 # --------------------------------------------------------------------------

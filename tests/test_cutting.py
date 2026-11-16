@@ -324,7 +324,7 @@ class CutPlanTest(unittest.TestCase):
         cands = pipeline.build_candidates(transcribe.build_lines(words),
                                           duration=duration, words=words)
         with mock.patch.object(pipeline.ai, "chat_json",
-                               side_effect=pipeline.ai.OllamaError("tronque", raw=raw)), \
+                               side_effect=pipeline.ai.LLMError("tronque", raw=raw)), \
                 mock.patch.object(pipeline, "cached_ai", lambda _t, _p, compute: compute()):
             result = pipeline.ai_cut_plan(Job(), cands, duration)
         by_id = {d["id"]: d for d in result["decisions"]}

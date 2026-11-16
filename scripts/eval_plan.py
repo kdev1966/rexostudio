@@ -3,7 +3,7 @@ de reference de tests/fixtures/. A lancer apres toute modification des
 prompts ou des regles de coupe.
 
     python3 scripts/eval_plan.py
-    OLLAMA_URL=http://127.0.0.1:11499 python3 scripts/eval_plan.py   # via tunnel
+    MONTAGIA_LLM_BACKEND=ollama python3 scripts/eval_plan.py         # avec Ollama
 
 Chaque reference precise ce qui DOIT etre coupe et ce qui doit etre garde ;
 le script affiche les decisions et termine en erreur si une attente echoue.
@@ -74,7 +74,7 @@ def evaluate(name, raw, must_cut, must_keep) -> bool:
 
 
 def main() -> int:
-    print("Modele : %s sur %s\n" % (config.LLM_MODEL, config.OLLAMA_URL))
+    print("Modele : %s (%s)\n" % (config.LLM_MODEL, config.LLM_BACKEND))
     cache = tempfile.mkdtemp(prefix="montagia-eval-")
     pipeline.AI_CACHE_DIR = cache           # jamais le cache du projet
     try:

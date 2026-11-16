@@ -17,11 +17,12 @@ AI_CACHE_DIR = os.path.join(config.CACHE_DIR, "ai")
 # --------------------------------------------------------------------------
 
 def _cache_key(task: str, payload: dict) -> str:
-    # La version des prompts entre dans la cle : changer un prompt invalide
-    # les résultats mis en cache (sinon on ressortait l'ancienne reponse).
+    # La version des prompts et le modele entrent dans la cle : changer l'un
+    # ou l'autre invalide les resultats en cache (sinon on ressortait
+    # l'ancienne reponse, d'un autre modele).
     blob = json.dumps(payload, sort_keys=True, ensure_ascii=False)
-    return hashlib.sha1(
-        ("%s|%s|%s" % (task, prompts.PROMPT_VERSION, blob)).encode("utf-8")).hexdigest()
+    return hashlib.sha1(("%s|%s|%s|%s" % (task, prompts.PROMPT_VERSION, config.LLM_MODEL, blob))
+                        .encode("utf-8")).hexdigest()
 
 
 def cached_ai(task: str, payload: dict, compute):
@@ -276,7 +277,7 @@ def ai_cut_plan(job, candidates: list, duration: float, transcript: str = "",
             try:
                 return ai.chat_json(system, user, prompts.SCHEMA_DECISIONS,
                                     temperature=0.1, num_predict=200 + 40 * len(todo))
-            except ai.OllamaError as exc:
+            except ai.LLMError as exc:
                 salvaged = _salvage_decisions(exc.raw)
                 if not salvaged:
                     raise

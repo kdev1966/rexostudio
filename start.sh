@@ -16,20 +16,26 @@ if [ -z "$PY" ]; then
   exit 1
 fi
 
-# --- Ollama ---------------------------------------------------------------
-if ! curl -s --max-time 2 http://127.0.0.1:11434/api/version >/dev/null 2>&1; then
-  echo "${ORANGE}Démarrage d'Ollama...${OFF}"
-  ( ollama serve >/tmp/montagia-ollama.log 2>&1 & )
-  for _ in 1 2 3 4 5 6 7 8 9 10; do
-    sleep 1
-    curl -s --max-time 2 http://127.0.0.1:11434/api/version >/dev/null 2>&1 && break
-  done
-fi
-
-if curl -s --max-time 2 http://127.0.0.1:11434/api/version >/dev/null 2>&1; then
-  echo "${GREEN}●${OFF} Ollama prêt"
+# --- Moteur IA -----------------------------------------------------------
+# llama.cpp (bin/llama-server + modele GGUF) : demarre par MontageIA a la
+# premiere demande, rien a lancer ici. Sinon, Ollama en secours.
+GGUF="models/${MONTAGIA_GGUF:-gemma-4-E2B-it-Q4_0.gguf}"
+if [ "${MONTAGIA_LLM_BACKEND:-auto}" != "ollama" ] && [ -x bin/llama-server ] && [ -f "$GGUF" ]; then
+  echo "${GREEN}●${OFF} IA locale : llama.cpp ($(basename "$GGUF" .gguf))"
 else
-  echo "${RED}●${OFF} Ollama injoignable — lancez 'ollama serve' dans un autre terminal"
+  if ! curl -s --max-time 2 http://127.0.0.1:11434/api/version >/dev/null 2>&1; then
+    echo "${ORANGE}Démarrage d'Ollama...${OFF}"
+    ( ollama serve >/tmp/montagia-ollama.log 2>&1 & )
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
+      sleep 1
+      curl -s --max-time 2 http://127.0.0.1:11434/api/version >/dev/null 2>&1 && break
+    done
+  fi
+  if curl -s --max-time 2 http://127.0.0.1:11434/api/version >/dev/null 2>&1; then
+    echo "${GREEN}●${OFF} IA locale : Ollama"
+  else
+    echo "${RED}●${OFF} Aucune IA locale : lancez ./scripts/install_models.sh (ou 'ollama serve')"
+  fi
 fi
 
 # --- Vérifications --------------------------------------------------------
