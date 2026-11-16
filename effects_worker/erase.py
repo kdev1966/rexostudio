@@ -64,15 +64,23 @@ def main():
     mask &= inside
     if not mask.any():
         fail("aucun objet trouvé dans le cadre")
-    # Bord de l'objet (ombre douce, pixels melanges) efface avec lui
+    # Bord de l'objet (ombre douce, pixels melanges) efface avec lui : tout pixel a
+    # moins de « grow » px de l'objet. Transformee de distance sur la seule zone de
+    # l'objet : son cout ne depend pas de grow. (cv2.dilate avec un disque de 65 px
+    # sur une photo de 19 Mpx prenait 155 s sur l'iMac.)
     grow = max(7, int(round(max(w, h) * 0.006)))
-    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2 * grow + 1, 2 * grow + 1))
-    hole = cv2.dilate(mask, kernel)
+    ys, xs = np.nonzero(mask)
+    zx0, zy0 = max(0, xs.min() - grow - 1), max(0, ys.min() - grow - 1)
+    zx1, zy1 = min(w, xs.max() + grow + 2), min(h, ys.max() + grow + 2)
+    outside = (mask[zy0:zy1, zx0:zx1] == 0).astype(np.uint8)
+    dist = cv2.distanceTransform(outside, cv2.DIST_L2, 5)
+    hole = np.zeros_like(mask)
+    hole[zy0:zy1, zx0:zx1] = (dist <= grow).astype(np.uint8)
 
     with Inpainter.load(model="migan-512") as inp:
         if inp.tier == 0:
             fail("modèle MI-GAN absent : ./scripts/install_effects_env.sh")
-        result = inp(image, hole)
+        result = inp(image, hole)       # hors du trou, la photo est recopiee telle quelle
 
     os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
     if not cv2.imwrite(a.out, result, [cv2.IMWRITE_JPEG_QUALITY, 92]):

@@ -74,6 +74,30 @@ def main():
     check("Depth Anything (profondeur)", depth.shape == img.shape[:2],
           "carte %dx%d, %.1f s" % (depth.shape[1], depth.shape[0], time.time() - t))
 
+    # L'ouvrier d'effacement de la galerie, sur une image de 19 Mpx : MI-GAN ne doit
+    # traiter que la zone de l'objet (sur l'image entiere : 155 s sur l'iMac).
+    import json
+    import subprocess
+    import tempfile
+    big = cv2.resize(img, (5368, 3579), interpolation=cv2.INTER_NEAREST)
+    worker = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "effects_worker", "erase.py")
+    with tempfile.TemporaryDirectory() as tmp:
+        src, out = os.path.join(tmp, "grande.jpg"), os.path.join(tmp, "effacee.jpg")
+        cv2.imwrite(src, big, [cv2.IMWRITE_JPEG_QUALITY, 95])
+        t = time.time()
+        proc = subprocess.run([sys.executable, worker, src, out, "--box", "0.34,0.29,0.36,0.46"],
+                              capture_output=True, text=True)
+        elapsed = time.time() - t
+        reply = json.loads(proc.stdout.strip().splitlines()[-1]) if proc.stdout.strip() else {}
+        erased = cv2.imread(out) if reply.get("ok") else None
+    if erased is None:
+        check("Effacement (galerie)", False, reply.get("error") or proc.stderr.strip()[-300:])
+    disk_big = cv2.resize(disk, (5368, 3579), interpolation=cv2.INTER_NEAREST)
+    red = erased[disk_big > 0].astype(np.int32)
+    redness = float(np.mean(red[:, 2] - (red[:, 0] + red[:, 1]) / 2))
+    check("Effacement 19 Mpx (galerie)", redness < 40 and elapsed < 40,
+          "rouge restant %.0f, %.1f s (limite 40 s)" % (redness, elapsed))
+
     if a.photo:
         photo = cv2.imread(a.photo)
         if photo is None:
