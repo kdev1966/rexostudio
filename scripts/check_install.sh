@@ -154,6 +154,7 @@ fi
 echo "== Chaine de production (Blender 3.6 + EffectCraft)"
 BL="${REXO_BLENDER_APP:-$HOME/Applications/Blender-3.6.app}"
 [ -d "$BL" ] || BL="/Applications/Blender-3.6.app"
+[ -d "$BL" ] || BL="/Applications/Blender.app"           # Blender 3.6 installe a la main
 SCENE="${REXO_SCENES_DIR:-$ROOT/modeles/scenes_3d}/jardin_nuit.blend"
 if [ -x "$BL/Contents/MacOS/Blender" ]; then
   ok "$("$BL/Contents/MacOS/Blender" -b --version 2>/dev/null | head -1)"

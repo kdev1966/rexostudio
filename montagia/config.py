@@ -196,7 +196,7 @@ EMBEDKIT_CACHE = os.environ.get("EMBEDKIT_CACHE") or os.path.join(
 # Pro de l'iMac), installe par scripts/install_blender.sh
 BLENDER_APP = os.environ.get("REXO_BLENDER_APP") or next(
     (p for p in (os.path.expanduser("~/Applications/Blender-3.6.app"),
-                 "/Applications/Blender-3.6.app") if os.path.isdir(p)),
+                 "/Applications/Blender-3.6.app", "/Applications/Blender.app") if os.path.isdir(p)),
     os.path.expanduser("~/Applications/Blender-3.6.app"))
 BLENDER_BIN = os.path.join(BLENDER_APP, "Contents", "MacOS", "Blender")
 BLENDER_SCRIPTS_DIR = os.path.join(PROJECT_DIR, "blender")
