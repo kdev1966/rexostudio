@@ -1,6 +1,6 @@
 # PRD — Rexo Studio : dérushage et post-production pour studios photo et vidéo d'événements
 
-**Version du document** : 1.1 — 16 novembre 2026
+**Version du document** : 1.2 — 16 novembre 2026
 **État du code** : Rexo Studio (anciennement MontageIA) fonctionnel sur l'iMac du studio (transcription, plan de coupe
 pour la parole, rendus 16:9 / 9:16, envoi vers FilmCraft, IA locale llama.cpp + Gemma 4 E2B).
 
@@ -9,6 +9,7 @@ pour la parole, rendus 16:9 / 9:16, envoi vers FilmCraft, IA locale llama.cpp + 
 | Version | Changements |
 |---|---|
 | 1.0 | Première version : réorientation vers les studios d'événements. |
+| 1.2 | **Un événement = un dossier de projet** (ADR 0001) : `~/RexoStudio/Evenements/AAAA-MM-JJ_Type_Noms/` avec 01_Rushes … 07_Livraison ; types Mariage, Fiançailles, Henné, Anniversaire, Fête. |
 | 1.1 | **Le dérushage et la post-production des vidéos de mariage deviennent le cœur du projet** : dérushage complet (import, proxies, sélection) et post-production (son, stabilisation, couleurs, bruit) en P1 ; le teaser suit ; effets IA ensuite. |
 
 ---
@@ -43,6 +44,10 @@ quelques discours : ce document réoriente le produit vers ce besoin.
 
 - **Une seule caméra** par événement.
 - **Livrables** : film complet, **teaser pour les réseaux sociaux** (vertical), photos + vidéo.
+- **Types d'événements** : mariage, fiançailles, henné, anniversaire, autre fête.
+- **Un dossier par événement** (ADR 0001), sous `~/RexoStudio/Evenements/` :
+  `AAAA-MM-JJ_Type_Noms/` avec `01_Rushes`, `02_Photos`, `03_Audio`, `04_Proxies`,
+  `05_Montage`, `06_Rendus`, `07_Livraison` et `.rexo/` (données de l'application).
 - **À préciser** (Q1–Q4, §10) : modèle et format de la caméra, volume de rushes par
   événement, arrivée des fichiers sur l'iMac.
 
@@ -76,7 +81,8 @@ Priorités : **P1** indispensable au premier lot ; **P2** ensuite ; **P3** maint
 
 | Module | Priorité | Ce que voit le monteur |
 |---|---|---|
-| **M1 — Dérushage** | **P1** | **Import** du dossier de la carte mémoire (copie vérifiée, rushes jamais modifiés) ; **classement par heure de tournage** ; **note de qualité** par plan (flou, tremblé, trop sombre / brûlé, plan noir ou figé, trop court) ; **doublons et quasi-doublons** repérés ; **sélection** : à garder / à vérifier / à écarter (jamais supprimé) ; **proxies** (copies allégées) pour un montage fluide sur l'iMac ; envoi de la sélection classée dans FilmCraft, avec marqueurs. |
+| **M0 — Événements** | **P1** | Créer un événement (type, date, noms, lieu) : son dossier et ses sous-dossiers sont créés ; liste des événements ; ouvrir le dossier dans le Finder ; archiver (déplacer vers un disque) ; libérer la place des proxies après livraison. |
+| **M1 — Dérushage** | **P1** | **Import** du dossier de la carte mémoire dans `01_Rushes/Carte_n/` (copie vérifiée, rushes jamais modifiés) ; **classement par heure de tournage** ; **note de qualité** par plan (flou, tremblé, trop sombre / brûlé, plan noir ou figé, trop court) ; **doublons et quasi-doublons** repérés ; **sélection** : à garder / à vérifier / à écarter (jamais supprimé) ; **proxies** (copies allégées) pour un montage fluide sur l'iMac ; envoi de la sélection classée dans FilmCraft, avec marqueurs. |
 | **M2 — Moments forts** | **P1** | Moments notés et écoutables (▶) : youyous, applaudissements et cris de joie, départ de musique, mouvement intense (danse, cortège), discours ; chapitres de l'événement (préparatifs, entrée, cérémonie, gâteau, danse). Ils guident le dérushage, le teaser et le film complet. |
 | **M3 — Post-production** | **P1** | **Son** : volume égalisé, musique baissée sous les discours, réduction du bruit (vent, brouhaha). **Image** : stabilisation des plans tremblés, couleurs harmonisées d'un plan à l'autre (exposition, balance des blancs), correction du scintillement des éclairages de salle, réduction du bruit des plans de soirée, « looks » couleur. Appliqué plan par plan ou sur toute la sélection, avec aperçu avant / après. |
 | **M4 — Teaser et film souvenir** | P1 | Choix d'une musique et d'une durée (30 / 60 s) : meilleurs moments de bonne qualité, coupés sur le rythme, en 9:16 (cadrage qui suit les visages) et 16:9 ; transitions ; ralenti sur les moments clés. Retouche dans FilmCraft. |
@@ -141,7 +147,7 @@ Priorités : **P1** indispensable au premier lot ; **P2** ensuite ; **P3** maint
 | Jalon | Contenu | Condition pour passer au suivant |
 |---|---|---|
 | **J0** | Échantillons réels du studio (vidéo + photos, avec son accord) ; réponses Q1–Q4 | fichiers déposés sur l'iMac |
-| **J1** | M1 dérushage : import, classement, note de qualité, proxies, sélection vers FilmCraft | critères M1 validés par le monteur |
+| **J1** | M0 événements (dossiers, fiche, liste) ; M1 dérushage : import, classement, note de qualité, proxies, sélection vers FilmCraft | critères M1 validés par le monteur |
 | **J2** | M2 moments forts (son puis image) | critères M2 |
 | **J3** | M3 post-production : son, puis stabilisation, couleurs, bruit | critères M3 |
 | **J4** | M4 teaser sur musique | un teaser réel jugé « publiable après retouche » |
