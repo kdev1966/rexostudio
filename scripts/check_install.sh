@@ -151,34 +151,19 @@ else
   bad "Environnement d'effets absent : ./scripts/install_effects_env.sh"
 fi
 
-echo "== Chaine de production (Blender 3.6 + EffectCraft)"
-BL="${REXO_BLENDER_APP:-$HOME/Applications/Blender-3.6.app}"
-[ -d "$BL" ] || BL="/Applications/Blender-3.6.app"
-[ -d "$BL" ] || BL="/Applications/Blender.app"           # Blender 3.6 installe a la main
-SCENE="${REXO_SCENES_DIR:-$ROOT/modeles/scenes_3d}/jardin_nuit.blend"
-if [ -x "$BL/Contents/MacOS/Blender" ]; then
-  ok "$("$BL/Contents/MacOS/Blender" -b --version 2>/dev/null | head -1)"
-  if [ ! -f "$SCENE" ]; then
-    bad "Modele de scene absent : ./scripts/install_blender.sh"
-  else
-    # Animation generique de deux images : decor, composition .jsx, emplacements
-    T="$(mktemp -d "${TMPDIR:-/tmp}/rexo-blender.XXXXXX")"
-    if R="$("$BL/Contents/MacOS/Blender" -b "$SCENE" --python blender/export_generic.py -- \
-          "$T" orbite 0.07 brouillon 2>&1)" && [ -s "$T/decor.mp4" ] && [ -s "$T/composition.jsx" ]; then
-      ok "Blender : animation generique ($(grep -o '"name": "[^"]*"' "$T/scene.json" | cut -d'"' -f4 | tr '\n' ' ')) $(echo "$R" | grep -o 'MESURE.*' | sed 's/^MESURE //')"
-    else
-      bad "Blender : export generique en echec : $(echo "$R" | tail -2 | tr '\n' ' ')"
-    fi
-    rm -rf "$T"
-  fi
+echo "== Chaine de production (bibliotheque d'animations + EffectCraft)"
+# Les animations 3D sont fabriquees par l'atelier (projet RexoAtelier) et livrees a part
+N="$(python3 scripts/installer_animations.py --liste 2>/dev/null | grep -c '^  [^(]')"
+if [ "$N" -gt 0 ]; then
+  ok "Bibliotheque d'animations : $N animation(s)"
 else
-  warn "Blender 3.6 absent (clip drone 3D indisponible) : ./scripts/install_blender.sh"
+  warn "Bibliotheque d'animations vide (clip drone indisponible) : python3 scripts/installer_animations.py <livraison.zip>"
 fi
 EC="${REXO_EFFECTCRAFT_APP:-/Applications/EffectCraft.app}"
 if [ -d "$EC" ]; then
   ok "EffectCraft $(defaults read "$EC/Contents/Info" CFBundleShortVersionString 2>/dev/null) (commandes verifiees a chaque clip)"
 else
-  warn "EffectCraft absent (clip drone 3D indisponible : il place les photos dans la scene)"
+  warn "EffectCraft absent (clip drone, generique et detourage video indisponibles)"
 fi
 
 echo

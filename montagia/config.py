@@ -214,30 +214,13 @@ EMBEDKIT_CACHE = os.environ.get("EMBEDKIT_CACHE") or os.path.join(
 # --------------------------------------------------------------------------
 # Chaine de production (montagia/studio.py) : chaque outil ne fait que sa tache
 # --------------------------------------------------------------------------
-# Blender 3.6 LTS (EEVEE en OpenGL : Blender 4.x exige Metal, qui plante sur l'Iris
-# Pro de l'iMac), installe par scripts/install_blender.sh
-BLENDER_APP = os.environ.get("REXO_BLENDER_APP") or next(
-    (p for p in (os.path.expanduser("~/Applications/Blender-3.6.app"),
-                 "/Applications/Blender-3.6.app", "/Applications/Blender.app") if os.path.isdir(p)),
-    os.path.expanduser("~/Applications/Blender-3.6.app"))
-BLENDER_BIN = os.path.join(BLENDER_APP, "Contents", "MacOS", "Blender")
-BLENDER_SCRIPTS_DIR = os.path.join(PROJECT_DIR, "blender")
-# Modeles de scenes 3D (.blend, faits a part dans Blender) : hors du depot
-SCENES_3D_DIR = os.environ.get("REXO_SCENES_DIR") or os.path.join(PROJECT_DIR, "modeles", "scenes_3d")
-# Animations generiques rendues par Blender (une par modele, mouvement, duree, qualite)
-GENERICS_DIR = os.environ.get("REXO_GENERICS_DIR") or os.path.join(PROJECT_DIR, "modeles", "generiques")
+# Bibliotheque livree par l'atelier (projet RexoAtelier, a part : decors Blender,
+# textures) : animations 3D toutes pretes, et modeles de titres EffectCraft. Rexo
+# Studio ne fabrique jamais d'animation 3D, il ne fait que les utiliser.
+LIBRARY_DIR = os.environ.get("REXO_LIBRARY_DIR") or os.path.join(PROJECT_DIR, "bibliotheque")
+ANIMATIONS_DIR = os.path.join(LIBRARY_DIR, "animations")
 # Modeles de titres EffectCraft (.ectemplate, champs « Title » et « Subtitle »)
-TITLES_DIR = os.environ.get("REXO_TITLES_DIR") or os.path.join(PROJECT_DIR, "modeles", "titres")
-
-# Textures PBR des modeles (une sous-dossier par materiau), faites par TextureCraft
-TEXTURES_DIR = os.environ.get("REXO_TEXTURES_DIR") or os.path.join(PROJECT_DIR, "modeles", "textures")
-TEXTURECRAFT_APP = os.environ.get("REXO_TEXTURECRAFT_APP", "/Applications/TextureCraft.app")
-TEXTURECRAFT_BIN = os.path.join(TEXTURECRAFT_APP, "Contents", "MacOS", "TextureCraft")
-TEXTURECRAFT_PORT = int(os.environ.get("REXO_TEXTURECRAFT_PORT", "9881"))
-# MaterialCraft (materiaux proceduraux par graphes, lit aussi les .sbs de Substance)
-MATERIALCRAFT_APP = os.environ.get("REXO_MATERIALCRAFT_APP", "/Applications/MaterialCraft.app")
-MATERIALCRAFT_BIN = os.path.join(MATERIALCRAFT_APP, "Contents", "MacOS", "MaterialCraft")
-MATERIALCRAFT_PORT = int(os.environ.get("REXO_MATERIALCRAFT_PORT", "9883"))
+TITLES_DIR = os.path.join(LIBRARY_DIR, "titres")
 
 # EffectCraft (motion design, meme editeur que PhotoCraft et FilmCraft) : serveur de
 # controle local, une requete JSON par ligne (voir montagia/effectcraft.py)

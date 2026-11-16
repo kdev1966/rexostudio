@@ -45,11 +45,17 @@ cd ~/RexoStudio && git merge --ff-only deploy-incoming
 ./scripts/install_models.sh       # ffmpeg/ffprobe, whisper.cpp, llama.cpp + Gemma 4 E2B, modèles Whisper
 ./scripts/build_native.sh         # bin/rexo-segment (détourage Apple Vision), compilé sur la machine
 ./scripts/install_effects_env.sh  # .effets/ : Python 3.11 autonome + ONNX + MobileSAM, MI-GAN, Depth Anything
-./scripts/install_blender.sh      # Blender 3.6.23 LTS (~/Applications) + premier modèle de scène 3D
+python3 scripts/installer_animations.py livraison.zip   # animations 3D livrées par l'atelier (RexoAtelier)
 ./scripts/install_launcher.sh     # icône « Rexo Studio » sur le Bureau
 ```
 
 Chaque script est relançable : ce qui est déjà en place et vérifié est gardé.
+
+Rexo Studio ne fabrique pas d'animation 3D. Les décors, textures et animations sont
+faits par les techniciens dans le projet à part **RexoAtelier** (Blender 3.6,
+TextureCraft, MaterialCraft), qui livre des paquets d'animation (zip). On les installe
+avec `python3 scripts/installer_animations.py <livraison.zip>`, dans `bibliotheque/animations`
+(hors dépôt git). Les modèles de titres EffectCraft vont dans `bibliotheque/titres`.
 
 | Script | Installe | Où | Figé par |
 |---|---|---|---|
@@ -57,7 +63,6 @@ Chaque script est relançable : ce qui est déjà en place et vérifié est gard
 | `build_native.sh` | `rexo-segment` | `bin/` | source `native/segment.swift` |
 | `install_effects_env.sh` | Python 3.11.17, onnxruntime 1.19.2, numpy 2.4.6, opencv 4.10.0.84, pyyaml 6.0.3 + dépendances | `.effets/` | SHA-256 de Python dans le script ; `scripts/effets-requirements.txt` (`--require-hashes`, `--only-binary`) |
 | (même script) | modèles MobileSAM, MI-GAN 512, Depth Anything V2 Small | `~/.local/share/kdev-models/embedkit` | manifestes `vendor/embedkit/embedkit/models/*.yaml` (révision + SHA-256) |
-| `install_blender.sh` | Blender 3.6.23 LTS (pas 4.x : Metal seul, plante sur l'Iris Pro), modèle `jardin_nuit.blend` | `~/Applications/Blender-3.6.app`, `modeles/scenes_3d/` | SHA-256 du .dmg dans le script |
 
 Pourquoi ces versions : ce sont les **dernières publiées en paquets compilés pour Mac Intel
 sous macOS 12** (vérifié le 16/11/2026). Au-delà, pip recompile OpenCV depuis les sources

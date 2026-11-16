@@ -20,7 +20,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from montagia import (ai, assistant, blender, config, effectcraft, effects, events,  # noqa: E402
+from montagia import (ai, animations, assistant, config, effectcraft, effects, events,  # noqa: E402
                       filmcraft, media, photocraft, pipeline, project, rushes, studio, tools, transcribe,
                       trash)
 from montagia.jobs import MANAGER  # noqa: E402
@@ -933,7 +933,7 @@ class StudioHandler(BaseHTTPRequestHandler):
             return self._error(exc, 400)
         return self._json({"ok": True, "rel": rel, "path": os.path.join(event_dir, rel)})
 
-    # -- chaine de production (Rexo + Blender + EffectCraft) -------------------
+    # -- chaine de production (Rexo + bibliotheque d'animations + EffectCraft) ----
     def _api_studio_run(self):
         """Recette de la chaine de production, en tache de fond (minutes) :
         clip-drone (une photo), generique (moments forts des rushes), detour-video (un rush)."""
@@ -954,11 +954,12 @@ class StudioHandler(BaseHTTPRequestHandler):
                 return self._error("Modèle de titre introuvable : %s" % title_model, 400)
             if recipe == "clip-drone":
                 _event_dir, src = self._event_photo(data)
+                try:
+                    animations.get(str(data.get("animation") or ""))
+                except animations.AnimationError as exc:
+                    return self._error(exc, 400)
                 options = {
-                    "scene": str(data.get("scene") or blender.DEFAULT_SCENE),
-                    "motion": str(data.get("motion") or "sequence"),
-                    "quality": str(data.get("quality") or "normal"),
-                    "seconds": min(30.0, max(3.0, float(data.get("seconds") or 9))),
+                    "animation": str(data.get("animation") or ""),
                     "title": title, "subtitle": subtitle, "to_filmcraft": to_fc, "title_model": title_model,
                     "box": data.get("box") or None,
                 }

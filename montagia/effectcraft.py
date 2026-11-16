@@ -24,7 +24,7 @@ import socket
 import subprocess
 import time
 
-from . import config, tools
+from . import animations, config, tools
 
 REQUIRED = ("file.newProject", "file.import", "file.saveAs", "app.quit", "script.run",
             "templates.create", "essential.exportTemplate", "essential.importTemplate",
@@ -316,18 +316,17 @@ _FRONT_ON_TOP = """
 """
 
 
-def compose(client: Client, generic_dir: str, info: dict, photos: dict, out: str, title: str = "",
+def compose(client: Client, animation_dir: str, info: dict, photos: dict, out: str, title: str = "",
             subtitle: str = "", title_template: str = "", log=None, progress=None) -> dict:
-    """Ouvre l'animation generique (composition.jsx de Blender), accroche chaque photo a
-    l'emplacement de meme nom, ajoute le titre (facultatif), passe le premier plan
-    par-dessus et rend en H.264. photos : {nom d'emplacement: chemin de l'image}."""
+    """Ouvre une animation de la bibliotheque (sa composition After Effects), accroche
+    chaque photo a l'emplacement de meme nom, ajoute le titre (facultatif), passe le
+    premier plan par-dessus et rend en H.264. photos : {nom d'emplacement: image}."""
     out = os.path.abspath(out)
-    scale = float(info.get("pixels_per_meter") or 100)
+    scale = float(info.get("pixels_par_metre") or 100)
     client.execute("file.newProject")
-    with open(os.path.join(generic_dir, "composition.jsx"), "r", encoding="utf-8") as fh:
-        comp = int(client.script(fh.read()))
+    comp = int(client.script(animations.composition(animation_dir)))
     placed = []
-    for place in info.get("placeholders", []):
+    for place in info.get("emplacements", []):
         path = photos.get(place["name"])
         if not path:
             continue
@@ -353,7 +352,7 @@ def compose(client: Client, generic_dir: str, info: dict, photos: dict, out: str
     if info.get("premier_plan"):
         client.script(_FRONT_ON_TOP % comp)
     render(client, comp, out, progress=progress)
-    return {"path": out, "placed": placed, "duration": info.get("duration")}
+    return {"path": out, "placed": placed, "duration": info.get("duree")}
 
 
 # --------------------------------------------------------------------------

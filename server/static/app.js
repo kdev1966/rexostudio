@@ -1465,7 +1465,7 @@ function openFx(rel) {
   $('#fx').classList.remove('hidden');
 }
 
-/* -- chaine de production : clip drone 3D (Rexo + Blender + EffectCraft) -- */
+/* -- chaine de production : clip drone 3D (bibliotheque d'animations + EffectCraft) -- */
 
 // Modeles de titres EffectCraft (modeles/titres) ; le titre simple est fait au besoin
 function titleOptions(select) {
@@ -1477,26 +1477,32 @@ function titleOptions(select) {
 function studioForm() {
   const st = EVD.studio;
   const info = $('#st-info');
-  const opts = (items, key, label) => items.map((x) =>
-    '<option value="' + escapeHtml(x[key]) + '">' + escapeHtml(x[label]) + '</option>').join('');
-  $('#st-motion').innerHTML = st ? opts(st.motions, 'id', 'label') : '';
-  // Sans modele de scene, le jardin simple est construit au premier clip
-  $('#st-scene').innerHTML = st && st.scenes.length ? opts(st.scenes, 'id', 'name')
-    : '<option value="jardin_nuit">Jardin nuit (simple)</option>';
+  const list = (st && st.animations) || [];
+  $('#st-animation').innerHTML = list.map((a) => '<option value="' + escapeHtml(a.id) + '">' +
+    escapeHtml(a.titre + (a.duree ? ' — ' + Math.round(a.duree) + ' s' : '')) + '</option>').join('');
+  studioPreview();
   titleOptions($('#st-title-model'));
   $('#st-title').value = (EVD.event && EVD.event.names) || '';
   $('#st-subtitle').value = frenchDate((EVD.event && EVD.event.date) || '');
-  const ready = !!(st && st.blender && st.detourage && st.effectcraft);
+  const ready = !!(st && st.detourage && st.effectcraft && list.length);
   $('#st-filmcraft').disabled = !(st && st.filmcraft);
   $('#st-filmcraft').checked = !!(st && st.filmcraft);
   $('#st-run').disabled = !ready;
   info.className = 'tiny' + (ready ? ' muted' : ' err');
-  info.textContent = !st ? '' : !st.blender ? 'Blender 3.6 absent : ./scripts/install_blender.sh'
-    : !st.detourage ? 'Outil de détourage absent : ./scripts/build_native.sh'
-      : !st.effectcraft ? 'EffectCraft absent : il place les photos dans la scène'
-        : st.generics.length ? 'Bibliothèque : ' + st.generics.length + ' animation(s) générique(s) déjà prête(s)'
-          : 'Première fois : Blender prépare l’animation générique (quelques minutes, une seule fois)';
+  info.textContent = !st ? '' : !st.detourage ? 'Outil de détourage absent : ./scripts/build_native.sh'
+    : !st.effectcraft ? 'EffectCraft absent : il place les photos dans la scène'
+      : !list.length ? 'Aucune animation dans la bibliothèque : demandez-en à l’atelier (scripts/installer_animations.py)'
+        : list.length + ' animation(s) dans la bibliothèque';
 }
+
+function studioPreview() {
+  const a = ((EVD.studio && EVD.studio.animations) || []).find((x) => x.id === $('#st-animation').value);
+  const img = $('#st-vignette');
+  img.classList.toggle('hidden', !a);
+  if (a) img.src = fileUrl(a.vignette);
+}
+
+$('#st-animation').addEventListener('change', studioPreview);
 
 function frenchDate(iso) {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
@@ -1508,8 +1514,7 @@ function frenchDate(iso) {
 
 $('#st-run').addEventListener('click', () => {
   if (FX.busy || !FX.photo) return;
-  const body = { recipe: 'clip-drone', rel: FX.photo.rel, scene: $('#st-scene').value,
-    motion: $('#st-motion').value, seconds: +$('#st-seconds').value, quality: $('#st-quality').value,
+  const body = { recipe: 'clip-drone', rel: FX.photo.rel, animation: $('#st-animation').value,
     title: $('#st-title').value.trim(), subtitle: $('#st-subtitle').value.trim(),
     filmcraft: $('#st-filmcraft').checked, box: FX.box, title_model: $('#st-title-model').value };
   closeFx();

@@ -1,9 +1,9 @@
 """Chaine de production : Rexo Studio orchestre, chaque outil ne fait que sa tache.
 
     Rexo (Vision, MobileSAM)  amelioration, detourage des maries, recadrage
-    Blender 3.6               animation generique sans photo (modele .blend fait a part,
-                              camera drone, emplacements), en composition After Effects ;
-                              rendue une seule fois, rangee dans modeles/generiques
+    Bibliotheque              animations 3D toutes pretes, livrees par l'atelier (projet
+                              RexoAtelier, a part : decors Blender, textures) ; Rexo
+                              Studio ne fait jamais de 3D lui-meme (montagia/animations.py)
     EffectCraft               ouvre la composition, place les vraies photos dans les
                               emplacements, ajoute les titres, rend la video
     FilmCraft                 le clip rejoint le projet de l'evenement (chutier
@@ -19,7 +19,7 @@ import datetime
 import os
 import time
 
-from . import blender, effectcraft, effects, filmcraft, moments, tools
+from . import animations, effectcraft, effects, filmcraft, moments, tools
 
 CLIPS_DIR = os.path.join("06_Rendus", "Clips_3D")
 GENERIQUES_DIR = os.path.join("06_Rendus", "Generiques")
@@ -35,7 +35,7 @@ RECIPES = {
     "clip-drone": {
         "label": "Clip drone 3D",
         "steps": ["Rexo : amélioration et détourage des mariés",
-                  "Blender : animation générique (une seule fois par modèle)",
+                  "Bibliothèque : animation 3D choisie",
                   "EffectCraft : photos dans les emplacements, titre, rendu",
                   "FilmCraft : ajout au projet de l'événement"],
     },
@@ -68,14 +68,11 @@ def french_date(iso: str) -> str:
 def status() -> dict:
     """Ce dont la chaine dispose sur cette machine (pour l'interface)."""
     return {
-        "blender": blender.installed(),
         "effectcraft": effectcraft.installed(),
         "detourage": effects.installed(),
         "filmcraft": filmcraft.installed(),
-        "scenes": [{"id": s["id"], "name": s["name"]} for s in blender.scenes()],
-        "generics": [g["id"] for g in blender.generics()],
+        "animations": animations.catalog(),
         "titles": [{"id": t["id"], "name": t["name"]} for t in effectcraft.titles()],
-        "motions": [{"id": k, "label": v} for k, v in blender.MOTIONS.items()],
         "recipes": [{"id": k, "label": v["label"], "steps": v["steps"]} for k, v in RECIPES.items()],
     }
 
@@ -106,17 +103,21 @@ def couple_cutout(src: str, out_png: str, folder: str, key: str, log=None, box=N
                 os.remove(path)
 
 
-def clip_drone(job, event_dir: str, src: str, scene: str = blender.DEFAULT_SCENE,
-               motion: str = "sequence", seconds: float = 9.0, quality: str = "normal",
-               title: str = "", subtitle: str = "", title_model: str = effectcraft.DEFAULT_TITLE,
-               to_filmcraft: bool = True, box=None) -> dict:
-    """Photo des maries -> clip drone 3D titre dans 06_Rendus/Clips_3D, puis dans FilmCraft.
-    Emplacements : PHOTO_DEBOUT_MARIES recoit les maries detoures ; chaque PHOTO_CADRE_*
-    recoit la photo elle-meme (amelioree)."""
+def clip_drone(job, event_dir: str, src: str, animation: str, title: str = "", subtitle: str = "",
+               title_model: str = effectcraft.DEFAULT_TITLE, to_filmcraft: bool = True, box=None) -> dict:
+    """Photo des maries + animation de la bibliotheque -> clip drone 3D titre dans
+    06_Rendus/Clips_3D, puis dans FilmCraft. Emplacements : PHOTO_DEBOUT_MARIES recoit les
+    maries detoures ; chaque PHOTO_CADRE_* recoit la photo elle-meme (amelioree)."""
     log = job.add_log
     started = time.time()
     if not os.path.isfile(src):
         raise StudioError("Photo introuvable")
+    try:
+        animation_dir, info = animations.get(animation)
+    except animations.AnimationError as exc:
+        raise StudioError(str(exc)) from exc
+    if not any(e["name"] == "PHOTO_DEBOUT_MARIES" for e in info["emplacements"]):
+        raise StudioError("L'animation « %s » n'a pas d'emplacement PHOTO_DEBOUT_MARIES" % info.get("titre"))
     if not effectcraft.installed():
         raise StudioError("EffectCraft n'est pas installé : il place les photos dans la scène")
     steps = RECIPES["clip-drone"]["steps"]
@@ -128,8 +129,8 @@ def clip_drone(job, event_dir: str, src: str, scene: str = blender.DEFAULT_SCENE
     photo_jpg = os.path.join(folder, key + "_photo.jpg")
     small_jpg = os.path.join(folder, key + "_photo_reduite.jpg")
     out = tools.unique_path(tools.ensure_parent(
-        os.path.join(event_dir, CLIPS_DIR, "%s_clip_drone_%s.mp4" % (key, motion))))
-    result = {"seconds": seconds, "motion": motion, "scene": scene, "titled": False, "filmcraft": ""}
+        os.path.join(event_dir, CLIPS_DIR, "%s_%s.mp4" % (key, tools.safe_component(animation, "animation")))))
+    result = {"animation": animation, "seconds": info.get("duree"), "titled": False, "filmcraft": ""}
     try:
         job.set_progress(0.02, steps[0])
         couple_cutout(src, full_png, folder, key, log, box)
@@ -145,25 +146,22 @@ def clip_drone(job, event_dir: str, src: str, scene: str = blender.DEFAULT_SCENE
         effects.segment(["enhance", small_jpg, photo_jpg])
 
         log("Rexo : photos prêtes en %.0f s" % (time.time() - started))
-        job.set_progress(0.08, steps[1])
-        generic_dir, info = blender.ensure_generic(scene, motion, seconds, quality, log=log,
-                                                   progress=lambda f: job.set_progress(0.08 + 0.6 * f))
+        job.set_progress(0.10, steps[1])
+        log("Bibliothèque : %s" % info.get("titre", animation))
         photos = {}
-        for place in info.get("placeholders", []):
+        for place in info["emplacements"]:
             if place["kind"] == "debout" and place["name"] == "PHOTO_DEBOUT_MARIES":
                 photos[place["name"]] = couple_png
             elif place["kind"] == "cadre":
                 photos[place["name"]] = photo_jpg
-        if "PHOTO_DEBOUT_MARIES" not in photos:
-            raise StudioError("Le modèle « %s » n'a pas d'emplacement PHOTO_DEBOUT_MARIES" % scene)
 
-        job.set_progress(0.70, steps[2])
+        job.set_progress(0.15, steps[2])
         mark = time.time()
         client = effectcraft.connect(log)
         try:
             template = _title_template(client, title, title_model, log)
-            effectcraft.compose(client, generic_dir, info, photos, out, title, subtitle, template, log=log,
-                                progress=lambda f: job.set_progress(0.70 + 0.22 * f))
+            effectcraft.compose(client, animation_dir, info, photos, out, title, subtitle, template, log=log,
+                                progress=lambda f: job.set_progress(0.15 + 0.77 * f))
             result["titled"] = bool(template)
         finally:
             effectcraft.close(client, folder)
@@ -175,7 +173,7 @@ def clip_drone(job, event_dir: str, src: str, scene: str = blender.DEFAULT_SCENE
         # Le nom etait reserve d'avance : pas de fichier vide laisse dans les Rendus
         if os.path.exists(out) and os.path.getsize(out) == 0:
             os.remove(out)
-        if isinstance(exc, (blender.BlenderError, effectcraft.EffectCraftError, effects.EffectError)):
+        if isinstance(exc, (effectcraft.EffectCraftError, effects.EffectError)):
             raise StudioError(str(exc)) from exc
         raise
     finally:
