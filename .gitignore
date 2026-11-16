@@ -1,6 +1,7 @@
 # Donnees de travail (regenerees)
 workspace/
 models/*.bin
+models/*.gguf
 bin/*
 .DS_Store
 __pycache__/
