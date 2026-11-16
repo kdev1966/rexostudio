@@ -1,8 +1,15 @@
 # PRD — MontageIA pour studios photo et vidéo d'événements
 
-**Version du document** : 1.0 — 16 novembre 2026
+**Version du document** : 1.1 — 16 novembre 2026
 **État du code** : MontageIA fonctionnel sur l'iMac du studio (transcription, plan de coupe
 pour la parole, rendus 16:9 / 9:16, envoi vers FilmCraft, IA locale llama.cpp + Gemma 4 E2B).
+
+### Historique
+
+| Version | Changements |
+|---|---|
+| 1.0 | Première version : réorientation vers les studios d'événements. |
+| 1.1 | **Le dérushage et la post-production des vidéos de mariage deviennent le cœur du projet** : dérushage complet (import, proxies, sélection) et post-production (son, stabilisation, couleurs, bruit) en P1 ; le teaser suit ; effets IA ensuite. |
 
 ---
 
@@ -30,7 +37,7 @@ quelques discours : ce document réoriente le produit vers ce besoin.
 | Logiciel de montage | FilmCraft (déjà piloté) ; d'autres plus tard si besoin. |
 | Langue de l'interface | Français. Contenus traités en français et en arabe tunisien. |
 | Sous-titres | Gardés, mais **pas une priorité** pour un studio photo. |
-| Priorité | **Les moments forts.** |
+| Priorité | **Le dérushage et la post-production des vidéos de mariage**, guidés par les moments forts. |
 
 ## 3. Le studio et son flux de travail
 
@@ -43,13 +50,16 @@ quelques discours : ce document réoriente le produit vers ce besoin.
 
 ### Objectifs
 
-1. **O1 — Moins de temps à dérusher** : savoir en quelques minutes quels plans garder.
-2. **O2 — Trouver les moments forts** sans tout revoir : entrée des mariés, youyous,
-   applaudissements, danse, gâteau, discours.
-3. **O3 — Un teaser prêt à retoucher** en quelques minutes, calé sur une musique.
-4. **O4 — Des effets qui font la différence** (détourage du couple, photos animées en 3D),
+1. **O1 — Dérushage rapide** : de la carte mémoire à une sélection classée et prête à
+   monter, sans revoir toutes les heures de rushes.
+2. **O2 — Trouver les moments forts** : entrée des mariés, youyous, applaudissements, danse,
+   gâteau, discours.
+3. **O3 — Post-production assistée** : son propre, images stables, couleurs homogènes d'un
+   plan à l'autre, bruit réduit sur les plans de soirée.
+4. **O4 — Un teaser prêt à retoucher** en quelques minutes, calé sur une musique.
+5. **O5 — Des effets qui font la différence** (détourage du couple, photos animées en 3D),
    sur des moments choisis.
-5. **O5 — Garder le monteur maître** : tout est proposé, rien n'est imposé ; finition dans FilmCraft.
+6. **O6 — Garder le monteur maître** : tout est proposé, rien n'est imposé ; finition dans FilmCraft.
 
 ### Non-objectifs
 
@@ -66,26 +76,29 @@ Priorités : **P1** indispensable au premier lot ; **P2** ensuite ; **P3** maint
 
 | Module | Priorité | Ce que voit le monteur |
 |---|---|---|
-| **M1 — Tri des rushes** | P1 | Pour chaque fichier : note de qualité (flou, image tremblée, trop sombre / brûlée, plan noir ou figé, trop court) et classement par heure de tournage. Les plans à jeter sont signalés, jamais supprimés. |
-| **M2 — Moments forts** | P1 | Une liste de moments notés, écoutables (▶) : youyous, applaudissements et cris de joie, départ de musique, mouvement intense (danse, cortège), discours. Chapitres de l'événement. Marqueurs dans FilmCraft. |
-| **M3 — Teaser et film souvenir** | P1 | Choix d'une musique et d'une durée (30 / 60 s) : meilleurs moments de bonne qualité, coupés sur le rythme, en 9:16 (cadrage qui suit les visages) et 16:9. Retouche dans FilmCraft. |
-| **M4 — Effets IA** | P2 | Sur un plan ou une photo choisis : détourage des mariés (désignés par un clic), mariés en couleur sur fond noir et blanc, fond flouté, titre glissé derrière le couple, ralenti fluide ; **photos du studio animées en 3D** (calques + profondeur + décor reconstitué). |
-| **M5 — Son** | P2 | Volume égalisé, musique baissée automatiquement sous les discours, réduction du bruit (vent, brouhaha). |
+| **M1 — Dérushage** | **P1** | **Import** du dossier de la carte mémoire (copie vérifiée, rushes jamais modifiés) ; **classement par heure de tournage** ; **note de qualité** par plan (flou, tremblé, trop sombre / brûlé, plan noir ou figé, trop court) ; **doublons et quasi-doublons** repérés ; **sélection** : à garder / à vérifier / à écarter (jamais supprimé) ; **proxies** (copies allégées) pour un montage fluide sur l'iMac ; envoi de la sélection classée dans FilmCraft, avec marqueurs. |
+| **M2 — Moments forts** | **P1** | Moments notés et écoutables (▶) : youyous, applaudissements et cris de joie, départ de musique, mouvement intense (danse, cortège), discours ; chapitres de l'événement (préparatifs, entrée, cérémonie, gâteau, danse). Ils guident le dérushage, le teaser et le film complet. |
+| **M3 — Post-production** | **P1** | **Son** : volume égalisé, musique baissée sous les discours, réduction du bruit (vent, brouhaha). **Image** : stabilisation des plans tremblés, couleurs harmonisées d'un plan à l'autre (exposition, balance des blancs), correction du scintillement des éclairages de salle, réduction du bruit des plans de soirée, « looks » couleur. Appliqué plan par plan ou sur toute la sélection, avec aperçu avant / après. |
+| **M4 — Teaser et film souvenir** | P1 | Choix d'une musique et d'une durée (30 / 60 s) : meilleurs moments de bonne qualité, coupés sur le rythme, en 9:16 (cadrage qui suit les visages) et 16:9 ; transitions ; ralenti sur les moments clés. Retouche dans FilmCraft. |
+| **M5 — Effets IA** | P2 | Sur un plan ou une photo choisis : détourage des mariés (désignés par un clic), mariés en couleur sur fond noir et blanc, fond flouté, titre glissé derrière le couple ; **photos du studio animées en 3D** (calques + profondeur + décor reconstitué). |
 | **M6 — Livraison** | P2 | Rendus 16:9 / 9:16, miniatures, textes pour les réseaux sociaux (français / arabe), fiche de l'événement (mariés, date, lieu) pour les titres. |
 | **M7 — Discours et sous-titres** | P3 | Existant : transcription (français, arabe tunisien), nettoyage d'un discours, sous-titres. |
 
 ### Exigences par module (critères d'acceptation, mesurés sur de vrais rushes du studio)
 
-- **M1** : analyse d'une heure de rushes en moins de 15 min sur l'iMac (à confirmer par la
-  mesure) ; aucun plan jugé « à jeter » qui soit en réalité bon, sur un échantillon vérifié
-  par le monteur.
+- **M1** : analyse d'une heure de rushes en moins de 15 min sur l'iMac, proxies compris (à
+  confirmer par la mesure) ; aucun plan classé « à écarter » qui soit en réalité bon, sur un
+  échantillon vérifié par le monteur ; rushes d'origine jamais modifiés (empreinte vérifiée
+  après copie) ; montage des proxies fluide dans FilmCraft.
 - **M2** : sur un mariage réel, au moins 8 des 10 moments que le monteur aurait choisis sont
   dans les 20 premiers proposés ; les youyous et applaudissements sont repérés.
-- **M3** : teaser rendu en moins de 5 min ; coupes sur le temps fort de la musique ; aucun
+- **M3** : la musique est audible mais n'écrase jamais un discours ; deux plans consécutifs de
+  la même scène ont des couleurs jugées homogènes par le monteur ; la stabilisation ne
+  déforme pas l'image ; chaque traitement a un aperçu avant / après et peut être annulé.
+- **M4** : teaser rendu en moins de 5 min ; coupes sur le temps fort de la musique ; aucun
   plan flou ou tremblé.
-- **M4** : le voile de la mariée reste propre sur le détourage, ou le plan est signalé
+- **M5** : le voile de la mariée reste propre sur le détourage, ou le plan est signalé
   « effet non conseillé » ; temps par plan affiché avant le calcul.
-- **M5** : la musique est audible mais n'écrase jamais un discours.
 
 ## 6. Contraintes
 
@@ -113,6 +126,11 @@ Priorités : **P1** indispensable au premier lot ; **P2** ensuite ; **P3** maint
 - **Analyse vidéo** (M1, M2) : filtres ffmpeg déjà présents (`blurdetect`, `vidstabdetect`,
   `signalstats`, `blackdetect`, `freezedetect`, `scdet`, `ebur128`, `astats`) sur une copie
   basse résolution et basse cadence, pour tenir les temps sur l'iMac.
+- **Post-production** (M3) : filtres ffmpeg déjà présents — son : `afftdn`, `anlmdn`,
+  `highpass`, `sidechaincompress`, `loudnorm` ; image : `vidstabdetect` / `vidstabtransform`,
+  `grayworld` / `greyedge` (balance des blancs), `eq`, `curves`, `haldclut` (looks),
+  `deflicker`, `hqdn3d` / `nlmeans` (bruit), `minterpolate` (ralenti), `xfade` (transitions).
+  Les traitements sont décrits par plan dans le projet (non destructifs) et appliqués au rendu.
 - **Détourage** (M4) : MobileSAM (par clic, Apache-2.0) pour désigner les mariés ; Apple
   Vision (intégré à macOS 12, sans téléchargement) comme solution rapide sur les plans où le
   couple est seul. Profondeur : Depth Anything V2 Small ; décor reconstitué : MI-GAN.
@@ -123,11 +141,11 @@ Priorités : **P1** indispensable au premier lot ; **P2** ensuite ; **P3** maint
 | Jalon | Contenu | Condition pour passer au suivant |
 |---|---|---|
 | **J0** | Échantillons réels du studio (vidéo + photos, avec son accord) ; réponses Q1–Q4 | fichiers déposés sur l'iMac |
-| **J1** | M1 tri des rushes | critères M1 validés par le monteur |
+| **J1** | M1 dérushage : import, classement, note de qualité, proxies, sélection vers FilmCraft | critères M1 validés par le monteur |
 | **J2** | M2 moments forts (son puis image) | critères M2 |
-| **J3** | M3 teaser sur musique | un teaser réel jugé « publiable après retouche » |
-| **J4** | M4 prototype : photos animées en 3D, couleur sur fond noir et blanc | validation visuelle du studio, temps mesurés |
-| **J5** | M5 son ; M6 livraison | — |
+| **J3** | M3 post-production : son, puis stabilisation, couleurs, bruit | critères M3 |
+| **J4** | M4 teaser sur musique | un teaser réel jugé « publiable après retouche » |
+| **J5** | M5 effets IA (photos animées en 3D, couleur sur fond noir et blanc) ; M6 livraison | validation visuelle du studio, temps mesurés |
 | **Plus tard** | Windows ; autres logiciels de montage ; autres studios | confirmation totale du projet |
 
 ## 9. Risques
