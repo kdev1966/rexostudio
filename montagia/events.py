@@ -27,6 +27,8 @@ TYPES = (
     ("Fiancailles", "Fiançailles"),
     ("Henne", "Henné"),
     ("Anniversaire", "Anniversaire"),
+    ("Circoncision", "Circoncision"),
+    ("Diplome", "Diplôme"),
     ("Fete", "Fête"),
 )
 TYPE_LABELS = dict(TYPES)

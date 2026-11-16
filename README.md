@@ -55,7 +55,7 @@ mémoire et arrête le serveur. Journal : `~/Library/Logs/RexoStudio.log`.
 Sans l'icône : `./start.sh` (ouvre `http://127.0.0.1:8080`, Ctrl+C pour arrêter).
 
 **L'accueil, ce sont les événements** (onglet « Événements ») : un dossier par mariage,
-henné, fiançailles, anniversaire ou fête, rangé dans `~/RexoStudio/Evenements/`
+henné, fiançailles, anniversaire, circoncision, remise de diplôme ou fête, rangé dans `~/RexoStudio/Evenements/`
 (`REXO_EVENTS_DIR` pour une autre racine). La barre de recherche filtre en direct sur les
 noms, le lieu, les notes, le type et la date (« novembre », « 2026-07 », « henne » sans
 accent) ; les puces filtrent par type. « Nouvel événement » crée le dossier

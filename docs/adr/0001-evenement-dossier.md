@@ -20,7 +20,8 @@ archiver d'un bloc.
    macOS à demander : ni Bureau, ni Documents, ni disque externe).
 2. **Nom du dossier** : `AAAA-MM-JJ_Type_Noms` — ex. `2026-11-22_Mariage_Sarra-et-Ahmed`.
    La date en tête classe les événements tout seuls. Types : `Mariage`, `Fiancailles`, `Henne`,
-   `Anniversaire`, `Fete`. Les noms sont nettoyés (espaces → `-`, aucun `/` ni `:`) ; les
+   `Anniversaire`, `Circoncision`, `Diplome`, `Fete`
+   (Circoncision et Diplôme ajoutés le 16 novembre 2026). Les noms sont nettoyés (espaces → `-`, aucun `/` ni `:`) ; les
    lettres accentuées et arabes sont gardées.
 3. **Structure fixe** :
 

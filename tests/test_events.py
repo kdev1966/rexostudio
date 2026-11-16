@@ -47,6 +47,11 @@ class EventsTest(unittest.TestCase):
         self.assertEqual(ev["type_label"], "Mariage")
         self.assertNotIn(os.path.join(self.root, "x"), fiche.values())   # pas de chemin absolu
 
+    def test_new_types(self):
+        ev = events.create(self.root, "Diplome", "2026-07-01", "Amira")
+        self.assertEqual((ev["id"], ev["type_label"]), ("2026-07-01_Diplome_Amira", "Diplôme"))
+        self.assertEqual(events.TYPE_LABELS["Circoncision"], "Circoncision")
+
     def test_same_name_gets_suffix(self):
         a = events.create(self.root, "Henne", "2026-11-20", "Rim")
         b = events.create(self.root, "Henne", "2026-11-20", "Rim")
