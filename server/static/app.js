@@ -1159,6 +1159,7 @@ function renderDerush() {
       (c.duration ? '<span class="dur">' + fmtDuration(c.duration) + '</span>' : '') + '</div>' +
       '<div class="rush-body">' +
       '<div class="rush-name">' + escapeHtml(c.name) +
+      (c.thumb ? '<button class="dv-open" data-rel="' + escapeHtml(c.rel) + '" title="Détourer une personne (EffectCraft, SAM 2.1)">✂</button>' : '') +
       '<button class="del" data-rel="' + escapeHtml(c.rel) + '" title="Mettre à la Corbeille">🗑</button></div>' +
       '<div class="rush-meta">' + escapeHtml([c.card.replace('_', ' '), time, res].filter(Boolean).join(' · ')) + '</div>' +
       '<div class="rush-issues">' + issues + '</div>' +
@@ -1887,4 +1888,73 @@ loadProjects().then(() => {
   if (id && !S.project && document.querySelector('[data-project="' + CSS.escape(id) + '"]')) {
     openProject(id);
   }
+});
+
+/* -- chaine de production : generique des moments forts -- */
+
+$('#gen-box').addEventListener('toggle', () => {
+  if (!$('#gen-box').open) return;
+  if (!$('#gen-title').value) $('#gen-title').value = (EVD.event && EVD.event.names) || '';
+  if (!$('#gen-subtitle').value) $('#gen-subtitle').value = frenchDate((EVD.event && EVD.event.date) || '');
+  const st = EVD.studio;
+  $('#gen-filmcraft').disabled = !(st && st.filmcraft);
+  $('#gen-filmcraft').checked = !!(st && st.filmcraft);
+  $('#gen-run').disabled = !(st && st.effectcraft);
+});
+
+$('#gen-run').addEventListener('click', () => {
+  derushJob('/api/events/studio', { recipe: 'generique', count: +$('#gen-count').value,
+    title: $('#gen-title').value.trim(), subtitle: $('#gen-subtitle').value.trim(),
+    filmcraft: $('#gen-filmcraft').checked });
+});
+
+/* -- chaine de production : detourage video d'un rush -- */
+
+const DV = { clip: null, point: null };
+
+$('#evd-clips').addEventListener('click', (ev) => {
+  const b = ev.target.closest('.dv-open');
+  if (!b) return;
+  ev.stopPropagation();
+  const c = EVD.clips.find((x) => x.rel === b.dataset.rel);
+  if (!c) return;
+  DV.clip = c;
+  DV.point = null;
+  // La vignette du rush est prise a la moitie, au plus a 3 s : le suivi part de la
+  DV.start = Math.min((c.duration || 0) / 2, 3);
+  $('#dv-name').textContent = c.name;
+  $('#dv-at').textContent = String(Math.round(DV.start * 10) / 10).replace('.', ',') + ' s';
+  $('#dv-img').src = fileUrl(c.thumb);
+  $('#dv-dot').classList.add('hidden');
+  $('#dv-run').disabled = true;
+  const st = EVD.studio;
+  $('#dv-filmcraft').disabled = !(st && st.filmcraft);
+  $('#dv-filmcraft').checked = !!(st && st.filmcraft);
+  $('#dv').classList.remove('hidden');
+}, true);
+
+$('#dv-stage').addEventListener('click', (ev) => {
+  const r = $('#dv-img').getBoundingClientRect();
+  const x = (ev.clientX - r.left) / r.width;
+  const y = (ev.clientY - r.top) / r.height;
+  if (x < 0 || x > 1 || y < 0 || y > 1) return;
+  DV.point = [x, y];
+  const dot = $('#dv-dot');
+  dot.style.left = (100 * x) + '%';
+  dot.style.top = (100 * y) + '%';
+  dot.classList.remove('hidden');
+  $('#dv-run').disabled = !(EVD.studio && EVD.studio.effectcraft);
+});
+
+function closeDv() { $('#dv').classList.add('hidden'); }
+$('#dv-close').addEventListener('click', closeDv);
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('#dv').classList.contains('hidden')) closeDv(); });
+
+$('#dv-run').addEventListener('click', () => {
+  if (!DV.clip || !DV.point) return;
+  const body = { recipe: 'detour-video', rel: DV.clip.rel, point: DV.point, start: DV.start,
+    duration: +$('#dv-duration').value, filmcraft: $('#dv-filmcraft').checked };
+  closeDv();
+  toast('Détourage vidéo lancé en tâche de fond : il arrivera dans 06_Rendus/Videos_detourees');
+  derushJob('/api/events/studio', body);
 });

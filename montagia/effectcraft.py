@@ -29,7 +29,8 @@ from . import config, tools
 REQUIRED = ("file.newProject", "file.import", "file.saveAs", "app.quit", "script.run",
             "templates.create", "essential.exportTemplate", "essential.importTemplate",
             "essential.instance", "essential.set", "renderQueue.add", "renderQueue.render",
-            "renderQueue.list", "jobs.list", "objectMatte.apply", "objectMatte.status")
+            "renderQueue.list", "jobs.list", "objectMatte.apply", "objectMatte.status",
+            "roto.models", "roto.model.select")
 DEFAULT_TITLE = "titre_simple"
 
 
@@ -342,3 +343,133 @@ def compose(client: Client, generic_dir: str, info: dict, photos: dict, out: str
         client.script(_FRONT_ON_TOP % comp)
     render(client, comp, out, progress=progress)
     return {"path": out, "placed": placed, "duration": info.get("duration")}
+
+
+# --------------------------------------------------------------------------
+# Generique des moments forts : extraits de rushes enchaines en fondu
+# --------------------------------------------------------------------------
+
+_ASSEMBLE = """
+(function () {
+  var W = %(W)d, H = %(H)d, FPS = %(FPS)d, F = %(F)f;
+  var parts = %(parts)s;
+  var total = 0;
+  for (var i = 0; i < parts.length; i++) total += parts[i][2] - parts[i][1] - (i ? F : 0);
+  var comp = app.project.items.addComp(%(name)s, W, H, 1, total, FPS);
+  var t = 0;
+  for (var i = 0; i < parts.length; i++) {
+    var it = null;
+    for (var j = 1; j <= app.project.numItems; j++) if (app.project.item(j).id == parts[i][0]) it = app.project.item(j);
+    var L = comp.layers.add(it);
+    var s = parts[i][1], d = parts[i][2] - parts[i][1];
+    L.startTime = t - s; L.inPoint = t; L.outPoint = t + d;
+    // Remplit l'image sans bande noire (le rush deborde, centre)
+    var k = Math.max(W / it.width, H / it.height) * 100;
+    L.property("Transform").property("Scale").setValue([k, k]);
+    L.audioEnabled = false;
+    var o = L.property("Transform").property("Opacity");
+    if (i > 0) { o.setValueAtTime(t, 0); o.setValueAtTime(t + F, 100); }
+    t += d - F;
+  }
+  return comp.id + "," + total;
+})()
+"""
+
+
+def assemble(client: Client, parts: list, out: str, size: tuple = (1920, 1080), fps: int = 30,
+             fade: float = 0.4, title: str = "", subtitle: str = "", title_template: str = "",
+             name: str = "Moments forts", log=None, progress=None) -> dict:
+    """Enchaine les extraits [(chemin, debut, fin)] en fondu, sans leur son (la musique
+    se pose au montage), titre a la fin (facultatif), rendu H.264."""
+    if not parts:
+        raise EffectCraftError("Aucun extrait à enchaîner")
+    out = os.path.abspath(out)
+    client.execute("file.newProject")
+    items = {}
+    for path, _a, _b in parts:
+        if path not in items:
+            imported = client.execute("file.import", {"paths": [os.path.abspath(path)]}) or {}
+            if imported.get("errors") or not imported.get("items"):
+                raise EffectCraftError("Import du rush impossible : %s" % os.path.basename(path))
+            items[path] = imported["items"][0]
+    found = client.script(_ASSEMBLE % {
+        "W": size[0], "H": size[1], "FPS": fps, "F": fade, "name": json.dumps(name),
+        "parts": json.dumps([[items[p], round(a, 3), round(b, 3)] for p, a, b in parts])})
+    comp, total = found.split(",")
+    comp = int(comp)
+    if log:
+        log("EffectCraft : %d extraits enchaînés (%.1f s)" % (len(parts), float(total)))
+    if title.strip() and title_template:
+        added = client.execute("essential.importTemplate",
+                               {"path": os.path.abspath(title_template), "comp": comp, "addToComp": True}) or {}
+        if not added.get("layer"):
+            raise EffectCraftError("Le modèle de titre n'a pas été posé")
+        _set_texts(client, added["layer"], title.strip(), subtitle.strip())
+        client.script(_PLACE % (comp, comp, added["layer"], json.dumps("end"), 0))
+    render(client, comp, out, progress=progress)
+    return {"path": out, "duration": float(total), "parts": len(parts)}
+
+
+# --------------------------------------------------------------------------
+# Detourage video : Object Matte (SAM 2.1) suit une personne d'image en image
+# --------------------------------------------------------------------------
+
+MATTE_MODEL = "sam2.1-hiera-tiny"
+MATTE_MAX_FRAMES = 600            # limite d'Object Matte par suivi
+
+
+def matte_ready(client: Client) -> bool:
+    models = (client.execute("roto.models") or {}).get("models") or []
+    return any(m.get("id") == MATTE_MODEL and m.get("installed") for m in models)
+
+
+def detour_video(client: Client, video: str, point: tuple, start: float, duration: float, out: str,
+                 log=None, progress=None, timeout: float = 1800) -> dict:
+    """Detoure la personne designee (point en proportions de l'image, au debut de
+    l'extrait) sur [start, start + duration] ; rend en ProRes 4444 avec transparence."""
+    if not matte_ready(client):
+        raise EffectCraftError("Modèle SAM 2.1 absent d'EffectCraft : ./scripts/install_sam2_effectcraft.sh")
+    out = os.path.abspath(out)
+    client.execute("roto.model.select", {"id": MATTE_MODEL, "wait": True})
+    client.execute("file.newProject")
+    imported = client.execute("file.import", {"paths": [os.path.abspath(video)], "newComp": True}) or {}
+    if imported.get("errors") or not imported.get("items"):
+        raise EffectCraftError("Import du rush impossible")
+    info = client.script(
+        "(function(){for (var j=1;j<=app.project.numItems;j++){var it=app.project.item(j);"
+        "if (it.typeName=='Composition' && it.numLayers>0 && it.layer(1).source && it.layer(1).source.id==%d)"
+        " return it.id+','+it.width+','+it.height+','+it.frameRate+','+it.duration;} return '';})()"
+        % imported["items"][0])
+    if not info:
+        raise EffectCraftError("Composition du rush introuvable")
+    comp, width, height, fps, total = info.split(",")
+    comp, width, height, fps, total = int(comp), int(width), int(height), float(fps), float(total)
+    start = max(0.0, min(start, total - 0.5))
+    duration = max(0.5, min(duration, total - start, MATTE_MAX_FRAMES / fps))
+    first = int(round(start * fps))
+    frames = int(round(duration * fps))
+    px = [round(point[0] * width), round(point[1] * height)]
+    if log:
+        log("EffectCraft : suivi de la personne (SAM 2.1) sur %d images" % frames)
+    applied = client.execute("objectMatte.apply", {"layer": 1, "point": px, "frame": first,
+                                                   "before": 0, "after": frames}) or {}
+    # Le suivi part en tache de fond : on le suit, sans jamais le relancer
+    deadline = time.time() + timeout
+    while True:
+        st = client.execute("objectMatte.status", {"layer": 1}) or {}
+        computed = len(st.get("computed") or [])
+        if progress:
+            progress(min(1.0, computed / float(frames + 1)) * 0.7)
+        if not st.get("running") and not st.get("pending"):
+            break
+        if time.time() > deadline:
+            client.execute("roto.cancel")
+            raise EffectCraftError("Le suivi dépasse %d min : arrêté" % (timeout // 60))
+        time.sleep(1.0)
+    if st.get("error") or st.get("banner"):
+        raise EffectCraftError("Suivi impossible : %s" % (st.get("error") or st.get("banner")))
+    render(client, comp, out, fmt="prores", proresProfile="4444", channels="rgba", audio="off",
+           timeSpan="custom", start=start, end=start + duration,
+           progress=(lambda f: progress(0.7 + 0.3 * f)) if progress else None)
+    return {"path": out, "frames": frames, "start": start, "duration": duration,
+            "effect": applied.get("effect"), "size": [width, height]}

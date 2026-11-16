@@ -104,6 +104,15 @@
         <details class="tech"><summary>Détails techniques</summary><pre id="evd-job-log" class="log"></pre></details>
       </div>
       <p id="evd-summary" class="plan-summary"></p>
+      <details class="fx-studio" id="gen-box">
+        <summary>Générique des moments forts (EffectCraft → FilmCraft)</summary>
+        <p class="tiny muted">Rexo cherche le meilleur passage de chaque rush gardé (net, stable, bien exposé, avec des personnes) ; EffectCraft les enchaîne en fondu avec le titre ; le générique rejoint le projet FilmCraft (chutier « Génériques »), la musique se pose au montage.</p>
+        <label class="tiny">Moments <select id="gen-count"><option>4</option><option selected>6</option><option>8</option><option>10</option></select></label>
+        <label class="tiny">Titre <input id="gen-title" maxlength="80"></label>
+        <label class="tiny">Sous-titre <input id="gen-subtitle" maxlength="80"></label>
+        <label class="fx-enhance tiny"><input type="checkbox" id="gen-filmcraft" checked> Ajouter au projet FilmCraft</label>
+        <button class="btn btn-primary" id="gen-run">Créer le générique</button>
+      </details>
     </div>
   </div>
 
@@ -414,6 +423,23 @@
           <p id="st-info" class="tiny"></p>
         </details>
       </div>
+    </div>
+  </div>
+</div>
+
+<div id="dv" class="fx-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="dv-title">
+  <div class="fx-panel dv-panel">
+    <div class="fx-head">
+      <h2 id="dv-title">Détourer une personne dans la vidéo</h2>
+      <span id="dv-name" class="muted"></span>
+      <button class="del" id="dv-close" title="Fermer (Échap)">✕</button>
+    </div>
+    <p class="tiny muted">Cliquez sur la personne à détourer (image du rush à <span id="dv-at"></span>). EffectCraft la suit d'image en image (SAM 2.1) et rend une vidéo avec transparence, ajoutée au projet FilmCraft (chutier « Détourages »).</p>
+    <div class="dv-stage" id="dv-stage"><img id="dv-img" alt=""><span id="dv-dot" class="dv-dot hidden"></span></div>
+    <div class="btn-row">
+      <label class="tiny">Durée <select id="dv-duration"><option value="5">5 s</option><option value="10" selected>10 s</option><option value="20">20 s</option></select></label>
+      <label class="fx-enhance tiny"><input type="checkbox" id="dv-filmcraft" checked> Ajouter au projet FilmCraft</label>
+      <button class="btn btn-primary" id="dv-run" disabled>Détourer</button>
     </div>
   </div>
 </div>

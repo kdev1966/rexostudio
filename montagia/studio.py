@@ -19,9 +19,11 @@ import datetime
 import os
 import time
 
-from . import blender, effectcraft, effects, filmcraft, tools
+from . import blender, effectcraft, effects, filmcraft, moments, tools
 
 CLIPS_DIR = os.path.join("06_Rendus", "Clips_3D")
+GENERIQUES_DIR = os.path.join("06_Rendus", "Generiques")
+DETOURES_DIR = os.path.join("06_Rendus", "Videos_detourees")
 WORK_DIR = os.path.join(".rexo", "studio")
 COUPLE_MAX = 2600            # px : largement assez pour des maries en 1080p
 FRAME_PHOTO_MAX = 2000       # px : photo d'un cadre (quelques centaines de px a l'ecran)
@@ -35,6 +37,17 @@ RECIPES = {
         "steps": ["Rexo : amélioration et détourage des mariés",
                   "Blender : animation générique (une seule fois par modèle)",
                   "EffectCraft : photos dans les emplacements, titre, rendu",
+                  "FilmCraft : ajout au projet de l'événement"],
+    },
+    "generique": {
+        "label": "Générique des moments forts",
+        "steps": ["Rexo : recherche des moments forts dans les rushes gardés",
+                  "EffectCraft : enchaînement en fondu, titre, rendu",
+                  "FilmCraft : ajout au projet de l'événement"],
+    },
+    "detour-video": {
+        "label": "Détourage vidéo",
+        "steps": ["EffectCraft : suivi de la personne (SAM 2.1) et rendu avec transparence",
                   "FilmCraft : ajout au projet de l'événement"],
     },
 }
@@ -148,10 +161,7 @@ def clip_drone(job, event_dir: str, src: str, scene: str = blender.DEFAULT_SCENE
         mark = time.time()
         client = effectcraft.connect(log)
         try:
-            template = ""
-            if title.strip():
-                template = (effectcraft.title_path(title_model) if title_model != effectcraft.DEFAULT_TITLE
-                            else effectcraft.ensure_default_title(client, log))
+            template = _title_template(client, title, title_model, log)
             effectcraft.compose(client, generic_dir, info, photos, out, title, subtitle, template, log=log,
                                 progress=lambda f: job.set_progress(0.70 + 0.22 * f))
             result["titled"] = bool(template)
@@ -159,13 +169,8 @@ def clip_drone(job, event_dir: str, src: str, scene: str = blender.DEFAULT_SCENE
             effectcraft.close(client, folder)
         log("EffectCraft : terminé en %.0f s" % (time.time() - mark))
 
-        if to_filmcraft and filmcraft.installed():
-            job.set_progress(0.94, steps[3])
-            try:
-                sent = filmcraft.add_to_event_project(event_dir, [out], log=log)
-                result["filmcraft"] = os.path.relpath(sent["project"], event_dir)
-            except filmcraft.FilmCraftError as exc:      # le clip est deja dans les Rendus
-                log("FilmCraft : envoi impossible (%s) ; le clip reste dans 06_Rendus" % exc)
+        job.set_progress(0.94, steps[3])
+        result["filmcraft"] = _send_to_filmcraft(event_dir, out, "Génériques", log, to_filmcraft)
     except Exception as exc:
         # Le nom etait reserve d'avance : pas de fichier vide laisse dans les Rendus
         if os.path.exists(out) and os.path.getsize(out) == 0:
@@ -179,4 +184,120 @@ def clip_drone(job, event_dir: str, src: str, scene: str = blender.DEFAULT_SCENE
                 os.remove(path)
     result["path"] = os.path.relpath(out, event_dir)
     log("Clip enregistré : %s (%.0f s en tout)" % (result["path"], time.time() - started))
+    return result
+
+
+def _send_to_filmcraft(event_dir: str, path: str, bin_name: str, log, wanted: bool) -> str:
+    """Le resultat rejoint le projet FilmCraft de l'evenement ; un echec n'annule rien."""
+    if not (wanted and filmcraft.installed()):
+        return ""
+    try:
+        sent = filmcraft.add_to_event_project(event_dir, [path], bin_name=bin_name, log=log)
+        return os.path.relpath(sent["project"], event_dir)
+    except filmcraft.FilmCraftError as exc:
+        log("FilmCraft : envoi impossible (%s) ; le fichier reste dans 06_Rendus" % exc)
+        return ""
+
+
+def _title_template(client, title: str, title_model: str, log) -> str:
+    if not title.strip():
+        return ""
+    if title_model != effectcraft.DEFAULT_TITLE:
+        return effectcraft.title_path(title_model)
+    return effectcraft.ensure_default_title(client, log)
+
+
+def generique(job, event_dir: str, count: int = 6, window: float = moments.WINDOW, title: str = "",
+              subtitle: str = "", title_model: str = effectcraft.DEFAULT_TITLE, to_filmcraft: bool = True) -> dict:
+    """Moments forts des rushes gardes -> generique enchaine en fondu et titre, dans
+    06_Rendus/Generiques, puis dans le chutier « Génériques » de FilmCraft."""
+    log = job.add_log
+    started = time.time()
+    if not effectcraft.installed():
+        raise StudioError("EffectCraft n'est pas installé : il enchaîne les moments forts")
+    steps = RECIPES["generique"]["steps"]
+    job.set_progress(0.01, steps[0])
+    try:
+        found = moments.find(event_dir, job, count=count, window=window)
+    except moments.MomentError as exc:
+        raise StudioError(str(exc)) from exc
+    chosen = found["moments"]
+    for m in chosen:
+        log("  %s  %.1f-%.1f s  qualité %.2f, personnes %d %%" % (
+            m["name"], m["start"], m["end"], m["score"], round(100 * m.get("people", 0))))
+    size = moments.orientation(chosen)
+    stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M")
+    out = tools.unique_path(tools.ensure_parent(os.path.join(event_dir, GENERIQUES_DIR,
+                                                             "Moments_forts_%s.mp4" % stamp)))
+    folder = os.path.join(event_dir, WORK_DIR)
+    os.makedirs(folder, exist_ok=True)
+    result = {"moments": len(chosen), "size": list(size), "titled": False}
+    try:
+        job.set_progress(0.6, steps[1])
+        client = effectcraft.connect(log)
+        try:
+            template = _title_template(client, title, title_model, log)
+            done = effectcraft.assemble(
+                client, [(os.path.join(event_dir, m["rel"]), m["start"], m["end"]) for m in chosen], out,
+                size=size, title=title, subtitle=subtitle, title_template=template, log=log,
+                progress=lambda f: job.set_progress(0.6 + 0.32 * f))
+            result.update(titled=bool(template), duration=done["duration"])
+        finally:
+            effectcraft.close(client, folder)
+    except Exception as exc:
+        if os.path.exists(out) and os.path.getsize(out) == 0:
+            os.remove(out)
+        if isinstance(exc, effectcraft.EffectCraftError):
+            raise StudioError(str(exc)) from exc
+        raise
+    job.set_progress(0.94, steps[2])
+    result["filmcraft"] = _send_to_filmcraft(event_dir, out, "Génériques", log, to_filmcraft)
+    result["path"] = os.path.relpath(out, event_dir)
+    log("Générique enregistré : %s (%.0f s en tout)" % (result["path"], time.time() - started))
+    return result
+
+
+def detour_video(job, event_dir: str, rel: str, point, start: float = 0.0, duration: float = 10.0,
+                 to_filmcraft: bool = True) -> dict:
+    """Personne designee (point en proportions de l'image a l'instant start) detouree
+    sur l'extrait, video avec transparence (ProRes 4444) dans 06_Rendus/Videos_detourees,
+    puis dans le chutier « Détourages » de FilmCraft."""
+    log = job.add_log
+    started = time.time()
+    if not effectcraft.installed():
+        raise StudioError("EffectCraft n'est pas installé : il suit la personne d'image en image")
+    try:
+        x, y = float(point[0]), float(point[1])
+    except (TypeError, ValueError, IndexError):
+        raise StudioError("Point invalide : cliquez sur la personne à détourer") from None
+    if not (0 <= x <= 1 and 0 <= y <= 1):
+        raise StudioError("Point hors de l'image")
+    src = os.path.join(event_dir, rel)
+    if not os.path.isfile(src):
+        raise StudioError("Rush introuvable")
+    steps = RECIPES["detour-video"]["steps"]
+    key = tools.safe_component(os.path.splitext(os.path.basename(rel))[0], "rush")
+    out = tools.unique_path(tools.ensure_parent(os.path.join(
+        event_dir, DETOURES_DIR, "%s_detoure_%ds.mov" % (key, int(start)))))
+    folder = os.path.join(event_dir, WORK_DIR)
+    os.makedirs(folder, exist_ok=True)
+    job.set_progress(0.02, steps[0])
+    try:
+        client = effectcraft.connect(log)
+        try:
+            done = effectcraft.detour_video(client, src, (x, y), float(start), float(duration), out, log=log,
+                                            progress=lambda f: job.set_progress(0.02 + 0.9 * f))
+        finally:
+            effectcraft.close(client, folder)
+    except Exception as exc:
+        if os.path.exists(out) and os.path.getsize(out) == 0:
+            os.remove(out)
+        if isinstance(exc, effectcraft.EffectCraftError):
+            raise StudioError(str(exc)) from exc
+        raise
+    job.set_progress(0.94, steps[1])
+    result = {"frames": done["frames"], "start": done["start"], "duration": done["duration"],
+              "filmcraft": _send_to_filmcraft(event_dir, out, "Détourages", log, to_filmcraft),
+              "path": os.path.relpath(out, event_dir)}
+    log("Vidéo détourée : %s (%d images, %.0f s en tout)" % (result["path"], done["frames"], time.time() - started))
     return result

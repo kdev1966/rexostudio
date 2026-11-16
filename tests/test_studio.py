@@ -13,7 +13,7 @@ from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from montagia import blender, config, effectcraft, effects, filmcraft, studio  # noqa: E402
+from montagia import blender, config, effectcraft, effects, filmcraft, moments, studio  # noqa: E402
 from montagia.jobs import Job  # noqa: E402
 
 # Faux Blender : ecrit l'animation generique dans le dossier demande, comme le vrai
@@ -146,7 +146,14 @@ class FakeEffectCraft(object):
         if command == "script.run":
             code = params["code"]
             self.scripts.append(code)
-            result = "2" if "addComp" in code else "6.5,2.5"
+            if "addComp" in code and "parts" in code:
+                result = "5,11.6"                                  # assemblage : comp, duree
+            elif "addComp" in code:
+                result = "2"
+            elif "frameRate" in code:
+                result = "4,720,1280,30,20"                        # rush : comp, taille, cadence, duree
+            else:
+                result = "6.5,2.5"
             return {"ok": True, "result": {"ok": True, "result": result, "error": None}}
         if command == "essential.importTemplate":
             return {"ok": True, "result": {"comp": 27, "layer": 141}}
@@ -170,6 +177,14 @@ class FakeEffectCraft(object):
             return {"ok": True, "result": {"path": params["path"]}}
         if command == "essential.set":
             return {"ok": True, "result": params["value"]}
+        if command == "roto.models":
+            return {"ok": True, "result": {"models": [{"id": "sam2.1-hiera-tiny", "installed": True}]}}
+        if command == "objectMatte.apply":
+            return {"ok": True, "result": {"effect": 28, "span": [90, 390]}}
+        if command == "objectMatte.status":
+            self.matte_polls = getattr(self, "matte_polls", 0) + 1
+            running = self.matte_polls == 1
+            return {"ok": True, "result": {"running": running, "pending": False, "computed": [90, 91]}}
         return {"ok": True, "result": None}
 
 
@@ -220,6 +235,37 @@ class EffectCraftCase(unittest.TestCase):
         render = next(c for c in self.fake.calls if c["command"] == "renderQueue.render")
         self.assertFalse(render["params"]["wait"])           # suivi par jobs.list
         self.assertGreaterEqual(self.fake.jobs_polls, 2)
+
+    def test_assemble_chains_parts_without_sound_and_titles(self):
+        out = os.path.join(self.tmp, "Generiques", "moments.mp4")
+        with mock.patch("time.sleep"):
+            result = effectcraft.assemble(self.client, [("/r/a.mp4", 10, 13), ("/r/b.mp4", 40, 43.4),
+                                                        ("/r/a.mp4", 20, 25.6)], out, size=(1080, 1920),
+                                          title="Zied & Namsia", subtitle="", title_template="/t/t.ectemplate")
+        self.assertTrue(os.path.isfile(out))
+        self.assertEqual(result["duration"], 11.6)
+        imports = [c for c in self.fake.calls if c["command"] == "file.import"]
+        self.assertEqual(len(imports), 2)                         # un import par rush
+        script = next(c for c in self.fake.scripts if "parts" in c)
+        self.assertIn("var W = 1080, H = 1920", script)
+        self.assertIn("audioEnabled = false", script)
+        self.assertIn("[1, 10, 13]", script.replace(".0", ""))
+        self.assertTrue(any(c["command"] == "essential.importTemplate" for c in self.fake.calls))
+
+    def test_detour_video_tracks_then_renders_prores_with_alpha(self):
+        out = os.path.join(self.tmp, "Videos_detourees", "rush.mov")
+        with mock.patch("time.sleep"):
+            result = effectcraft.detour_video(self.client, "/r/rush.mp4", (0.5, 0.25), 3.0, 10.0, out)
+        apply = next(c for c in self.fake.calls if c["command"] == "objectMatte.apply")
+        self.assertEqual(apply["params"]["point"], [360, 320])
+        self.assertEqual((apply["params"]["frame"], apply["params"]["after"]), (90, 300))
+        self.assertEqual(self.fake.commands().count("objectMatte.apply"), 1)    # jamais relance
+        add = next(c for c in self.fake.calls if c["command"] == "renderQueue.add")
+        self.assertEqual((add["params"]["format"], add["params"]["proresProfile"], add["params"]["channels"]),
+                         ("prores", "4444", "rgba"))
+        self.assertEqual((add["params"]["timeSpan"], add["params"]["start"], add["params"]["end"]),
+                         ("custom", 3.0, 13.0))
+        self.assertEqual(result["frames"], 300)
 
     def test_close_saves_before_quitting_and_cleans_up(self):
         with mock.patch.object(effectcraft, "_running", return_value=False):
@@ -319,6 +365,37 @@ class ClipDroneCase(unittest.TestCase):
                 self.assertRaises(KeyError):
             studio.clip_drone(Job("studio"), self.event, self.photo)
         self.assertFalse(os.listdir(os.path.join(self.event, studio.CLIPS_DIR)))
+
+    def test_generique_goes_moments_effectcraft_filmcraft(self):
+        found = {"moments": [
+            {"rel": "01_Rushes/a.mp4", "name": "a.mp4", "start": 2, "end": 5, "score": 0.8, "people": 0.3,
+             "width": 720, "height": 1280},
+            {"rel": "01_Rushes/b.mp4", "name": "b.mp4", "start": 0, "end": 3, "score": 0.7, "people": 0.1,
+             "width": 720, "height": 1280}]}
+        assemble = mock.Mock(side_effect=lambda _c, _parts, out, **_k: {"duration": 5.6, "path": _write(out)})
+        job = Job("studio")
+        with mock.patch.object(moments, "find", return_value=found), \
+                mock.patch.object(effectcraft, "assemble", assemble):
+            result = studio.generique(job, self.event, count=4, title="Zied & Namsia")
+        parts = assemble.call_args[0][1]
+        self.assertEqual(parts[0], (os.path.join(self.event, "01_Rushes/a.mp4"), 2, 5))
+        self.assertEqual(assemble.call_args[1]["size"], (1080, 1920))      # rushes verticaux
+        self.assertTrue(result["path"].startswith(os.path.join("06_Rendus", "Generiques", "Moments_forts_")))
+        self.assertEqual(self.to_fc.call_args[1]["bin_name"], "Génériques")
+        self.close.assert_called_once()
+
+    def test_detour_video_checks_point_and_sends_to_detourages_bin(self):
+        rush = os.path.join(self.event, "01_Rushes", "1.mp4")
+        os.makedirs(os.path.dirname(rush))
+        _write(rush, b"mp4")
+        with self.assertRaises(studio.StudioError):
+            studio.detour_video(Job("studio"), self.event, "01_Rushes/1.mp4", [1.5, 0.2])
+        detour = mock.Mock(side_effect=lambda _c, _v, _p, s, d, out, **_k: (
+            _write(out), {"frames": 300, "start": s, "duration": d})[1])
+        with mock.patch.object(effectcraft, "detour_video", detour):
+            result = studio.detour_video(Job("studio"), self.event, "01_Rushes/1.mp4", [0.4, 0.3], 3, 10)
+        self.assertEqual(result["path"], os.path.join("06_Rendus", "Videos_detourees", "1_detoure_3s.mov"))
+        self.assertEqual(self.to_fc.call_args[1]["bin_name"], "Détourages")
 
     def test_french_date(self):
         self.assertEqual(studio.french_date("2026-11-16"), "16 novembre 2026")

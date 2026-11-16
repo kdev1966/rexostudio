@@ -935,33 +935,51 @@ class StudioHandler(BaseHTTPRequestHandler):
 
     # -- chaine de production (Rexo + Blender + EffectCraft) -------------------
     def _api_studio_run(self):
-        """Recette de la chaine de production sur une photo, en tache de fond (minutes)."""
+        """Recette de la chaine de production, en tache de fond (minutes) :
+        clip-drone (une photo), generique (moments forts des rushes), detour-video (un rush)."""
         data = self._body_json()
         recipe = str(data.get("recipe") or "")
         if recipe not in studio.RECIPES:
             return self._error("Recette inconnue : %s" % recipe, 400)
         try:
-            event_dir, src = self._event_photo(data)
+            event_dir = self._event_dir(data.get("id"))
             fiche = events.summary(config.EVENTS_DIR, os.path.basename(event_dir))
-            seconds = min(30.0, max(3.0, float(data.get("seconds") or 9)))
+            title = fiche.get("names", "") if data.get("title") is None else str(data["title"])
+            subtitle = (studio.french_date(fiche.get("date", "")) if data.get("subtitle") is None
+                        else str(data["subtitle"]))
+            to_fc = data.get("filmcraft") is not False
+            if recipe == "clip-drone":
+                _event_dir, src = self._event_photo(data)
+                options = {
+                    "scene": str(data.get("scene") or blender.DEFAULT_SCENE),
+                    "motion": str(data.get("motion") or "sequence"),
+                    "quality": str(data.get("quality") or "normal"),
+                    "seconds": min(30.0, max(3.0, float(data.get("seconds") or 9))),
+                    "title": title, "subtitle": subtitle, "to_filmcraft": to_fc,
+                    "box": data.get("box") or None,
+                }
+                name = os.path.basename(src)
+                func = lambda j: studio.clip_drone(j, event_dir, src, **options)  # noqa: E731
+            elif recipe == "generique":
+                count = min(12, max(2, int(data.get("count") or 6)))
+                name = os.path.basename(event_dir)
+                func = lambda j: studio.generique(j, event_dir, count=count, title=title,  # noqa: E731
+                                                  subtitle=subtitle, to_filmcraft=to_fc)
+            else:
+                rel = str(data.get("rel") or "")
+                events.item_path(config.EVENTS_DIR, os.path.basename(event_dir), rel)   # chemin verifie
+                point = data.get("point") or []
+                start = max(0.0, float(data.get("start") or 0))
+                duration = min(20.0, max(1.0, float(data.get("duration") or 10)))
+                name = os.path.basename(rel)
+                func = lambda j: studio.detour_video(j, event_dir, rel, point, start, duration,  # noqa: E731
+                                                     to_filmcraft=to_fc)
         except events.EventError as exc:
             return self._error(exc, 404)
         except (TypeError, ValueError):
-            return self._error("Durée invalide", 400)
-        title = data.get("title")
-        options = {
-            "scene": str(data.get("scene") or blender.DEFAULT_SCENE),
-            "motion": str(data.get("motion") or "sequence"),
-            "quality": str(data.get("quality") or "normal"),
-            "seconds": seconds,
-            "title": fiche.get("names", "") if title is None else str(title),
-            "subtitle": studio.french_date(fiche.get("date", "")) if data.get("subtitle") is None
-            else str(data.get("subtitle")),
-            "to_filmcraft": data.get("filmcraft") is not False,
-            "box": data.get("box") or None,
-        }
-        job = MANAGER.create("studio", "%s : %s" % (studio.RECIPES[recipe]["label"], os.path.basename(src)))
-        MANAGER.run_async(job, lambda j: studio.clip_drone(j, event_dir, src, **options))
+            return self._error("Paramètres invalides", 400)
+        job = MANAGER.create("studio", "%s : %s" % (studio.RECIPES[recipe]["label"], name))
+        MANAGER.run_async(job, func)
         return self._json({"job_id": job.id})
 
     def _event_job(self, kind: str, title: str, func):

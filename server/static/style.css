@@ -492,3 +492,12 @@ mark { background: #5a3a10; color: inherit; border-radius: 2px; }
 .fx-studio[open] { display: flex; flex-direction: column; gap: 6px; }
 .fx-studio label { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .fx-studio select, .fx-studio input { flex: 1; max-width: 62%; }
+
+/* Detourage video : clic sur la personne */
+.dv-panel { max-width: 560px; }
+.dv-stage { position: relative; display: inline-block; cursor: crosshair; margin: 8px 0; }
+.dv-stage img { display: block; max-width: 100%; max-height: 60vh; border-radius: 6px; }
+.dv-dot { position: absolute; width: 16px; height: 16px; margin: -8px 0 0 -8px; border-radius: 50%;
+  background: #e0245e; border: 2px solid #fff; box-shadow: 0 0 0 2px rgba(0,0,0,.35); pointer-events: none; }
+.rush-name .dv-open { border: 0; background: none; cursor: pointer; font-size: 14px; margin-left: auto; }
+#gen-box { margin-top: 10px; }
