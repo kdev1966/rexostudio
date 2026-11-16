@@ -857,18 +857,26 @@ class StudioHandler(BaseHTTPRequestHandler):
         return self._json({"ok": True, "rel": rel, "path": os.path.join(event_dir, rel)})
 
     def _api_event_photocraft(self):
-        """Ouvre une photo ou un rendu de l'evenement dans PhotoCraft."""
+        """Ouvre dans PhotoCraft : apres un effet, un PSD a calques (photo originale +
+        calque d'effet avec masque modifiable) ; sinon la photo ou le rendu designe."""
         data = self._body_json()
         try:
-            _event_dir, path = self._event_photo(data)
+            event_dir, path = self._event_photo(data)
             if not os.path.isfile(path):
                 return self._error("Fichier introuvable", 404)
+            if data.get("assistant"):
+                path = assistant.export_psd(event_dir, path)
+            elif data.get("effect"):
+                path = effects.export_psd(event_dir, path, str(data["effect"]),
+                                          bool(data.get("framed")))
             photocraft.open_in_app(path)
         except events.EventError as exc:
             return self._error(exc, 404)
+        except (effects.EffectError, assistant.AssistantError) as exc:
+            return self._error(exc, 400)
         except photocraft.PhotoCraftError as exc:
             return self._error(exc, 500)
-        return self._json({"ok": True})
+        return self._json({"ok": True, "rel": os.path.relpath(path, config.EVENTS_DIR)})
 
     # -- assistant a consigne (M5) --------------------------------------------
     def _api_assistant_plan(self):

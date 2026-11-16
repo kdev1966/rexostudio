@@ -4,7 +4,9 @@ reconstitue le decor a sa place.
 S'execute dans l'environnement d'effets (.effets/venv, Python 3.11, voir
 scripts/install_effects_env.sh), jamais dans le coeur de Rexo Studio :
 
-    erase.py <entree> <sortie.jpg> --box x,y,l,h [--mask masque.png]
+    erase.py <entree> <sortie.jpg> --box x,y,l,h [--mask zone.png]
+
+--mask : enregistre la zone effacee (PNG blanc, transparence = zone).
 
 --box : cadre autour de l'objet, en proportions de l'image telle qu'on la voit
 (orientation EXIF appliquee, comme dans le navigateur et pour Vision).
@@ -86,7 +88,10 @@ def main():
     if not cv2.imwrite(a.out, result, [cv2.IMWRITE_JPEG_QUALITY, 92]):
         fail("écriture impossible")
     if a.mask:
-        cv2.imwrite(a.mask, hole * 255)
+        # Zone effacee : PNG blanc dont la transparence est la zone (masque du PSD)
+        rgba = np.full((h, w, 4), 255, np.uint8)
+        rgba[..., 3] = hole * 255
+        cv2.imwrite(a.mask, rgba)
     print(json.dumps({"ok": True, "width": w, "height": h,
                       "coverage": round(float(hole.mean()), 4),
                       "score": round(float(scores[best]), 3),

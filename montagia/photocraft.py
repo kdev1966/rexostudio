@@ -87,3 +87,111 @@ def open_in_app(path: str) -> None:
     subprocess.Popen(["open", "-a", config.PHOTOCRAFT_APP, path],
                      stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                      stderr=subprocess.DEVNULL, start_new_session=True)
+
+
+# --------------------------------------------------------------------------
+# Session sans interface (photocraft-cli serve, lignes JSON sur stdio)
+# --------------------------------------------------------------------------
+
+class Session(object):
+    """Une session du moteur : un document ouvert, des commandes, un enregistrement.
+    PhotoCraft ne lit que dans read_roots et n'ecrit que dans write_root."""
+
+    def __init__(self, read_roots: list, write_root: str, timeout: float = 300):
+        if not installed():
+            raise PhotoCraftError("PhotoCraft introuvable (%s)." % config.PHOTOCRAFT_APP)
+        cmd = [config.PHOTOCRAFT_CLI, "serve"]
+        for root in read_roots:
+            cmd += ["--automation-read-root", root]
+        cmd += ["--automation-write-root", write_root]
+        self.timeout = timeout
+        self._id = 0
+        self._proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                      stderr=subprocess.DEVNULL, text=True, bufsize=1)
+
+    def call(self, method: str, params: dict = None):
+        self._id += 1
+        request = {"id": self._id, "method": method, "params": params or {}}
+        try:
+            self._proc.stdin.write(json.dumps(request, ensure_ascii=False) + "\n")
+            self._proc.stdin.flush()
+            line = self._proc.stdout.readline()
+        except (OSError, ValueError) as exc:
+            raise PhotoCraftError("PhotoCraft s'est arrêté (%s)" % exc) from exc
+        if not line:
+            raise PhotoCraftError("PhotoCraft s'est arrêté sans répondre")
+        reply = json.loads(line)
+        if not reply.get("ok"):
+            raise PhotoCraftError("PhotoCraft (%s) : %s" % (
+                (params or {}).get("command", method), reply.get("error", "erreur inconnue")))
+        return reply.get("result")
+
+    def execute(self, command: str, **params):
+        return self.call("engine.execute", {"command": command, "params": params})
+
+    def close(self) -> None:
+        try:
+            self._proc.stdin.close()
+            self._proc.wait(timeout=30)
+        except (OSError, subprocess.TimeoutExpired):
+            self._proc.kill()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.close()
+
+
+# Comment le calque d'effet est masque dans le PSD
+#   keep    : detourage ; calque « personnes » = la photo + masque, original masque dessous
+#   outside : fond traite (noir et blanc, flou, uni) ; masque = tout sauf les personnes
+#   inside  : objet efface ; masque = la zone reconstituee
+#   plain   : resultat entier (assistant), sans masque
+PSD_MODES = ("keep", "outside", "inside", "plain")
+
+
+def to_psd(src: str, out_psd: str) -> str:
+    """Copie d'une image en PSD (un calque), quand il n'y a pas de masque a garder."""
+    tools.ensure_parent(out_psd)
+    try:
+        tools.run([config.PHOTOCRAFT_CLI, "convert", src, out_psd], timeout=300)
+    except tools.CommandError as exc:
+        raise PhotoCraftError("PhotoCraft : %s" % (exc.stderr.strip()[-300:] or exc.code)) from exc
+    return out_psd
+
+
+def layered_psd(base: str, effect_image: str, alpha: str, mode: str, layer_name: str,
+                out_psd: str, read_roots: list) -> dict:
+    """PSD a calques pour affiner un effet dans PhotoCraft :
+    « Photo originale » en dessous, le calque d'effet au-dessus avec un masque
+    de calque modifiable tire de alpha (PNG dont la transparence est le masque).
+    base : la photo redressee (memes dimensions que effect_image et alpha)."""
+    if mode not in PSD_MODES:
+        raise PhotoCraftError("Mode de PSD inconnu : %s" % mode)
+    tools.ensure_parent(out_psd)
+    with Session(read_roots, os.path.dirname(out_psd)) as pc:
+        pc.call("doc.open", {"path": base})
+        original = pc.call("doc.inspect")["layers"][-1]["id"]
+        layer = pc.call("doc.place", {"path": base if mode == "keep" else effect_image})["layer"]
+        pc.execute("layer.rasterize.smartObject", layer=layer)
+        if mode != "plain":
+            shape = pc.call("doc.place", {"path": alpha})["layer"]
+            pc.execute("select.loadSelection", channel="transparency", layer=shape)
+            pc.execute("layer.delete", layer=shape)
+            pc.execute("layer.select", layer=layer)
+            if mode == "outside":
+                pc.execute("select.inverse")
+            pc.execute("layer.layerMask.revealSelection", layer=layer)
+        pc.execute("layer.setProps", layer=layer, name=layer_name)
+        try:
+            pc.execute("layer.setProps", layer=original, name="Photo originale")
+        except PhotoCraftError:
+            pass                        # arriere-plan verrouille : il garde son nom
+        if mode == "keep":
+            pc.execute("layer.setProps", layer=original, visible=False)
+        layers = pc.call("doc.inspect")["layers"]
+        pc.call("doc.save", {"path": out_psd})
+    if not os.path.isfile(out_psd):
+        raise PhotoCraftError("PhotoCraft n'a pas enregistré le PSD.")
+    return {"path": out_psd, "layers": [(item["name"], bool(item.get("hasMask"))) for item in layers]}

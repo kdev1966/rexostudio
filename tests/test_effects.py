@@ -84,7 +84,9 @@ class EffectsTest(PhotoEventCase):
         self.assertTrue(r["path"].endswith("_noir-et-blanc.jpg"))
         self.assertFalse(r["framed"])
         self.assertEqual(r["coverage"], 0.31)
-        self.assertEqual(self._calls(), [["bw", self.photo, r["path"]]])
+        alpha = os.path.join(os.path.dirname(r["path"]),
+                             effects.mask_name("02_Photos/Carte_1/IMG_0001.jpg", "noir-et-blanc", False))
+        self.assertEqual(self._calls(), [["bw", self.photo, r["path"], "--save-alpha", alpha]])
 
     def test_preview_with_box_uses_photocraft_on_reduced_copy(self):
         seen = {}
@@ -108,7 +110,9 @@ class EffectsTest(PhotoEventCase):
         self.assertEqual(calls[0][:2], ["orient", self.photo])
         self.assertEqual(calls[0][-2:], ["--max", "2048"])
         self.assertEqual(calls[1][:3], ["cutout", self.photo, r["path"]])
-        self.assertEqual(calls[1][3], "--add-mask")
+        self.assertEqual(calls[1][3], "--save-alpha")
+        self.assertTrue(calls[1][4].endswith("_detourage_cadre_masque.png"))
+        self.assertEqual(calls[1][5], "--add-mask")
         # Fichiers intermediaires effaces : il ne reste que l'apercu
         self.assertEqual(os.listdir(os.path.dirname(r["path"])), [os.path.basename(r["path"])])
 
@@ -174,6 +178,64 @@ class EffectsTest(PhotoEventCase):
         with self.assertRaises(effects.EffectError):
             effects.save(self.event, self.photo, "detourage", False)
 
+    # -- PSD a calques pour PhotoCraft ----------------------------------
+    def _fake_alpha(self, r, effect, framed=False):
+        alpha = os.path.join(os.path.dirname(r["path"]),
+                             effects.mask_name("02_Photos/Carte_1/IMG_0001.jpg", effect, framed))
+        open(alpha, "wb").close()
+        return alpha
+
+    def test_export_psd_layers(self):
+        r = effects.preview(self.event, self.photo, "fond-flou")
+        alpha = self._fake_alpha(r, "fond-flou")
+        seen = {}
+
+        def fake_psd(base, effect_image, alpha_png, mode, name, out, roots):
+            seen.update(base=base, effect=effect_image, alpha=alpha_png, mode=mode, name=name,
+                        out=out, roots=roots, base_exists=os.path.isfile(base))
+            return {"path": out}
+
+        with mock.patch.object(photocraft, "installed", return_value=True), \
+                mock.patch.object(photocraft, "layered_psd", side_effect=fake_psd):
+            out = effects.export_psd(self.event, self.photo, "fond-flou", False)
+        self.assertEqual(out, os.path.join(self.event, "06_Rendus", "Photos_effets", "IMG_0001_fond-flou.psd"))
+        self.assertEqual((seen["effect"], seen["alpha"], seen["mode"]), (r["path"], alpha, "outside"))
+        self.assertIn("masque à affiner", seen["name"])
+        self.assertTrue(seen["base_exists"])                       # photo redressee sans perte...
+        self.assertFalse(os.path.exists(seen["base"]))              # ...effacee apres
+        self.assertEqual(seen["roots"], [self.event])
+        self.assertEqual(self._calls()[-1][:3], ["orient", self.photo, seen["base"]])
+
+    def test_export_psd_modes(self):
+        modes = {}
+        for effect, box in (("detourage", None), ("noir-et-blanc", None)):
+            r = effects.preview(self.event, self.photo, effect, box)
+            self._fake_alpha(r, effect)
+            with mock.patch.object(photocraft, "installed", return_value=True), \
+                    mock.patch.object(photocraft, "layered_psd",
+                                      side_effect=lambda *a: modes.setdefault(a[3], a[4])):
+                effects.export_psd(self.event, self.photo, effect, False)
+        self.assertEqual(set(modes), {"keep", "outside"})
+
+    def test_export_psd_needs_preview_and_mask(self):
+        with mock.patch.object(photocraft, "installed", return_value=True):
+            with self.assertRaises(effects.EffectError):
+                effects.export_psd(self.event, self.photo, "fond-flou", False)
+            effects.preview(self.event, self.photo, "fond-flou")          # pas de masque (faux outil)
+            with self.assertRaises(effects.EffectError):
+                effects.export_psd(self.event, self.photo, "fond-flou", False)
+
+    def test_export_psd_failure_leaves_no_empty_file(self):
+        r = effects.preview(self.event, self.photo, "fond-flou")
+        self._fake_alpha(r, "fond-flou")
+        with mock.patch.object(photocraft, "installed", return_value=True), \
+                mock.patch.object(photocraft, "layered_psd",
+                                  side_effect=photocraft.PhotoCraftError("arrêt")), \
+                self.assertRaises(effects.EffectError):
+            effects.export_psd(self.event, self.photo, "fond-flou", False)
+        folder = os.path.join(self.event, "06_Rendus", "Photos_effets")
+        self.assertEqual(os.listdir(folder), [])
+
 
 # Faux python de l'environnement d'effets : note ses arguments et PYTHONPATH,
 # copie l'entree vers la sortie, repond comme effects_worker/erase.py.
@@ -216,7 +278,9 @@ class EraseTest(PhotoEventCase):
         args = args.split()
         self.assertEqual(args[0], os.path.join(config.EFFECTS_WORKER_DIR, "erase.py"))
         self.assertEqual(args[1], self.photo)
-        self.assertEqual(args[3:], ["--box", "0.100000,0.200000,0.300000,0.400000"])
+        self.assertEqual(args[3:5], ["--box", "0.100000,0.200000,0.300000,0.400000"])
+        self.assertEqual(args[5], "--mask")
+        self.assertTrue(args[6].endswith("_effacer_cadre_masque.png"))
         self.assertIn("PYTHONPATH=" + config.EMBEDKIT_DIR, env)
         self.assertIn("OFFLINE=1", env)
         # Vision n'est pas appele pour une photo JPEG

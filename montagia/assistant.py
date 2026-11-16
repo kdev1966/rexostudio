@@ -19,7 +19,7 @@ import re
 import shutil
 import time
 
-from . import ai, effects
+from . import ai, effects, photocraft
 from . import tools as tools_mod
 
 # Outils proposes a l'IA : nom -> (ce qu'il fait, pour l'IA et pour l'interface)
@@ -357,6 +357,41 @@ def save(event_dir: str, src: str) -> str:
         os.path.join(event_dir, RESULT_DIR, stem + "_assistant" + os.path.splitext(cached)[1])))
     shutil.copyfile(cached, dest)
     return os.path.relpath(dest, event_dir)
+
+
+def _image_size(path: str) -> tuple:
+    out = tools_mod.run(["sips", "-g", "pixelWidth", "-g", "pixelHeight", path], timeout=60)
+    values = dict(line.split(":") for line in out.splitlines()[1:] if ":" in line)
+    return int(values["pixelWidth"]), int(values["pixelHeight"])
+
+
+def export_psd(event_dir: str, src: str) -> str:
+    """PSD du resultat de l'assistant pour PhotoCraft : la photo originale et le
+    resultat en calques ; le resultat seul s'il a ete recadre (autre taille)."""
+    rel = os.path.relpath(src, event_dir)
+    base = preview_path(event_dir, rel)
+    cached = next((base + e for e in (".jpg", ".png") if os.path.isfile(base + e)), "")
+    if not cached:
+        raise AssistantError("Résultat introuvable : relancez l'assistant")
+    stem = tools_mod.safe_component(os.path.splitext(os.path.basename(src))[0], "photo")
+    out = tools_mod.unique_path(tools_mod.ensure_parent(
+        os.path.join(event_dir, RESULT_DIR, stem + "_assistant.psd")))
+    original = base + "_original.png"
+    try:
+        info = effects.segment(["orient", src, original])
+        if (int(info["width"]), int(info["height"])) == _image_size(cached):
+            photocraft.layered_psd(original, cached, "", "plain", "Résultat de l'assistant",
+                                   out, [event_dir])
+        else:
+            photocraft.to_psd(cached, out)
+    except (photocraft.PhotoCraftError, tools_mod.CommandError, KeyError, ValueError) as exc:
+        if os.path.exists(out) and os.path.getsize(out) == 0:
+            os.remove(out)
+        raise AssistantError("PSD impossible : %s" % exc) from exc
+    finally:
+        if os.path.exists(original):
+            os.remove(original)
+    return out
 
 
 class _exclusive(object):

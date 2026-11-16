@@ -39,6 +39,13 @@ EFFECTS = {
 # Formats lus directement par OpenCV dans l'environnement d'effets
 OPENCV_EXT = {".jpg", ".jpeg", ".png", ".tif", ".tiff"}
 CACHE_DIR = os.path.join(".rexo", "effets")
+# PSD a calques pour affiner dans PhotoCraft : (mode du masque, nom du calque d'effet)
+PSD_LAYERS = {
+    "detourage": ("keep", "Mariés (masque à affiner)"),
+    "noir-et-blanc": ("outside", "Fond noir et blanc (masque à affiner)"),
+    "fond-flou": ("outside", "Fond flou (masque à affiner)"),
+    "effacer": ("inside", "Zone reconstituée (masque à affiner)"),
+}
 OUTPUT_DIR = os.path.join("06_Rendus", "Photos_effets")
 # Grand cote de la copie donnee a PhotoCraft : son masque ne sert qu'a completer
 # celui de Vision, inutile de lui faire traiter 24 Mpx.
@@ -95,6 +102,11 @@ def preview_name(rel: str, effect: str, framed: bool) -> str:
     return "%s_%s%s%s" % (_key(rel), effect, "_cadre" if framed else "", EFFECTS[effect]["ext"])
 
 
+def mask_name(rel: str, effect: str, framed: bool) -> str:
+    """Masque de l'apercu (PNG, transparence = personnes ou zone effacee)."""
+    return "%s_%s%s_masque.png" % (_key(rel), effect, "_cadre" if framed else "")
+
+
 def check_box(box, width: int, height: int) -> list:
     """Cadre [x, y, largeur, hauteur] en proportions de l'image (0 a 1, tel que
     trace dans l'apercu), converti en pixels et ramene dans l'image."""
@@ -148,7 +160,7 @@ def _cleanup_cache(folder: str, keep_prefix: str) -> None:
                 pass
 
 
-def _erase(src: str, out: str, box, folder: str, key: str) -> dict:
+def _erase(src: str, out: str, box, folder: str, key: str, mask: str = "") -> dict:
     """Efface l'objet du cadre (proportions de l'image redressee)."""
     if box is None:
         raise EffectError("Tracez un cadre autour de l'objet à effacer")
@@ -167,7 +179,8 @@ def _erase(src: str, out: str, box, folder: str, key: str) -> dict:
         _segment(["orient", src, tmp])
     try:
         return _run_json([config.EFFECTS_PYTHON, os.path.join(config.EFFECTS_WORKER_DIR, "erase.py"),
-                          readable, out, "--box", ",".join("%.6f" % v for v in (fx, fy, fw, fh))],
+                          readable, out, "--box", ",".join("%.6f" % v for v in (fx, fy, fw, fh))]
+                         + (["--mask", mask] if mask else []),
                          "échec de l'effacement", env=config.effects_env())
     finally:
         if tmp and os.path.exists(tmp):
@@ -220,15 +233,16 @@ def preview(event_dir: str, src: str, effect: str, box=None, log=None) -> dict:
         os.makedirs(folder, exist_ok=True)
         _cleanup_cache(folder, _key(rel) + "_")
         out = os.path.join(folder, preview_name(rel, effect, box is not None))
+        alpha = os.path.join(folder, mask_name(rel, effect, box is not None))
         if spec["tool"] == "erase":
-            result = _erase(src, out, box, folder, _key(rel))
+            result = _erase(src, out, box, folder, _key(rel), alpha)
             return {
                 "effect": effect, "framed": True, "path": out,
                 "width": result.get("width"), "height": result.get("height"),
                 "coverage": result.get("coverage", 0), "ms": result.get("ms", 0),
                 "score": result.get("score"), "object_bounds": None,
             }
-        args = [spec["tool"], src, out]
+        args = [spec["tool"], src, out, "--save-alpha", alpha]
         bounds = None
         if box is not None:
             mask = os.path.join(folder, _key(rel) + "_tmp_objet.png")
@@ -267,3 +281,35 @@ def save(event_dir: str, src: str, effect: str, framed: bool) -> str:
     dest = tools.unique_path(tools.ensure_parent(os.path.join(event_dir, OUTPUT_DIR, name)))
     shutil.copyfile(cached, dest)
     return os.path.relpath(dest, event_dir)
+
+
+def export_psd(event_dir: str, src: str, effect: str, framed: bool, log=None) -> str:
+    """PSD a calques de l'apercu valide, pour l'affiner dans PhotoCraft : la photo
+    originale, et le calque d'effet avec un masque de calque modifiable. Enregistre
+    dans 06_Rendus/Photos_effets (jamais par-dessus un fichier) ; retourne son chemin."""
+    _check(effect)
+    rel = _photo_rel(event_dir, src)
+    folder = os.path.join(event_dir, CACHE_DIR)
+    cached = os.path.join(folder, preview_name(rel, effect, framed))
+    alpha = os.path.join(folder, mask_name(rel, effect, framed))
+    if not (os.path.isfile(cached) and os.path.isfile(alpha)):
+        raise EffectError("Aperçu introuvable : recalculez l'effet")
+    if not photocraft.installed():
+        raise EffectError("PhotoCraft introuvable")
+    stem = tools.safe_component(os.path.splitext(os.path.basename(src))[0], "photo")
+    out = tools.unique_path(tools.ensure_parent(
+        os.path.join(event_dir, OUTPUT_DIR, "%s_%s.psd" % (stem, effect))))
+    # Photo redressee sans perte : memes dimensions que l'apercu et le masque
+    base = os.path.join(folder, _key(rel) + "_base.png")
+    try:
+        _segment(["orient", src, base])
+        mode, layer_name = PSD_LAYERS[effect]
+        photocraft.layered_psd(base, cached, alpha, mode, layer_name, out, [event_dir])
+    except photocraft.PhotoCraftError as exc:
+        if os.path.exists(out) and os.path.getsize(out) == 0:
+            os.remove(out)
+        raise EffectError(str(exc)) from exc
+    finally:
+        if os.path.exists(base):
+            os.remove(base)
+    return out

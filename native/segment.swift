@@ -16,8 +16,12 @@
 //   crop     recadrage au format --ratio L:H (4:5, 9:16, 1:1, 16:9), le plus grand
 //            possible, centre sur les personnes trouvees par Vision
 //
-// Pour style et crop, la sortie est en PNG si son nom finit par .png (la
-// transparence d'un detourage est gardee), en JPEG sinon.
+// Pour style, crop et orient, la sortie est en PNG si son nom finit par .png (la
+// transparence d'un detourage est gardee ; orient sans perte), en JPEG sinon.
+//
+// --save-alpha <png> : enregistre aussi le masque final (personnes + masque
+// complementaire) en PNG blanc dont la transparence est le masque : PhotoCraft
+// en fait la selection, puis le masque de calque modifiable du PSD.
 //
 // --add-mask : la transparence d'un PNG detoure ailleurs (PhotoCraft, Selection
 // d'objet dans un cadre) est ajoutee au masque des personnes. Vision trouve les
@@ -122,7 +126,7 @@ if effect == "orient" {
         result = result.cropped(to: CGRect(x: 0, y: 0, width: floor(result.extent.width),
                                            height: floor(result.extent.height)))
     }
-    finish(result, png: false, coverage: 0)
+    finish(result, png: pngOutput, coverage: 0)
 }
 
 // Rendu de couleur sur toute l'image (pas de detourage) ; l'alpha est garde
@@ -211,6 +215,18 @@ if let extraPath = option("--add-mask") {
         "inputBiasVector": CIVector(x: 0, y: 0, z: 0, w: 1)])
     mask = alpha.applyingFilter("CIMaximumCompositing",
                                 parameters: [kCIInputBackgroundImageKey: mask]).cropped(to: extent)
+}
+
+if let alphaPath = option("--save-alpha") {
+    let white = CIImage(color: CIColor(red: 1, green: 1, blue: 1)).cropped(to: extent)
+    let alpha = white.applyingFilter("CIBlendWithMask", parameters: [
+        kCIInputBackgroundImageKey: CIImage.empty(), kCIInputMaskImageKey: mask])
+    do {
+        try context.writePNGRepresentation(of: alpha, to: URL(fileURLWithPath: alphaPath),
+                                           format: .RGBA8, colorSpace: srgb)
+    } catch {
+        fail("masque impossible a ecrire : \(error.localizedDescription)")
+    }
 }
 
 // Part de l'image couverte par le masque (moyenne)

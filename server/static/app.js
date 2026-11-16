@@ -1516,7 +1516,10 @@ function fxRender() {
   $('#fx-run').textContent = FX.busy ? 'Calcul en cours…' : 'Calculer l’aperçu';
   $('#fx-save').disabled = FX.busy || !FX.result || !!FX.saved;
   $('#fx-save').textContent = FX.saved ? 'Enregistré ✓' : 'Enregistrer dans Rendus';
-  $('#fx-photocraft').textContent = FX.saved ? 'Ouvrir le rendu dans PhotoCraft' : 'Ouvrir la photo dans PhotoCraft';
+  $('#fx-photocraft').textContent = FX.result ? 'Affiner dans PhotoCraft (PSD à calques)' : 'Ouvrir la photo dans PhotoCraft';
+  $('#fx-photocraft').title = FX.result
+    ? 'Crée un PSD : la photo originale + le calque de l’effet avec un masque modifiable au pinceau'
+    : 'Ouvre la photo originale dans PhotoCraft';
 }
 
 function fxInvalidate() {
@@ -1643,11 +1646,21 @@ $('#fx-save').addEventListener('click', async () => {
 });
 
 $('#fx-photocraft').addEventListener('click', async () => {
-  if (!FX.photo) return;
+  if (!FX.photo || FX.busy) return;
+  // Apres un effet : PSD a calques (original + calque d'effet au masque modifiable)
+  const body = { id: EVD.id, rel: FX.photo.rel };
+  if (FX.result && FX.result.kind === 'assistant') body.assistant = true;
+  else if (FX.result) Object.assign(body, { effect: FX.result.effect, framed: FX.result.framed });
+  const btn = $('#fx-photocraft');
+  btn.disabled = true;
+  btn.textContent = FX.result ? 'Préparation du PSD…' : 'Ouverture…';
   try {
-    await post('/api/events/photocraft', { id: EVD.id, rel: FX.saved || FX.photo.rel });
-    toast('Ouverture dans PhotoCraft…');
+    const r = await post('/api/events/photocraft', body);
+    toast(FX.result ? 'PSD à calques ouvert dans PhotoCraft : ' + r.rel.split('/').pop() : 'Ouverture dans PhotoCraft…');
+    if (FX.result) loadDerush();
   } catch (err) { toast(err.message, true); }
+  btn.disabled = false;
+  fxRender();
 });
 
 /* -- assistant dans la fenetre d'une photo -- */
