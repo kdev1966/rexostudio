@@ -12,9 +12,13 @@ Deux calques :
     par MI-GAN. Pendant le mouvement, seule une bande etroite le long des
     silhouettes se decouvre : la ou MI-GAN prolonge le vrai decor (constat de
     rawi, ADR 0007), ses inventions au centre de la zone restent cachees.
+Profondeur : Depth Anything V2 Small estime la distance de chaque point du decor,
+relative a celle des maries ; chaque point bouge en proportion de sa proximite (le
+lointain presque pas, le sol au premier plan plus que les maries). Carte lissee pour
+que le decor ne se dechire pas. Sans le modele (ou --flat) : decor d'un bloc.
 Mouvement de camera (debut et fin adoucis) :
-  - avance : la camera s'approche ; les personnes grandissent plus vite que le decor ;
-  - glisse : deplacement lateral ; les personnes glissent plus que le decor.
+  - avance : la camera s'approche ; les maries grandissent, le lointain presque pas ;
+  - glisse : deplacement lateral ; le proche glisse, le lointain glisse un peu a l'oppose.
 Les images sont envoyees a ffmpeg (H.264, yuv420p, lisible partout).
 
 Sortie standard : une ligne JSON {"ok":true,"width","height","frames","ms"}, ou
@@ -43,6 +47,8 @@ def main():
     ap.add_argument("--duration", type=float, default=6.0)
     ap.add_argument("--fps", type=int, default=30)
     ap.add_argument("--size", type=int, default=1920, help="grand cote de la video")
+    ap.add_argument("--flat", action="store_true", help="decor d'un bloc, sans profondeur")
+    ap.add_argument("--depth-png", default="", help="diagnostic : carte de profondeur relative")
     a = ap.parse_args()
     os.environ.setdefault("EMBEDKIT_OFFLINE", "1")
 
@@ -82,6 +88,38 @@ def main():
     cx = float(xs.mean())
     cy = float(ys.min() + 0.4 * (ys.max() - ys.min()))
 
+    # Profondeur du decor relative aux maries (Depth Anything V2 Small, 1 = proche) :
+    # rel = 1 a la distance des maries, ~0 au loin, > 1 plus pres (le sol au premier plan).
+    # Le decor reconstitue donne une profondeur continue derriere les maries ; la
+    # photo d'origine donne la distance des maries. Les deux cartes, normalisees chacune
+    # a sa facon, sont accordees sur la zone ou les deux images sont identiques.
+    rel = None
+    depth_info = "plat"
+    if not a.flat:
+        try:
+            from embedkit.tasks.depth import DepthEstimator
+            with DepthEstimator.load(model="depth-anything-v2-small") as est:
+                if est.tier > 0:
+                    d_img = cv2.resize(est(image), (w, h)).astype(np.float32)
+                    d_bg = cv2.resize(est(background), (w, h)).astype(np.float32)
+                    same = (hole == 0)
+                    a_fit, b_fit = np.polyfit(d_bg[same][::37], d_img[same][::37], 1)
+                    d_bg = a_fit * d_bg + b_fit
+                    d_fg = float(np.median(d_img[alpha > 0.5]))
+                    rel = np.clip(d_bg / max(d_fg, 1e-3), 0.0, 1.3).astype(np.float32)
+                    # Lissage : pas de dechirure du decor aux changements brusques de distance
+                    rel = cv2.GaussianBlur(rel, (0, 0), max(w, h) * 0.01)
+                    depth_info = "profondeur (lointain %.2f, sol %.2f)" % (
+                        float(np.percentile(rel, 5)), float(np.percentile(rel, 95)))
+        except Exception as exc:                       # noqa: BLE001 - repli : decor plat
+            depth_info = "plat (profondeur indisponible : %s)" % exc
+    if rel is None:
+        rel = np.full((h, w), 0.4, np.float32)         # decor d'un bloc, comme sans profondeur
+    if a.depth_png:
+        cv2.imwrite(a.depth_png, np.clip(rel / 1.3 * 255, 0, 255).astype(np.uint8))
+    gx, gy = np.meshgrid(np.arange(w, dtype=np.float32), np.arange(h, dtype=np.float32))
+    ox, oy = gx - cx, gy - cy
+
     # Calculs en entiers et dans OpenCV (C) : ~3 fois plus rapide que numpy en flottants
     fg = image
     bg = background
@@ -97,18 +135,25 @@ def main():
         m = np.float32([[s, 0, (1 - s) * cx + dx], [0, s, (1 - s) * cy + dy]])
         return cv2.warpAffine(img, m, (w, h), flags=cv2.INTER_LINEAR, borderMode=border)
 
+    amplitude = 0.045 * w                                 # glissement : 4,5 % de la largeur
     try:
         for i in range(frames):
             t = i / float(frames - 1)
             e = t * t * (3 - 2 * t)                          # debut et fin adoucis
+            # Chaque point du decor bouge selon sa profondeur (rel) ; les maries (rel = 1)
+            # bougent comme leur calque. Lecture inverse : pour chaque point de l'image,
+            # ou prendre la couleur dans le decor (cv2.remap).
             if a.motion == "avance":
-                sb, sf = 1.04 + 0.04 * e, 1.04 + 0.11 * e
-                dxb = dxf = 0.0
+                s0, sf = 1.04 + 0.01 * e, 1.04 + 0.11 * e     # lointain presque fixe, maries s'approchent
+                s = s0 + (sf - s0) * rel
+                mx, my = cx + ox / s, cy + oy / s
+                dxf = 0.0
             else:
-                sb = sf = 1.06
-                dxb = -(e - 0.5) * 0.014 * w                  # le decor glisse peu, a l'oppose
-                dxf = (e - 0.5) * 0.040 * w
-            b = warp(bg, sb, dxb, 0.0, cv2.BORDER_REFLECT)
+                sf = 1.06                                     # marge : jamais de bord vide
+                shift = amplitude * (e - 0.5) * (rel - 0.3)   # le loin glisse un peu a l'oppose
+                mx, my = cx + ox / sf - shift, cy + oy / sf
+                dxf = amplitude * (e - 0.5) * 0.7
+            b = cv2.remap(bg, mx, my, cv2.INTER_LINEAR, borderMode=cv2.BORDER_REFLECT)
             f = warp(fg, sf, dxf, 0.0, cv2.BORDER_REFLECT)
             wf = warp(alpha8, sf, dxf, 0.0, cv2.BORDER_CONSTANT).astype(np.float32) * (1 / 255.0)
             frame = cv2.blendLinear(f, b, wf, 1.0 - wf)
@@ -119,8 +164,8 @@ def main():
             fail("ffmpeg : %s" % err.strip()[-300:])
     except BrokenPipeError:
         fail("ffmpeg s'est arrêté : %s" % proc.stderr.read().decode("utf-8", "replace")[-300:])
-    print(json.dumps({"ok": True, "width": w, "height": h, "frames": frames,
-                      "ms": int((time.time() - start) * 1000)}))
+    print(json.dumps({"ok": True, "width": w, "height": h, "frames": frames, "depth": depth_info,
+                      "ms": int((time.time() - start) * 1000)}, ensure_ascii=False))
 
 
 if __name__ == "__main__":
