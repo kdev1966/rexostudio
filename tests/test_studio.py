@@ -18,7 +18,7 @@ from montagia.jobs import Job  # noqa: E402
 # Faux Blender : ecrit la video demandee, annonce chaque image comme le vrai
 FAKE_BLENDER = """#!/bin/bash
 out="${@: -4:1}"
-for i in 1 2 3 4; do echo "Append frame $i"; done
+for i in 1 2 3 4; do echo "IMAGE $i"; done
 echo "MESURE 3.6.23 sequence brouillon : 4 image(s) en 2.0 s (0.50 s par image)"
 echo video > "$out"
 """
@@ -136,8 +136,8 @@ class FakeEffectCraft(object):
             return {"ok": True, "result": {"comp": 27, "layer": 141}}
         if command == "essential.instance":
             return {"ok": True, "result": {"controls": [
-                {"id": 113, "name": "Title", "type": "text"},
-                {"id": 114, "name": "Subtitle", "type": "text"}]}}
+                {"control": 113, "name": "Title", "type": "text"},
+                {"control": 114, "name": "Subtitle", "type": "text"}]}}
         if command == "renderQueue.add":
             return {"ok": True, "result": {"id": 1}}
         if command == "renderQueue.render":

@@ -268,9 +268,10 @@ def _set_texts(client: Client, layer: int, title: str, subtitle: str) -> None:
         (c for c in controls if c is not first), None)
     if first is None:
         raise EffectCraftError("Le modèle de titre n'a aucun champ texte")
-    client.execute("essential.set", {"layer": layer, "control": first["id"], "value": title})
+    # essential.instance donne l'identifiant du champ sous « control »
+    client.execute("essential.set", {"layer": layer, "control": first["control"], "value": title})
     if second is not None:
-        client.execute("essential.set", {"layer": layer, "control": second["id"], "value": subtitle or ""})
+        client.execute("essential.set", {"layer": layer, "control": second["control"], "value": subtitle or ""})
 
 
 def title_over_video(client: Client, video: str, template: str, title: str, subtitle: str, out: str,

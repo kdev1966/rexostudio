@@ -100,6 +100,15 @@ if "ombre_maries" in off:
     couple.active_material.shadow_method = "NONE"
 scene.render.resolution_x, scene.render.resolution_y, scene.render.resolution_percentage = 1920, 1080, 100
 scene.render.fps = fps
+# Progression : une ligne par image enregistree, envoyee tout de suite (la sortie de
+# Blender lui-meme reste en memoire tampon quand Rexo Studio la lit)
+
+
+def _image_written(scn, *_args):
+    print("IMAGE %d" % (scn.frame_current - scn.frame_start + 1), flush=True)
+
+
+bpy.app.handlers.render_write.append(_image_written)
 t = time.time()
 if still:
     scene.frame_set(frames // 2)

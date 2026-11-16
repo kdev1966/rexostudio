@@ -28,7 +28,7 @@ QUALITIES = ("brouillon", "normal", "fin")
 DEFAULT_SCENE = "jardin_nuit"
 FPS = 30
 
-_FRAME = re.compile(r"Append frame (\d+)")
+_FRAME = re.compile(r"^IMAGE (\d+)")
 _MEASURE = re.compile(r"MESURE .*: (\d+) image\(s\) en ([\d.]+) s")
 
 
