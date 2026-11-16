@@ -293,6 +293,14 @@ def segment(args: list) -> dict:
     return _segment(args)
 
 
+def trim(src_png: str, out_png: str) -> dict:
+    """Detourage recadre au plus pres des personnes (effects_worker/trim.py)."""
+    if not env_installed():
+        raise EffectError("Environnement d'effets absent : ./scripts/install_effects_env.sh")
+    return _run_json([config.EFFECTS_PYTHON, os.path.join(config.EFFECTS_WORKER_DIR, "trim.py"),
+                      src_png, out_png], "échec du recadrage", env=config.effects_env())
+
+
 def erase(src: str, out: str, box, folder: str, key: str) -> dict:
     """Efface l'objet du cadre, pour les autres modules (assistant)."""
     return _erase(src, out, box, folder, key)

@@ -1,19 +1,24 @@
 """Construit le modele de scene « jardin de ceremonie de nuit » (Blender 3.6 LTS) et
-l'enregistre en .blend, pret a recevoir les maries detoures.
+l'enregistre en .blend : decor, camera et emplacements des photos.
 
     blender -b --factory-startup --python build_template_jardin.py -- jardin_nuit.blend
 
 Premier modele, volontairement simple (materiaux unis, formes de base) ; de vrais
 decors, textures et modeles 3D viendront ensuite, construits a la main dans Blender.
 
-Contrat d'un modele de scene Rexo Studio (blender/render_template.py s'appuie dessus) :
-  - objet « MARIES » : plan vertical, pieds a l'origine, face vers -Y, materiau avec un
-    noeud image nomme « MARIES_IMAGE » (la photo detouree y est chargee) ;
-  - objet vide « VISE » : point vise par la camera (buste des maries) ;
-  - camera « DRONE » (scene.camera), avec une contrainte TRACK_TO vers « VISE » ;
-  - les maries restent face a la camera (contrainte LOCKED_TRACK) : une photo vue de
-    cote deviendrait une feuille de papier.
-Le modele ne contient pas le mouvement : render_template.py anime la camera.
+Contrat d'un modele de scene Rexo Studio (blender/export_generic.py s'appuie dessus) :
+  - camera « DRONE » (scene.camera), contrainte TRACK_TO vers l'objet vide « VISE »
+    (point vise : le buste des maries) ; le mouvement est ajoute a l'export ;
+  - emplacements des photos, reconnus par leur nom, plans dans le plan XZ local, face
+    vers -Y local :
+      PHOTO_DEBOUT_<nom>  personne detouree debout (ex. PHOTO_DEBOUT_MARIES) : origine
+                          aux pieds, taille = hauteur et largeur reservees ; toujours
+                          tournee vers la camera (LOCKED_TRACK) ; sa forme sert
+                          d'ombre au sol (elle est invisible au rendu)
+      PHOTO_CADRE_<nom>   photo a plat et fixe (tableau, chevalet, ecran) : origine au
+                          centre, debout, orientation libre autour de la verticale
+  - collection « PREMIER_PLAN » (facultative) : ce qui passe devant les photos, rendu
+    a part avec transparence et pose par-dessus dans EffectCraft.
 """
 import math
 import random
@@ -89,28 +94,41 @@ bpy.ops.object.light_add(type="SUN", rotation=(math.radians(50), 0, math.radians
 sun = bpy.context.active_object
 sun.data.energy, sun.data.color, sun.data.angle = 1.2, (0.75, 0.82, 1.0), math.radians(8)
 
-# Emplacement des maries : plan vertical 1 x 1,85 m (redimensionne a la photo au rendu)
-bpy.ops.mesh.primitive_plane_add(size=2)
+# Emplacement des maries : ovale vertical 1,2 x 1,85 m, pieds a l'origine (sa forme
+# donne l'ombre au sol d'une silhouette de couple)
+bpy.ops.mesh.primitive_circle_add(vertices=48, radius=0.5, fill_type="NGON")
 couple = bpy.context.active_object
-couple.name = "MARIES"
-for v in couple.data.vertices:
-    x, y = v.co.x, v.co.y
-    v.co = (x * 0.5, 0, (y + 1) / 2 * 1.85)
-cm = bpy.data.materials.new("maries")
-cm.use_nodes = True
-nodes, links = cm.node_tree.nodes, cm.node_tree.links
-nodes.clear()
-tex = nodes.new("ShaderNodeTexImage")
-tex.name, tex.extension = "MARIES_IMAGE", "CLIP"
-em, tr, mix = nodes.new("ShaderNodeEmission"), nodes.new("ShaderNodeBsdfTransparent"), nodes.new("ShaderNodeMixShader")
-out = nodes.new("ShaderNodeOutputMaterial")
-links.new(tex.outputs["Color"], em.inputs["Color"])
-links.new(tex.outputs["Alpha"], mix.inputs["Fac"])
-links.new(tr.outputs["BSDF"], mix.inputs[1])
-links.new(em.outputs["Emission"], mix.inputs[2])
-links.new(mix.outputs["Shader"], out.inputs["Surface"])
-cm.blend_method, cm.shadow_method = "HASHED", "HASHED"
-couple.data.materials.append(cm)
+couple.name = "PHOTO_DEBOUT_MARIES"
+for v in couple.data.vertices:                 # cercle du plan XY -> ovale debout (XZ)
+    v.co = (v.co.x * 1.2, 0.0, (v.co.y + 0.5) * 1.85)
+couple.data.materials.append(material("emplacement_maries", (0.9, 0.9, 0.9)))
+
+# Un chevalet a cote de l'arche avec un cadre : emplacement d'une photo a plat
+wood = material("bois", (0.35, 0.22, 0.12), 0.6)
+easel_at, easel_yaw = (2.9, 0.4, 0.0), math.radians(-25)
+for dx, tilt in ((-0.35, 8), (0.35, -8)):
+    bpy.ops.mesh.primitive_cube_add(size=1, location=(easel_at[0] + dx * math.cos(easel_yaw),
+                                                      easel_at[1] + dx * math.sin(easel_yaw), 0.9))
+    leg = bpy.context.active_object
+    leg.scale = (0.05, 0.05, 1.8)
+    leg.rotation_euler = (0, math.radians(tilt), easel_yaw)
+    add(leg, wood, "Chevalet")
+bpy.ops.mesh.primitive_cube_add(size=1, location=(easel_at[0], easel_at[1] + 0.03, 1.35))
+border = bpy.context.active_object
+border.scale = (0.82, 0.04, 1.02)
+border.rotation_euler = (0, 0, easel_yaw)
+add(border, material("cadre_dore", (0.8, 0.62, 0.3), 0.3, metallic=0.9), "Cadre")
+bpy.ops.mesh.primitive_plane_add(size=1, location=(easel_at[0], easel_at[1], 1.35))
+frame = bpy.context.active_object
+frame.name = "PHOTO_CADRE_PHOTO"
+for v in frame.data.vertices:                  # plan XY -> plan debout (XZ), 0,7 x 0,9 m
+    v.co = (v.co.x * 0.7, 0.0, v.co.y * 0.9)
+frame.rotation_euler = (0, 0, easel_yaw)
+frame.data.materials.append(material("emplacement_cadre", (0.1, 0.1, 0.1)))
+
+# Collection du premier plan (vide dans ce modele simple)
+front = bpy.data.collections.new("PREMIER_PLAN")
+scene.collection.children.link(front)
 
 target = bpy.data.objects.new("VISE", None)
 scene.collection.objects.link(target)
@@ -124,7 +142,7 @@ cam.location = (0, -4.4, 1.7)
 scene.camera = cam
 track = cam.constraints.new("TRACK_TO")
 track.target, track.track_axis, track.up_axis = target, "TRACK_NEGATIVE_Z", "UP_Y"
-face = couple.constraints.new("LOCKED_TRACK")
+face = couple.constraints.new("LOCKED_TRACK")      # l'ombre suit la photo
 face.target, face.track_axis, face.lock_axis = cam, "TRACK_NEGATIVE_Y", "LOCK_Z"
 
 scene.view_settings.view_transform = "Standard"

@@ -401,13 +401,14 @@
         </div>
         <details class="fx-studio" id="fx-studio">
           <summary>Clip drone 3D (Blender + EffectCraft)</summary>
-          <p class="tiny muted">Les mariés détourés au centre d'une scène 3D, filmés par une caméra drone, titre à la fin. Tâche de fond de plusieurs minutes.</p>
+          <p class="tiny muted">Blender prépare une fois l'animation générique de la scène (décor, caméra drone, emplacements) ; EffectCraft y place les mariés détourés et le titre, puis le clip rejoint le projet FilmCraft de l'événement.</p>
           <label class="tiny">Scène 3D <select id="st-scene"></select></label>
           <label class="tiny">Mouvement <select id="st-motion"></select></label>
           <label class="tiny">Durée <select id="st-seconds"><option value="6">6 s</option><option value="9" selected>9 s</option><option value="12">12 s</option></select></label>
           <label class="tiny">Qualité <select id="st-quality"><option value="brouillon">Brouillon (rapide)</option><option value="normal" selected>Normale</option><option value="fin">Fine (lente)</option></select></label>
           <label class="tiny">Titre <input id="st-title" maxlength="80"></label>
           <label class="tiny">Sous-titre <input id="st-subtitle" maxlength="80"></label>
+          <label class="fx-enhance tiny"><input type="checkbox" id="st-filmcraft" checked> Ajouter au projet FilmCraft (chutier « Génériques »)</label>
           <button class="btn btn-primary" id="st-run">Lancer le clip drone</button>
           <p id="st-info" class="tiny"></p>
         </details>

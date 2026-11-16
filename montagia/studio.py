@@ -1,8 +1,13 @@
 """Chaine de production : Rexo Studio orchestre, chaque outil ne fait que sa tache.
 
-    Rexo (Vision, MobileSAM)  amelioration et detourage des maries
-    Blender 3.6               scene 3D (modele .blend fait a part) et camera drone
-    EffectCraft               titres (modele .ectemplate fait a part) et rendu final
+    Rexo (Vision, MobileSAM)  amelioration, detourage des maries, recadrage
+    Blender 3.6               animation generique sans photo (modele .blend fait a part,
+                              camera drone, emplacements), en composition After Effects ;
+                              rendue une seule fois, rangee dans modeles/generiques
+    EffectCraft               ouvre la composition, place les vraies photos dans les
+                              emplacements, ajoute les titres, rend la video
+    FilmCraft                 le clip rejoint le projet de l'evenement (chutier
+                              « Génériques ») pour finir le montage
 
 Une « recette » enchaine ces etapes en tache de fond (un seul travail lourd a la fois
 sur l'iMac, voir jobs.JobManager). Les fichiers intermediaires restent dans le cache
@@ -12,9 +17,8 @@ from __future__ import annotations
 
 import datetime
 import os
-import shutil
 
-from . import blender, effectcraft, effects, tools
+from . import blender, effectcraft, effects, filmcraft, tools
 
 CLIPS_DIR = os.path.join("06_Rendus", "Clips_3D")
 WORK_DIR = os.path.join(".rexo", "studio")
@@ -27,8 +31,9 @@ RECIPES = {
     "clip-drone": {
         "label": "Clip drone 3D",
         "steps": ["Rexo : amélioration et détourage des mariés",
-                  "Blender : scène 3D et caméra drone",
-                  "EffectCraft : titre et rendu final"],
+                  "Blender : animation générique (une seule fois par modèle)",
+                  "EffectCraft : photos dans les emplacements, titre, rendu",
+                  "FilmCraft : ajout au projet de l'événement"],
     },
 }
 
@@ -51,7 +56,9 @@ def status() -> dict:
         "blender": blender.installed(),
         "effectcraft": effectcraft.installed(),
         "detourage": effects.installed(),
+        "filmcraft": filmcraft.installed(),
         "scenes": [{"id": s["id"], "name": s["name"]} for s in blender.scenes()],
+        "generics": [g["id"] for g in blender.generics()],
         "titles": [{"id": t["id"], "name": t["name"]} for t in effectcraft.titles()],
         "motions": [{"id": k, "label": v} for k, v in blender.MOTIONS.items()],
         "recipes": [{"id": k, "label": v["label"], "steps": v["steps"]} for k, v in RECIPES.items()],
@@ -78,51 +85,64 @@ def couple_cutout(src: str, out_png: str, folder: str, key: str, log=None) -> st
 
 def clip_drone(job, event_dir: str, src: str, scene: str = blender.DEFAULT_SCENE,
                motion: str = "sequence", seconds: float = 9.0, quality: str = "normal",
-               title: str = "", subtitle: str = "", title_model: str = effectcraft.DEFAULT_TITLE) -> dict:
-    """Photo des maries -> video drone 3D titree, dans 06_Rendus/Clips_3D."""
+               title: str = "", subtitle: str = "", title_model: str = effectcraft.DEFAULT_TITLE,
+               to_filmcraft: bool = True) -> dict:
+    """Photo des maries -> clip drone 3D titre dans 06_Rendus/Clips_3D, puis dans FilmCraft.
+    Emplacements : PHOTO_DEBOUT_MARIES recoit les maries detoures ; chaque PHOTO_CADRE_*
+    recoit la photo elle-meme (amelioree)."""
     log = job.add_log
     if not os.path.isfile(src):
         raise StudioError("Photo introuvable")
-    if not blender.installed():
-        raise StudioError("Blender 3.6 n'est pas installé (./scripts/install_blender.sh)")
-    if scene == blender.DEFAULT_SCENE and not blender.scenes():
-        blender.build_default_scene(log)
-    scene_file = blender.scene_path(scene)
-    titled = bool(title.strip()) and effectcraft.installed()
-    if title.strip() and not titled:
-        log("EffectCraft absent : la vidéo sort sans titre")
-
+    if not effectcraft.installed():
+        raise StudioError("EffectCraft n'est pas installé : il place les photos dans la scène")
+    steps = RECIPES["clip-drone"]["steps"]
     folder = os.path.join(event_dir, WORK_DIR)
     os.makedirs(folder, exist_ok=True)
     key = tools.safe_component(os.path.splitext(os.path.basename(src))[0], "photo")
+    full_png = os.path.join(folder, key + "_maries_plein.png")
     couple_png = os.path.join(folder, key + "_maries.png")
-    scene_video = os.path.join(folder, key + "_scene.mp4")
-    stem = "%s_clip_drone_%s" % (key, motion)
-    out = tools.unique_path(tools.ensure_parent(os.path.join(event_dir, CLIPS_DIR, stem + ".mp4")))
-    steps = RECIPES["clip-drone"]["steps"]
+    photo_jpg = os.path.join(folder, key + "_photo.jpg")
+    out = tools.unique_path(tools.ensure_parent(
+        os.path.join(event_dir, CLIPS_DIR, "%s_clip_drone_%s.mp4" % (key, motion))))
+    result = {"seconds": seconds, "motion": motion, "scene": scene, "titled": False, "filmcraft": ""}
     try:
         job.set_progress(0.02, steps[0])
-        couple_cutout(src, couple_png, folder, key, log)
+        couple_cutout(src, full_png, folder, key, log)
+        effects.trim(full_png, couple_png)
+        effects.segment(["enhance", src, photo_jpg])
 
-        job.set_progress(0.10, steps[1])
-        span = 0.75 if titled else 0.88
-        done = blender.render(couple_png, scene_file, scene_video, motion, seconds, quality, log=log,
-                              progress=lambda f: job.set_progress(0.10 + span * f))
-        log("Blender : %d images en %.0f s (%.2f s par image)" % (done["frames"], done["seconds"],
-                                                                  done["per_frame"]))
-        if titled:
-            job.set_progress(0.86, steps[2])
-            client = effectcraft.connect(log)
-            try:
+        job.set_progress(0.08, steps[1])
+        generic_dir, info = blender.ensure_generic(scene, motion, seconds, quality, log=log,
+                                                   progress=lambda f: job.set_progress(0.08 + 0.6 * f))
+        photos = {}
+        for place in info.get("placeholders", []):
+            if place["kind"] == "debout" and place["name"] == "PHOTO_DEBOUT_MARIES":
+                photos[place["name"]] = couple_png
+            elif place["kind"] == "cadre":
+                photos[place["name"]] = photo_jpg
+        if "PHOTO_DEBOUT_MARIES" not in photos:
+            raise StudioError("Le modèle « %s » n'a pas d'emplacement PHOTO_DEBOUT_MARIES" % scene)
+
+        job.set_progress(0.70, steps[2])
+        client = effectcraft.connect(log)
+        try:
+            template = ""
+            if title.strip():
                 template = (effectcraft.title_path(title_model) if title_model != effectcraft.DEFAULT_TITLE
                             else effectcraft.ensure_default_title(client, log))
-                effectcraft.title_over_video(client, scene_video, template, title.strip(), subtitle.strip(),
-                                             out, log=log,
-                                             progress=lambda f: job.set_progress(0.86 + 0.13 * f))
-            finally:
-                effectcraft.close(client, folder)
-        else:
-            shutil.move(scene_video, out)
+            effectcraft.compose(client, generic_dir, info, photos, out, title, subtitle, template, log=log,
+                                progress=lambda f: job.set_progress(0.70 + 0.22 * f))
+            result["titled"] = bool(template)
+        finally:
+            effectcraft.close(client, folder)
+
+        if to_filmcraft and filmcraft.installed():
+            job.set_progress(0.94, steps[3])
+            try:
+                sent = filmcraft.add_to_event_project(event_dir, [out], log=log)
+                result["filmcraft"] = os.path.relpath(sent["project"], event_dir)
+            except filmcraft.FilmCraftError as exc:      # le clip est deja dans les Rendus
+                log("FilmCraft : envoi impossible (%s) ; le clip reste dans 06_Rendus" % exc)
     except Exception as exc:
         # Le nom etait reserve d'avance : pas de fichier vide laisse dans les Rendus
         if os.path.exists(out) and os.path.getsize(out) == 0:
@@ -131,9 +151,9 @@ def clip_drone(job, event_dir: str, src: str, scene: str = blender.DEFAULT_SCENE
             raise StudioError(str(exc)) from exc
         raise
     finally:
-        for path in (couple_png, scene_video):
+        for path in (full_png, couple_png, photo_jpg):
             if os.path.exists(path):
                 os.remove(path)
-    rel = os.path.relpath(out, event_dir)
-    log("Clip enregistré : %s" % rel)
-    return {"path": rel, "seconds": seconds, "motion": motion, "scene": scene, "titled": titled}
+    result["path"] = os.path.relpath(out, event_dir)
+    log("Clip enregistré : %s" % result["path"])
+    return result

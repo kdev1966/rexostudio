@@ -414,3 +414,62 @@ def open_project(path: str, log=None) -> None:
             pass
         client.execute("file.open", {"path": os.path.abspath(path)})
     open_in_app()
+
+
+# --------------------------------------------------------------------------
+# Chaine de production : un clip fini rejoint le projet de l'evenement
+# --------------------------------------------------------------------------
+
+MONTAGE_DIR = "05_Montage"
+
+
+def event_project(event_dir: str) -> str:
+    """Projet FilmCraft de l'evenement : le plus recent de 05_Montage, ou "" s'il n'y en a pas."""
+    folder = os.path.join(event_dir, MONTAGE_DIR)
+    if not os.path.isdir(folder):
+        return ""
+    found = [os.path.join(folder, n) for n in os.listdir(folder)
+             if n.endswith(".fcproj") and not n.startswith(".")]
+    return max(found, key=os.path.getmtime) if found else ""
+
+
+def _find_bin(node: dict, name: str):
+    for child in (node or {}).get("children") or []:
+        if "children" in child and child.get("name") == name:
+            return child.get("id")
+        found = _find_bin(child, name)
+        if found is not None:
+            return found
+    return None
+
+
+def add_to_event_project(event_dir: str, clips: list, bin_name: str = "Génériques", log=None) -> dict:
+    """Importe les clips dans le chutier bin_name du projet FilmCraft de l'evenement (cree
+    s'il manque : 05_Montage/Montage.fcproj) et l'enregistre ; le montage continue dans
+    FilmCraft."""
+    log = log or (lambda _m: None)
+    client = connect(log=log)
+    path = event_project(event_dir)
+    with _LOCK:
+        try:
+            client.execute("file.autoSaveNow")          # secours du projet en cours
+        except FilmCraftError:
+            pass
+        if path:
+            client.execute("file.open", {"path": os.path.abspath(path)})
+        else:
+            path = os.path.join(event_dir, MONTAGE_DIR, "Montage.fcproj")
+            client.execute("file.newProject", {"name": "Montage " + os.path.basename(event_dir)})
+        root = (client.execute("project.inspect") or {}).get("root") or {}
+        bin_id = _find_bin(root, bin_name)
+        if bin_id is None:
+            bin_id = (client.execute("file.newBin", {"name": bin_name}) or {}).get("bin")
+        imported = client.execute("file.import", {"paths": [os.path.abspath(c) for c in clips],
+                                                  "bin": bin_id}) or {}
+        if imported.get("errors"):
+            raise FilmCraftError("Import refusé par FilmCraft : %s" % imported["errors"])
+        tools.ensure_parent(path)
+        saved = client.execute("file.saveAs", {"path": os.path.abspath(path)}) or {}
+    log("FilmCraft : %d clip(s) dans le chutier « %s » de %s" % (
+        len(imported.get("items") or []), bin_name, os.path.basename(path)))
+    return {"project": saved.get("path") or path, "items": imported.get("items") or []}

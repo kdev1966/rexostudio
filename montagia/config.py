@@ -202,6 +202,8 @@ BLENDER_BIN = os.path.join(BLENDER_APP, "Contents", "MacOS", "Blender")
 BLENDER_SCRIPTS_DIR = os.path.join(PROJECT_DIR, "blender")
 # Modeles de scenes 3D (.blend, faits a part dans Blender) : hors du depot
 SCENES_3D_DIR = os.environ.get("REXO_SCENES_DIR") or os.path.join(PROJECT_DIR, "modeles", "scenes_3d")
+# Animations generiques rendues par Blender (une par modele, mouvement, duree, qualite)
+GENERICS_DIR = os.environ.get("REXO_GENERICS_DIR") or os.path.join(PROJECT_DIR, "modeles", "generiques")
 # Modeles de titres EffectCraft (.ectemplate, champs « Title » et « Subtitle »)
 TITLES_DIR = os.environ.get("REXO_TITLES_DIR") or os.path.join(PROJECT_DIR, "modeles", "titres")
 

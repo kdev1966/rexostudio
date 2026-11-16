@@ -1,4 +1,5 @@
-"""Chaine de production : Blender (scene 3D), EffectCraft (titres), recette clip drone."""
+"""Chaine de production : Blender (animation generique), EffectCraft (photos, titres),
+FilmCraft (projet de l'evenement), recette clip drone."""
 import json
 import os
 import shutil
@@ -12,15 +13,18 @@ from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from montagia import blender, config, effectcraft, studio  # noqa: E402
+from montagia import blender, config, effectcraft, effects, filmcraft, studio  # noqa: E402
 from montagia.jobs import Job  # noqa: E402
 
-# Faux Blender : ecrit la video demandee, annonce chaque image comme le vrai
+# Faux Blender : ecrit l'animation generique dans le dossier demande, comme le vrai
 FAKE_BLENDER = """#!/bin/bash
-out="${@: -4:1}"
+work="${@: -4:1}"
+echo "$@" >> "$(dirname "$0")/appels.txt"
+echo video > "$work/decor.mp4"
+echo "var f = new File(\\"$work/decor.mp4\\");" > "$work/composition.jsx"
+echo '{"duration": 0.13, "pixels_per_meter": 100, "premier_plan": false, "placeholders": [{"name": "PHOTO_DEBOUT_MARIES", "kind": "debout", "width_m": 1.2, "height_m": 1.85}]}' > "$work/scene.json"
 for i in 1 2 3 4; do echo "IMAGE $i"; done
 echo "MESURE 3.6.23 sequence brouillon : 4 image(s) en 2.0 s (0.50 s par image)"
-echo video > "$out"
 """
 
 BROKEN_BLENDER = """#!/bin/bash
@@ -47,40 +51,50 @@ class BlenderCase(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix="rexo-blender-")
         self.addCleanup(shutil.rmtree, self.tmp, True)
-        self.couple = os.path.join(self.tmp, "maries.png")
-        _write(self.couple, b"png")
-        self.scene = os.path.join(self.tmp, "jardin.blend")
-        _write(self.scene, b"blend")
+        self.scenes = os.path.join(self.tmp, "scenes")
+        os.makedirs(self.scenes)
+        _write(os.path.join(self.scenes, "jardin_nuit.blend"), b"blend")
+        self.generics = os.path.join(self.tmp, "generiques")
+        for p in (mock.patch.object(config, "SCENES_3D_DIR", self.scenes),
+                  mock.patch.object(config, "GENERICS_DIR", self.generics)):
+            p.start()
+            self.addCleanup(p.stop)
 
     def _with_bin(self, body):
         return mock.patch.object(config, "BLENDER_BIN", _script(self.tmp, "Blender", body))
 
-    def test_render_reports_progress_and_measure(self):
+    def test_generic_is_rendered_once_then_reused(self):
         seen = []
-        out = os.path.join(self.tmp, "sortie", "scene.mp4")
         with self._with_bin(FAKE_BLENDER):
-            result = blender.render(self.couple, self.scene, out, "orbite", 4 / 30.0, "brouillon",
-                                    progress=seen.append)
-        self.assertTrue(os.path.isfile(out))
-        self.assertEqual(result["frames"], 4)
-        self.assertEqual(result["seconds"], 2.0)
+            folder, info = blender.ensure_generic("jardin_nuit", "orbite", 4 / 30.0, "brouillon",
+                                                  progress=seen.append)
+            again, _ = blender.ensure_generic("jardin_nuit", "orbite", 4 / 30.0, "brouillon")
+        self.assertEqual(folder, again)
+        self.assertEqual(os.path.basename(folder), blender.generic_id("jardin_nuit", "orbite", 4 / 30.0, "brouillon"))
         self.assertEqual(seen[-1], 1.0)
+        self.assertEqual(info["placeholders"][0]["name"], "PHOTO_DEBOUT_MARIES")
+        with open(os.path.join(self.tmp, "appels.txt")) as fh:
+            self.assertEqual(len(fh.readlines()), 1)                # Blender lance une seule fois
+        with open(os.path.join(folder, "composition.jsx")) as fh:
+            self.assertIn(folder + "/decor.mp4", fh.read())         # chemin du dossier final
+        self.assertFalse(os.path.exists(folder + ".partiel"))
+        self.assertEqual([g["id"] for g in blender.generics()], [os.path.basename(folder)])
 
-    def test_render_failure_shows_blender_message(self):
+    def test_generic_failure_shows_blender_message_and_leaves_nothing(self):
         with self._with_bin(BROKEN_BLENDER), \
                 self.assertRaisesRegex(blender.BlenderError, "Python script failed"):
-            blender.render(self.couple, self.scene, os.path.join(self.tmp, "x.mp4"))
+            blender.ensure_generic("jardin_nuit", "sequence", 1, "brouillon")
+        self.assertEqual(os.listdir(self.generics), [])
 
-    def test_render_rejects_unknown_motion_and_quality(self):
+    def test_generic_rejects_unknown_motion_and_quality(self):
         with self._with_bin(FAKE_BLENDER):
             with self.assertRaises(blender.BlenderError):
-                blender.render(self.couple, self.scene, os.path.join(self.tmp, "x.mp4"), motion="looping")
+                blender.ensure_generic("jardin_nuit", "looping")
             with self.assertRaises(blender.BlenderError):
-                blender.render(self.couple, self.scene, os.path.join(self.tmp, "x.mp4"), quality="ultra")
+                blender.ensure_generic("jardin_nuit", quality="ultra")
 
     def test_scenes_lists_blend_files(self):
-        folder = os.path.join(self.tmp, "scenes")
-        os.makedirs(folder)
+        folder = self.scenes
         for name in ("jardin_nuit.blend", "salle_des_fetes.blend", "notes.txt", ".cache.blend"):
             open(os.path.join(folder, name), "w").close()
         with mock.patch.object(config, "SCENES_3D_DIR", folder):
@@ -97,6 +111,7 @@ class FakeEffectCraft(object):
         self.calls = []
         self.tmp = tmp
         self.jobs_polls = 0
+        self.scripts = []
         fake = self
 
         class Handler(socketserver.StreamRequestHandler):
@@ -130,7 +145,8 @@ class FakeEffectCraft(object):
             return {"ok": True, "result": {"items": [1], "errors": [], "comps": []}}
         if command == "script.run":
             code = params["code"]
-            result = "2,9,1920,1080" if "numItems" in code and "source.id" in code else "6.5,2.5"
+            self.scripts.append(code)
+            result = "2" if "addComp" in code else "6.5,2.5"
             return {"ok": True, "result": {"ok": True, "result": result, "error": None}}
         if command == "essential.importTemplate":
             return {"ok": True, "result": {"comp": 27, "layer": 141}}
@@ -175,19 +191,32 @@ class EffectCraftCase(unittest.TestCase):
         self.assertEqual(client.port, self.fake.port)
         self.assertIn("command.list", self.fake.commands())
 
-    def test_title_over_video_fills_fields_and_renders_whole_comp(self):
+    def test_compose_places_photos_titles_front_and_renders_whole_comp(self):
+        generic = os.path.join(self.tmp, "generique")
+        os.makedirs(generic)
+        _write(os.path.join(generic, "composition.jsx"), "var comp = app.project.items.addComp('x');")
+        info = {"pixels_per_meter": 100, "premier_plan": True, "duration": 9, "placeholders": [
+            {"name": "PHOTO_DEBOUT_MARIES", "kind": "debout", "width_m": 1.2, "height_m": 1.85},
+            {"name": "PHOTO_CADRE_PHOTO", "kind": "cadre", "width_m": 0.7, "height_m": 0.9},
+            {"name": "PHOTO_DEBOUT_INVITE", "kind": "debout", "width_m": 0.6, "height_m": 1.8}]}
         out = os.path.join(self.tmp, "Clips_3D", "clip.mp4")
         with mock.patch("time.sleep"):
-            result = effectcraft.title_over_video(self.client, "/v/scene.mp4", "/t/titre.ectemplate",
-                                                  "Zied & Namsia", "16 novembre 2026", out)
+            result = effectcraft.compose(self.client, generic, info,
+                                         {"PHOTO_DEBOUT_MARIES": "/p/maries.png", "PHOTO_CADRE_PHOTO": "/p/photo.jpg"},
+                                         out, "Zied & Namsia", "16 novembre 2026", "/t/titre.ectemplate")
         self.assertTrue(os.path.isfile(out))
-        self.assertEqual(result["title_at"], 6.5)
+        self.assertEqual(result["placed"], ["PHOTO_DEBOUT_MARIES", "PHOTO_CADRE_PHOTO"])   # l'invite est vide
+        attach = [c for c in self.fake.scripts if "comp.layers.add(img)" in c]
+        self.assertEqual(len(attach), 2)
+        self.assertIn('comp.layer("PHOTO_DEBOUT_MARIES")', attach[0])
+        self.assertIn("var standing = true", attach[0])
+        self.assertIn("var standing = false", attach[1])
+        self.assertTrue(any("moveToBeginning" in c for c in self.fake.scripts))       # premier plan dessus
         sets = {c["params"]["control"]: c["params"]["value"] for c in self.fake.calls
                 if c["command"] == "essential.set"}
         self.assertEqual(sets, {113: "Zied & Namsia", 114: "16 novembre 2026"})
         add = next(c for c in self.fake.calls if c["command"] == "renderQueue.add")
-        self.assertEqual(add["params"]["comp"], 2)
-        self.assertEqual(add["params"]["timeSpan"], "comp")
+        self.assertEqual((add["params"]["comp"], add["params"]["timeSpan"]), (2, "comp"))
         render = next(c for c in self.fake.calls if c["command"] == "renderQueue.render")
         self.assertFalse(render["params"]["wait"])           # suivi par jobs.list
         self.assertGreaterEqual(self.fake.jobs_polls, 2)
@@ -200,6 +229,10 @@ class EffectCraftCase(unittest.TestCase):
 
 
 class ClipDroneCase(unittest.TestCase):
+    INFO = {"duration": 9, "placeholders": [
+        {"name": "PHOTO_DEBOUT_MARIES", "kind": "debout", "width_m": 1.2, "height_m": 1.85},
+        {"name": "PHOTO_CADRE_PHOTO", "kind": "cadre", "width_m": 0.7, "height_m": 0.9}]}
+
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix="rexo-studio-")
         self.addCleanup(shutil.rmtree, self.tmp, True)
@@ -207,64 +240,72 @@ class ClipDroneCase(unittest.TestCase):
         self.photo = os.path.join(self.event, "02_Photos", "IMG_0001.jpg")
         os.makedirs(os.path.dirname(self.photo))
         _write(self.photo, b"jpg")
-        self.scenes = os.path.join(self.tmp, "scenes")
-        os.makedirs(self.scenes)
-        open(os.path.join(self.scenes, "jardin_nuit.blend"), "w").close()
-        patches = [mock.patch.object(config, "SCENES_3D_DIR", self.scenes),
-                   mock.patch.object(blender, "installed", return_value=True),
-                   mock.patch.object(studio, "couple_cutout", side_effect=self._cutout)]
+        self.compose = mock.Mock(side_effect=lambda *a, **_k: _write(a[4]))
+        self.close = mock.Mock()
+        self.to_fc = mock.Mock(return_value={"project": os.path.join(self.event, "05_Montage", "Montage.fcproj")})
+        patches = [
+            mock.patch.object(studio, "couple_cutout", side_effect=lambda _s, out, *_a, **_k: _write(out, b"png")),
+            mock.patch.object(effects, "trim", side_effect=lambda _s, out: _write(out, b"png")),
+            mock.patch.object(effects, "segment", side_effect=lambda args: _write(args[2], b"jpg")),
+            mock.patch.object(blender, "ensure_generic", side_effect=self._generic),
+            mock.patch.object(effectcraft, "installed", return_value=True),
+            mock.patch.object(effectcraft, "connect", return_value=mock.Mock()),
+            mock.patch.object(effectcraft, "ensure_default_title", return_value="/t/simple.ectemplate"),
+            mock.patch.object(effectcraft, "compose", self.compose),
+            mock.patch.object(effectcraft, "close", self.close),
+            mock.patch.object(filmcraft, "installed", return_value=True),
+            mock.patch.object(filmcraft, "add_to_event_project", self.to_fc),
+        ]
         for p in patches:
             p.start()
             self.addCleanup(p.stop)
 
-    def _cutout(self, _src, out_png, *_a, **_k):
-        _write(out_png, b"png")
-        return out_png
-
-    @staticmethod
-    def _render(_couple, _scene, out, *_a, progress=None, **_k):
-        _write(out, "scene")
+    def _generic(self, *_a, progress=None, **_k):
         progress(1.0)
-        return {"path": out, "frames": 270, "seconds": 450.0, "per_frame": 1.67}
+        return "/generiques/jardin", self.INFO
 
-    def test_untitled_clip_lands_in_rendus_and_temp_files_go(self):
+    def test_clip_goes_blender_effectcraft_filmcraft_and_cleans_up(self):
         job = Job("studio")
-        with mock.patch.object(blender, "render", side_effect=self._render):
-            result = studio.clip_drone(job, self.event, self.photo, title="")
-        self.assertEqual(result["path"], os.path.join("06_Rendus", "Clips_3D", "IMG_0001_clip_drone_sequence.mp4"))
+        result = studio.clip_drone(job, self.event, self.photo, motion="orbite",
+                                   title="Zied & Namsia", subtitle="16 novembre 2026")
+        self.assertEqual(result["path"], os.path.join("06_Rendus", "Clips_3D", "IMG_0001_clip_drone_orbite.mp4"))
         self.assertTrue(os.path.isfile(os.path.join(self.event, result["path"])))
-        self.assertFalse(result["titled"])
+        self.assertTrue(result["titled"])
+        args = self.compose.call_args[0]
+        self.assertEqual(sorted(args[3]), ["PHOTO_CADRE_PHOTO", "PHOTO_DEBOUT_MARIES"])
+        self.assertTrue(args[3]["PHOTO_DEBOUT_MARIES"].endswith("_maries.png"))   # detoure, recadre
+        self.assertTrue(args[3]["PHOTO_CADRE_PHOTO"].endswith("_photo.jpg"))      # photo amelioree
+        self.assertEqual(args[5:8], ("Zied & Namsia", "16 novembre 2026", "/t/simple.ectemplate"))
+        self.close.assert_called_once()
+        self.to_fc.assert_called_once()
+        self.assertEqual(result["filmcraft"], os.path.join("05_Montage", "Montage.fcproj"))
         self.assertEqual(os.listdir(os.path.join(self.event, studio.WORK_DIR)), [])
 
-    def test_titled_clip_goes_through_effectcraft_and_closes_it(self):
+    def test_filmcraft_failure_keeps_the_clip(self):
+        self.to_fc.side_effect = filmcraft.FilmCraftError("FilmCraft ne répond pas")
         job = Job("studio")
-        client = mock.Mock()
-        title = mock.Mock(side_effect=lambda *a, **_k: _write(a[5]))
-        with mock.patch.object(blender, "render", side_effect=self._render), \
-                mock.patch.object(effectcraft, "installed", return_value=True), \
-                mock.patch.object(effectcraft, "connect", return_value=client), \
-                mock.patch.object(effectcraft, "ensure_default_title", return_value="/t/simple.ectemplate"), \
-                mock.patch.object(effectcraft, "title_over_video", title), \
-                mock.patch.object(effectcraft, "close") as close:
-            result = studio.clip_drone(job, self.event, self.photo, motion="orbite",
-                                       title="Zied & Namsia", subtitle="16 novembre 2026")
-        self.assertTrue(result["titled"])
-        self.assertEqual(title.call_args[0][3:5], ("Zied & Namsia", "16 novembre 2026"))
-        close.assert_called_once()
-        self.assertEqual(os.listdir(os.path.join(self.event, studio.WORK_DIR)), [])
+        result = studio.clip_drone(job, self.event, self.photo, title="")
+        self.assertTrue(os.path.isfile(os.path.join(self.event, result["path"])))
+        self.assertEqual(result["filmcraft"], "")
+        self.assertFalse(result["titled"])
+        self.assertTrue(any("FilmCraft : envoi impossible" in m for m in job.log))
+
+    def test_template_without_couple_placeholder_is_refused(self):
+        self.INFO = {"placeholders": [{"name": "PHOTO_CADRE_PHOTO", "kind": "cadre", "width_m": 1, "height_m": 1}]}
+        with self.assertRaisesRegex(studio.StudioError, "PHOTO_DEBOUT_MARIES"):
+            studio.clip_drone(Job("studio"), self.event, self.photo)
+        self.assertFalse(os.listdir(os.path.join(self.event, studio.CLIPS_DIR)))
 
     def test_blender_failure_becomes_studio_error(self):
-        job = Job("studio")
-        with mock.patch.object(blender, "render", side_effect=blender.BlenderError("GPU perdu")), \
+        with mock.patch.object(blender, "ensure_generic", side_effect=blender.BlenderError("GPU perdu")), \
                 self.assertRaisesRegex(studio.StudioError, "GPU perdu"):
-            studio.clip_drone(job, self.event, self.photo)
+            studio.clip_drone(Job("studio"), self.event, self.photo)
         self.assertFalse(os.listdir(os.path.join(self.event, studio.CLIPS_DIR)))
 
     def test_unexpected_failure_leaves_no_empty_file(self):
-        job = Job("studio")
-        with mock.patch.object(blender, "render", side_effect=KeyError("id")), \
+        with mock.patch.object(blender, "ensure_generic", side_effect=KeyError("id")), \
                 self.assertRaises(KeyError):
-            studio.clip_drone(job, self.event, self.photo)
+            studio.clip_drone(Job("studio"), self.event, self.photo)
         self.assertFalse(os.listdir(os.path.join(self.event, studio.CLIPS_DIR)))
 
     def test_french_date(self):

@@ -235,17 +235,6 @@ def ensure_default_title(client: Client, log=None) -> str:
     return out
 
 
-_FIND_COMP = """
-(function () {
-  for (var j = 1; j <= app.project.numItems; j++) {
-    var it = app.project.item(j);
-    if (it.typeName == 'Composition' && it.numLayers > 0 && it.layer(1).source
-        && it.layer(1).source.id == %d) return it.id + ',' + it.duration + ',' + it.width + ',' + it.height;
-  }
-  return '';
-})()
-"""
-
 _PLACE = """
 (function () {
   var c = app.project.itemByID ? app.project.itemByID(%d) : null;
@@ -280,27 +269,76 @@ def _set_texts(client: Client, layer: int, title: str, subtitle: str) -> None:
         client.execute("essential.set", {"layer": layer, "control": second["control"], "value": subtitle or ""})
 
 
-def title_over_video(client: Client, video: str, template: str, title: str, subtitle: str, out: str,
-                     at="end", log=None, progress=None) -> dict:
-    """Pose le modele de titre sur la video (a la fin, ou a « at » secondes) et rend en H.264."""
-    video, template, out = os.path.abspath(video), os.path.abspath(template), os.path.abspath(out)
-    if log:
-        log("EffectCraft : titre « %s » sur la vidéo" % title)
+_ATTACH = """
+(function () {
+  var comp = null, img = null;
+  for (var j = 1; j <= app.project.numItems; j++) {
+    var it = app.project.item(j);
+    if (it.id == %(comp)d) comp = it;
+    if (it.id == %(item)d) img = it;
+  }
+  var L = comp.layers.add(img);
+  L.name = %(label)s;
+  L.threeDLayer = true;
+  var standing = %(standing)s;
+  // Debout : pieds sur l'emplacement, a sa hauteur ; cadre : centree, contenue dans le cadre
+  var k = standing ? %(h)f / img.height
+                   : Math.min(%(w)f / img.width, %(h)f / img.height);
+  L.property("Transform").property("Anchor Point").setValue([img.width / 2, standing ? img.height : img.height / 2, 0]);
+  L.property("Transform").property("Scale").setValue([k * 100, k * 100, k * 100]);
+  L.parent = comp.layer(%(name)s);
+  L.property("Transform").property("Position").setValue([0, 0, 0]);
+  L.property("Transform").property("Y Rotation").setValue(0);
+  return L.index;
+})()
+"""
+
+_FRONT_ON_TOP = """
+(function () {
+  for (var j = 1; j <= app.project.numItems; j++) {
+    var it = app.project.item(j);
+    if (it.id == %d) { try { it.layer('PREMIER_PLAN').moveToBeginning(); return 1; } catch (e) { return 0; } }
+  }
+  return 0;
+})()
+"""
+
+
+def compose(client: Client, generic_dir: str, info: dict, photos: dict, out: str, title: str = "",
+            subtitle: str = "", title_template: str = "", log=None, progress=None) -> dict:
+    """Ouvre l'animation generique (composition.jsx de Blender), accroche chaque photo a
+    l'emplacement de meme nom, ajoute le titre (facultatif), passe le premier plan
+    par-dessus et rend en H.264. photos : {nom d'emplacement: chemin de l'image}."""
+    out = os.path.abspath(out)
+    scale = float(info.get("pixels_per_meter") or 100)
     client.execute("file.newProject")
-    imported = client.execute("file.import", {"paths": [video], "newComp": True}) or {}
-    if imported.get("errors") or not imported.get("items"):
-        raise EffectCraftError("Import de la vidéo impossible : %s" % (imported.get("errors") or "aucun élément"))
-    found = client.script(_FIND_COMP % imported["items"][0])
-    if not found:
-        raise EffectCraftError("Composition de la vidéo introuvable")
-    comp, duration, width, height = found.split(",")
-    comp = int(comp)
-    placed = client.execute("essential.importTemplate", {"path": template, "comp": comp, "addToComp": True}) or {}
-    layer = placed.get("layer")
-    if not layer:
-        raise EffectCraftError("Le modèle de titre n'a pas été posé sur la vidéo")
-    _set_texts(client, layer, title, subtitle)
-    start = client.script(_PLACE % (comp, comp, layer, json.dumps(at), json.dumps(at if at != "end" else 0)))
+    with open(os.path.join(generic_dir, "composition.jsx"), "r", encoding="utf-8") as fh:
+        comp = int(client.script(fh.read()))
+    placed = []
+    for place in info.get("placeholders", []):
+        path = photos.get(place["name"])
+        if not path:
+            continue
+        imported = client.execute("file.import", {"paths": [os.path.abspath(path)]}) or {}
+        if imported.get("errors") or not imported.get("items"):
+            raise EffectCraftError("Import de la photo impossible : %s" % os.path.basename(path))
+        client.script(_ATTACH % {
+            "comp": comp, "item": imported["items"][0], "name": json.dumps(place["name"]),
+            "label": json.dumps("Photo " + place["name"]), "standing": json.dumps(place["kind"] == "debout"),
+            "w": place["width_m"] * scale, "h": place["height_m"] * scale})
+        placed.append(place["name"])
+    if log:
+        log("EffectCraft : %d photo(s) placée(s) (%s)" % (len(placed), ", ".join(placed) or "aucune"))
+    if title.strip() and title_template:
+        if log:
+            log("EffectCraft : titre « %s »" % title.strip())
+        added = client.execute("essential.importTemplate",
+                               {"path": os.path.abspath(title_template), "comp": comp, "addToComp": True}) or {}
+        if not added.get("layer"):
+            raise EffectCraftError("Le modèle de titre n'a pas été posé")
+        _set_texts(client, added["layer"], title.strip(), subtitle.strip())
+        client.script(_PLACE % (comp, comp, added["layer"], json.dumps("end"), 0))
+    if info.get("premier_plan"):
+        client.script(_FRONT_ON_TOP % comp)
     render(client, comp, out, progress=progress)
-    return {"path": out, "duration": float(duration), "width": int(width), "height": int(height),
-            "title_at": float((start or "0,0").split(",")[0])}
+    return {"path": out, "placed": placed, "duration": info.get("duration")}

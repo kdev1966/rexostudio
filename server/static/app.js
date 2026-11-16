@@ -1477,12 +1477,16 @@ function studioForm() {
     : '<option value="jardin_nuit">Jardin nuit (simple)</option>';
   $('#st-title').value = (EVD.event && EVD.event.names) || '';
   $('#st-subtitle').value = frenchDate((EVD.event && EVD.event.date) || '');
-  const ready = !!(st && st.blender && st.detourage);
+  const ready = !!(st && st.blender && st.detourage && st.effectcraft);
+  $('#st-filmcraft').disabled = !(st && st.filmcraft);
+  $('#st-filmcraft').checked = !!(st && st.filmcraft);
   $('#st-run').disabled = !ready;
   info.className = 'tiny' + (ready ? ' muted' : ' err');
   info.textContent = !st ? '' : !st.blender ? 'Blender 3.6 absent : ./scripts/install_blender.sh'
     : !st.detourage ? 'Outil de détourage absent : ./scripts/build_native.sh'
-      : st.effectcraft ? '' : 'EffectCraft absent : le clip sortira sans titre';
+      : !st.effectcraft ? 'EffectCraft absent : il place les photos dans la scène'
+        : st.generics.length ? 'Bibliothèque : ' + st.generics.length + ' animation(s) générique(s) déjà prête(s)'
+          : 'Première fois : Blender prépare l’animation générique (quelques minutes, une seule fois)';
 }
 
 function frenchDate(iso) {
@@ -1497,7 +1501,8 @@ $('#st-run').addEventListener('click', () => {
   if (FX.busy || !FX.photo) return;
   const body = { recipe: 'clip-drone', rel: FX.photo.rel, scene: $('#st-scene').value,
     motion: $('#st-motion').value, seconds: +$('#st-seconds').value, quality: $('#st-quality').value,
-    title: $('#st-title').value.trim(), subtitle: $('#st-subtitle').value.trim() };
+    title: $('#st-title').value.trim(), subtitle: $('#st-subtitle').value.trim(),
+    filmcraft: $('#st-filmcraft').checked };
   closeFx();
   toast('Clip drone lancé en tâche de fond : il arrivera dans 06_Rendus/Clips_3D');
   derushJob('/api/events/studio', body);

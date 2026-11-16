@@ -1,20 +1,25 @@
 """Blender 3.6 LTS, moteur des scenes 3D de la chaine de production.
 
-Blender ne fait qu'une chose : mettre les maries detoures dans un modele de scene
-(.blend fait a part, voir blender/build_template_jardin.py pour le contrat) et
-filmer la scene avec une camera drone. Il tourne sans interface (blender -b), en
+Blender ne fait qu'une chose : l'animation generique d'un modele de scene (.blend fait
+a part, contrat dans blender/build_template_jardin.py), sans aucune photo : le decor
+filme par la camera drone, exporte en composition After Effects (.jsx) avec un nul par
+emplacement de photo. Chaque animation n'est rendue qu'une fois et rangee dans la
+bibliotheque (config.GENERICS_DIR) ; EffectCraft y place ensuite les vraies photos.
+Il tourne sans interface (blender -b), en
 processus separe ; les mouvements sont definis dans blender/render_template.py.
 """
 from __future__ import annotations
 
+import json
 import os
 import re
+import shutil
 import subprocess
 import time
 
 from . import config, tools
 
-RENDER_SCRIPT = os.path.join(config.BLENDER_SCRIPTS_DIR, "render_template.py")
+EXPORT_SCRIPT = os.path.join(config.BLENDER_SCRIPTS_DIR, "export_generic.py")
 BUILD_SCRIPT = os.path.join(config.BLENDER_SCRIPTS_DIR, "build_template_jardin.py")
 
 MOTIONS = {
@@ -83,37 +88,77 @@ def _tail(text: str, lines: int = 6) -> str:
     return " | ".join(rows[-lines:]) or "aucun message"
 
 
-def render(couple_png: str, scene: str, out: str, motion: str = "sequence",
-           seconds: float = 9.0, quality: str = "normal", log=None, progress=None,
-           timeout: float = 3 * 3600) -> dict:
-    """Video de la scene avec les maries detoures (PNG transparent) et la camera drone.
-    progress(fraction) est appele a chaque image enregistree."""
-    if not installed():
-        raise BlenderError("Blender 3.6 introuvable (%s) : ./scripts/install_blender.sh" % config.BLENDER_APP)
+def generic_id(scene: str, motion: str, seconds: float, quality: str) -> str:
+    return "%s__%s__%gs__%s" % (scene, motion, seconds, quality)
+
+
+def generic_info(folder: str):
+    """scene.json d'une animation generique complete, sinon None."""
+    try:
+        with open(os.path.join(folder, "scene.json"), "r", encoding="utf-8") as fh:
+            info = json.load(fh)
+    except (OSError, ValueError):
+        return None
+    needed = ["decor.mp4", "composition.jsx"] + (["premier_plan.mov"] if info.get("premier_plan") else [])
+    if all(os.path.isfile(os.path.join(folder, n)) and os.path.getsize(os.path.join(folder, n)) > 0
+           for n in needed):
+        return info
+    return None
+
+
+def generics() -> list:
+    """Animations generiques deja rendues (bibliotheque)."""
+    root = config.GENERICS_DIR
+    items = []
+    for name in sorted(os.listdir(root)) if os.path.isdir(root) else []:
+        info = generic_info(os.path.join(root, name))
+        if info:
+            items.append({"id": name, "path": os.path.join(root, name), "scene": info.get("scene"),
+                          "motion": info.get("motion"), "duration": info.get("duration"),
+                          "quality": info.get("quality"),
+                          "placeholders": [p["name"] for p in info.get("placeholders", [])]})
+    return items
+
+
+def ensure_generic(scene: str, motion: str = "sequence", seconds: float = 9.0, quality: str = "normal",
+                   log=None, progress=None, timeout: float = 3 * 3600) -> tuple:
+    """(dossier, scene.json) de l'animation generique ; Blender la rend si elle manque
+    (plusieurs minutes, une seule fois)."""
     if motion not in MOTIONS:
         raise BlenderError("Mouvement inconnu : %s" % motion)
     if quality not in QUALITIES:
         raise BlenderError("Qualité inconnue : %s" % quality)
-    if not os.path.isfile(couple_png):
-        raise BlenderError("Détourage introuvable : %s" % couple_png)
-    path = os.path.abspath(scene if scene.endswith(".blend") else scene_path(scene))
-    couple_png, out = os.path.abspath(couple_png), os.path.abspath(out)
+    folder = os.path.join(config.GENERICS_DIR, generic_id(scene, motion, seconds, quality))
+    info = generic_info(folder)
+    if info:
+        if log:
+            log("Blender : animation générique déjà prête (%s)" % os.path.basename(folder))
+        return folder, info
+    if not installed():
+        raise BlenderError("Blender 3.6 introuvable (%s) : ./scripts/install_blender.sh" % config.BLENDER_APP)
+    if scene == DEFAULT_SCENE and not os.path.isfile(os.path.join(config.SCENES_3D_DIR, scene + ".blend")):
+        build_default_scene(log)
+    blend = os.path.abspath(scene_path(scene))
+    work = folder + ".partiel"
+    shutil.rmtree(work, ignore_errors=True)
+    os.makedirs(work)
     frames = max(2, int(round(seconds * FPS)))
-    tools.ensure_parent(out)
-    cmd = [config.BLENDER_BIN, "-b", path, "--python", RENDER_SCRIPT, "--",
-           couple_png, out, motion, "%g" % seconds, quality]
     if log:
-        log("Blender : %s, %d images (%s)" % (MOTIONS[motion].lower(), frames, quality))
+        log("Blender : animation générique « %s », %s, %d images (%s) — une seule fois"
+            % (scene, MOTIONS[motion].lower(), frames, quality))
+    cmd = [config.BLENDER_BIN, "-b", blend, "--python", EXPORT_SCRIPT, "--", work, motion,
+           "%g" % seconds, quality]
     started = time.time()
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                             stdin=subprocess.DEVNULL)
-    tail, measure = [], None
+    tail, measure, done = [], None, 0.0
     try:
         for line in proc.stdout:
             tail = (tail + [line])[-40:]
             match = _FRAME.search(line)
             if match and progress:
-                progress(min(1.0, int(match.group(1)) / float(frames)))
+                done = max(done, min(1.0, int(match.group(1)) / float(frames)))
+                progress(done)
             match = _MEASURE.search(line)
             if match:
                 measure = (int(match.group(1)), float(match.group(2)))
@@ -125,8 +170,19 @@ def render(couple_png: str, scene: str, out: str, motion: str = "sequence",
         if proc.poll() is None:
             proc.kill()
             proc.wait()
-    if proc.returncode != 0 or not os.path.isfile(out) or os.path.getsize(out) == 0:
-        raise BlenderError("Rendu Blender impossible : %s" % _tail("".join(tail)))
-    seconds_spent = measure[1] if measure else time.time() - started
-    return {"path": out, "frames": frames, "seconds": round(seconds_spent, 1),
-            "per_frame": round(seconds_spent / frames, 2)}
+        proc.stdout.close()
+    info = generic_info(work) if proc.returncode == 0 else None
+    if not info:
+        shutil.rmtree(work, ignore_errors=True)
+        raise BlenderError("Animation générique impossible : %s" % _tail("".join(tail)))
+    # Les chemins des videos sont ecrits dans le .jsx : on les corrige pour le dossier final
+    jsx = os.path.join(work, "composition.jsx")
+    with open(jsx, "r", encoding="utf-8") as fh:
+        text = fh.read()
+    with open(jsx, "w", encoding="utf-8") as fh:
+        fh.write(text.replace(json.dumps(work)[1:-1], json.dumps(folder)[1:-1]))
+    shutil.rmtree(folder, ignore_errors=True)
+    os.rename(work, folder)
+    if log and measure:
+        log("Blender : %d images en %.0f s (%.2f s par image)" % (measure[0], measure[1], measure[1] / measure[0]))
+    return folder, info

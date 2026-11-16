@@ -159,15 +159,14 @@ if [ -x "$BL/Contents/MacOS/Blender" ]; then
   ok "$("$BL/Contents/MacOS/Blender" -b --version 2>/dev/null | head -1)"
   if [ ! -f "$SCENE" ]; then
     bad "Modele de scene absent : ./scripts/install_blender.sh"
-  elif [ -x "$EPY" ]; then
-    # Une image de la scene avec des « maries » factices (ovale transparent)
+  else
+    # Animation generique de deux images : decor, composition .jsx, emplacements
     T="$(mktemp -d "${TMPDIR:-/tmp}/rexo-blender.XXXXXX")"
-    "$EPY" -c "import cv2, numpy as n; a=n.zeros((900,500,4),n.uint8); cv2.ellipse(a,(250,450),(200,430),0,0,360,(200,200,240,255),-1); cv2.imwrite('$T/maries.png', a)"
-    if R="$("$BL/Contents/MacOS/Blender" -b "$SCENE" --python blender/render_template.py -- \
-          "$T/maries.png" "$T/image.jpg" orbite 1 brouillon image 2>&1)" && [ -s "$T/image.jpg" ]; then
-      ok "Blender : $(echo "$R" | grep -o 'MESURE.*' | sed 's/^MESURE //')"
+    if R="$("$BL/Contents/MacOS/Blender" -b "$SCENE" --python blender/export_generic.py -- \
+          "$T" orbite 0.07 brouillon 2>&1)" && [ -s "$T/decor.mp4" ] && [ -s "$T/composition.jsx" ]; then
+      ok "Blender : animation generique ($(grep -o '"name": "[^"]*"' "$T/scene.json" | cut -d'"' -f4 | tr '\n' ' ')) $(echo "$R" | grep -o 'MESURE.*' | sed 's/^MESURE //')"
     else
-      bad "Blender : rendu d'essai en echec : $(echo "$R" | tail -2 | tr '\n' ' ')"
+      bad "Blender : export generique en echec : $(echo "$R" | tail -2 | tr '\n' ' ')"
     fi
     rm -rf "$T"
   fi
@@ -178,7 +177,7 @@ EC="${REXO_EFFECTCRAFT_APP:-/Applications/EffectCraft.app}"
 if [ -d "$EC" ]; then
   ok "EffectCraft $(defaults read "$EC/Contents/Info" CFBundleShortVersionString 2>/dev/null) (commandes verifiees a chaque clip)"
 else
-  warn "EffectCraft absent (les clips sortent sans titre)"
+  warn "EffectCraft absent (clip drone 3D indisponible : il place les photos dans la scene)"
 fi
 
 echo
