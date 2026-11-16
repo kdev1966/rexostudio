@@ -67,20 +67,28 @@ def status() -> dict:
     }
 
 
-def couple_cutout(src: str, out_png: str, folder: str, key: str, log=None) -> str:
-    """Maries seuls sur fond transparent, photo amelioree (etape Rexo)."""
+def couple_cutout(src: str, out_png: str, folder: str, key: str, log=None, box=None) -> str:
+    """Maries seuls sur fond transparent, photo amelioree (etape Rexo). box : cadre trace
+    autour des maries (proportions de l'image) ; PhotoCraft y selectionne l'objet entier,
+    ce qui rattrape une robe a grande traine que Vision ne compte pas dans la personne."""
     small = os.path.join(folder, key + "_reduite.png")
+    framed = os.path.join(folder, key + "_cadre.png")
     refined = ""
     try:
         effects.segment(["orient", src, small, "--max", str(COUPLE_MAX)])
         refined = effects.refined_mask(small, folder, key, enhance=True, log=log, couple=True)
         args = ["cutout", small, out_png, "--enhance"] + (["--use-mask", refined] if refined else [])
+        if box is not None:
+            if log:
+                log("PhotoCraft : sélection des mariés dans le cadre tracé")
+            effects.couple_mask(small, box, framed)
+            args += ["--add-mask", framed]
         result = effects.segment(args)
         if not result.get("coverage"):
             raise StudioError("Aucune personne trouvée sur la photo")
         return out_png
     finally:
-        for path in (small, refined):
+        for path in (small, refined, framed):
             if path and os.path.exists(path):
                 os.remove(path)
 
@@ -88,7 +96,7 @@ def couple_cutout(src: str, out_png: str, folder: str, key: str, log=None) -> st
 def clip_drone(job, event_dir: str, src: str, scene: str = blender.DEFAULT_SCENE,
                motion: str = "sequence", seconds: float = 9.0, quality: str = "normal",
                title: str = "", subtitle: str = "", title_model: str = effectcraft.DEFAULT_TITLE,
-               to_filmcraft: bool = True) -> dict:
+               to_filmcraft: bool = True, box=None) -> dict:
     """Photo des maries -> clip drone 3D titre dans 06_Rendus/Clips_3D, puis dans FilmCraft.
     Emplacements : PHOTO_DEBOUT_MARIES recoit les maries detoures ; chaque PHOTO_CADRE_*
     recoit la photo elle-meme (amelioree)."""
@@ -111,10 +119,13 @@ def clip_drone(job, event_dir: str, src: str, scene: str = blender.DEFAULT_SCENE
     result = {"seconds": seconds, "motion": motion, "scene": scene, "titled": False, "filmcraft": ""}
     try:
         job.set_progress(0.02, steps[0])
-        couple_cutout(src, full_png, folder, key, log)
+        couple_cutout(src, full_png, folder, key, log, box)
         if effects.trim(full_png, couple_png).get("cut_bottom"):
             log("Attention : les mariés touchent le bas de la photo (photo pas en pied) : dans la "
                 "scène, ils sembleront coupés ; préférez une photo des mariés en entier")
+        elif box is None:
+            log("Conseil : si la robe ou la traîne manque dans le clip, tracez un cadre autour des "
+                "mariés avant de relancer")
         # Photo des cadres : amelioree et reduite (une photo de 19 Mpx ralentit EffectCraft)
         # (Core Image lit l'image a la demande : jamais la meme entree et sortie)
         effects.segment(["orient", src, small_jpg, "--max", str(FRAME_PHOTO_MAX)])

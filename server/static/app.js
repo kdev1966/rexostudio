@@ -1502,7 +1502,7 @@ $('#st-run').addEventListener('click', () => {
   const body = { recipe: 'clip-drone', rel: FX.photo.rel, scene: $('#st-scene').value,
     motion: $('#st-motion').value, seconds: +$('#st-seconds').value, quality: $('#st-quality').value,
     title: $('#st-title').value.trim(), subtitle: $('#st-subtitle').value.trim(),
-    filmcraft: $('#st-filmcraft').checked };
+    filmcraft: $('#st-filmcraft').checked, box: FX.box };
   closeFx();
   toast('Clip drone lancé en tâche de fond : il arrivera dans 06_Rendus/Clips_3D');
   derushJob('/api/events/studio', body);

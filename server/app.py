@@ -958,6 +958,7 @@ class StudioHandler(BaseHTTPRequestHandler):
             "subtitle": studio.french_date(fiche.get("date", "")) if data.get("subtitle") is None
             else str(data.get("subtitle")),
             "to_filmcraft": data.get("filmcraft") is not False,
+            "box": data.get("box") or None,
         }
         job = MANAGER.create("studio", "%s : %s" % (studio.RECIPES[recipe]["label"], os.path.basename(src)))
         MANAGER.run_async(job, lambda j: studio.clip_drone(j, event_dir, src, **options))
