@@ -1467,6 +1467,13 @@ function openFx(rel) {
 
 /* -- chaine de production : clip drone 3D (Rexo + Blender + EffectCraft) -- */
 
+// Modeles de titres EffectCraft (modeles/titres) ; le titre simple est fait au besoin
+function titleOptions(select) {
+  const titles = (EVD.studio && EVD.studio.titles) || [];
+  const items = [{ id: 'titre_simple', name: 'Titre simple' }].concat(titles.filter((t) => t.id !== 'titre_simple'));
+  select.innerHTML = items.map((t) => '<option value="' + escapeHtml(t.id) + '">' + escapeHtml(t.name) + '</option>').join('');
+}
+
 function studioForm() {
   const st = EVD.studio;
   const info = $('#st-info');
@@ -1476,6 +1483,7 @@ function studioForm() {
   // Sans modele de scene, le jardin simple est construit au premier clip
   $('#st-scene').innerHTML = st && st.scenes.length ? opts(st.scenes, 'id', 'name')
     : '<option value="jardin_nuit">Jardin nuit (simple)</option>';
+  titleOptions($('#st-title-model'));
   $('#st-title').value = (EVD.event && EVD.event.names) || '';
   $('#st-subtitle').value = frenchDate((EVD.event && EVD.event.date) || '');
   const ready = !!(st && st.blender && st.detourage && st.effectcraft);
@@ -1503,7 +1511,7 @@ $('#st-run').addEventListener('click', () => {
   const body = { recipe: 'clip-drone', rel: FX.photo.rel, scene: $('#st-scene').value,
     motion: $('#st-motion').value, seconds: +$('#st-seconds').value, quality: $('#st-quality').value,
     title: $('#st-title').value.trim(), subtitle: $('#st-subtitle').value.trim(),
-    filmcraft: $('#st-filmcraft').checked, box: FX.box };
+    filmcraft: $('#st-filmcraft').checked, box: FX.box, title_model: $('#st-title-model').value };
   closeFx();
   toast('Clip drone lancé en tâche de fond : il arrivera dans 06_Rendus/Clips_3D');
   derushJob('/api/events/studio', body);
@@ -1894,6 +1902,7 @@ loadProjects().then(() => {
 
 $('#gen-box').addEventListener('toggle', () => {
   if (!$('#gen-box').open) return;
+  titleOptions($('#gen-title-model'));
   if (!$('#gen-title').value) $('#gen-title').value = (EVD.event && EVD.event.names) || '';
   if (!$('#gen-subtitle').value) $('#gen-subtitle').value = frenchDate((EVD.event && EVD.event.date) || '');
   const st = EVD.studio;
@@ -1905,7 +1914,7 @@ $('#gen-box').addEventListener('toggle', () => {
 $('#gen-run').addEventListener('click', () => {
   derushJob('/api/events/studio', { recipe: 'generique', count: +$('#gen-count').value,
     title: $('#gen-title').value.trim(), subtitle: $('#gen-subtitle').value.trim(),
-    filmcraft: $('#gen-filmcraft').checked });
+    filmcraft: $('#gen-filmcraft').checked, title_model: $('#gen-title-model').value });
 });
 
 /* -- chaine de production : detourage video d'un rush -- */

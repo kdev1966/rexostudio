@@ -20,8 +20,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from montagia import (ai, assistant, blender, config, effects, events, filmcraft,  # noqa: E402
-                      media, photocraft, pipeline, project, rushes, studio, tools, transcribe,
+from montagia import (ai, assistant, blender, config, effectcraft, effects, events,  # noqa: E402
+                      filmcraft, media, photocraft, pipeline, project, rushes, studio, tools, transcribe,
                       trash)
 from montagia.jobs import MANAGER  # noqa: E402
 
@@ -948,6 +948,10 @@ class StudioHandler(BaseHTTPRequestHandler):
             subtitle = (studio.french_date(fiche.get("date", "")) if data.get("subtitle") is None
                         else str(data["subtitle"]))
             to_fc = data.get("filmcraft") is not False
+            title_model = str(data.get("title_model") or effectcraft.DEFAULT_TITLE)
+            if title_model != effectcraft.DEFAULT_TITLE and title_model not in [
+                    t["id"] for t in effectcraft.titles()]:
+                return self._error("Modèle de titre introuvable : %s" % title_model, 400)
             if recipe == "clip-drone":
                 _event_dir, src = self._event_photo(data)
                 options = {
@@ -955,7 +959,7 @@ class StudioHandler(BaseHTTPRequestHandler):
                     "motion": str(data.get("motion") or "sequence"),
                     "quality": str(data.get("quality") or "normal"),
                     "seconds": min(30.0, max(3.0, float(data.get("seconds") or 9))),
-                    "title": title, "subtitle": subtitle, "to_filmcraft": to_fc,
+                    "title": title, "subtitle": subtitle, "to_filmcraft": to_fc, "title_model": title_model,
                     "box": data.get("box") or None,
                 }
                 name = os.path.basename(src)
@@ -964,7 +968,8 @@ class StudioHandler(BaseHTTPRequestHandler):
                 count = min(12, max(2, int(data.get("count") or 6)))
                 name = os.path.basename(event_dir)
                 func = lambda j: studio.generique(j, event_dir, count=count, title=title,  # noqa: E731
-                                                  subtitle=subtitle, to_filmcraft=to_fc)
+                                                  subtitle=subtitle, to_filmcraft=to_fc,
+                                                  title_model=title_model)
             else:
                 rel = str(data.get("rel") or "")
                 events.item_path(config.EVENTS_DIR, os.path.basename(event_dir), rel)   # chemin verifie
