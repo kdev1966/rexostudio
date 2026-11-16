@@ -131,6 +131,10 @@ class RunTest(unittest.TestCase):
         os.makedirs(self.cards)
         self.photo = self._photo("IMG_0001.jpg")
         self.log = os.path.join(self.tmp, "segment.log")
+        # Sans environnement d'effets (pas d'affinage MobileSAM) : independant de la machine
+        patcher = mock.patch.object(config, "EFFECTS_PYTHON", os.path.join(self.tmp, "sans-environnement"))
+        patcher.start()
+        self.addCleanup(patcher.stop)
         tool = os.path.join(self.tmp, "rexo-segment")
         with open(tool, "w") as fh:
             fh.write(FAKE_SEGMENT % {"log": self.log})

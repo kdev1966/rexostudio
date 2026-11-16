@@ -22,6 +22,10 @@
 // Pour style, crop et orient, la sortie est en PNG si son nom finit par .png (la
 // transparence d'un detourage est gardee ; orient sans perte), en JPEG sinon.
 //
+// --persons : ajoute a la reponse JSON les cadres des personnes (corps entier).
+// --use-mask <png> : masque des personnes deja calcule (gris, blanc = personne), a la
+// place de Vision ; sert au masque affine par MobileSAM (effects_worker/refine.py).
+//
 // --save-fg <jpg> : enregistre aussi la photo aux couleurs de bord nettoyees
 // (« decontaminees »), source du calque des maries dans le PSD a calques.
 //
@@ -250,16 +254,42 @@ if effect == "style" {
     finish(r.cropped(to: extent), png: pngOutput, coverage: 0)
 }
 
-// 1. Masque des personnes (resolution de Vision, en general plus petite que l'image)
-let request = VNGeneratePersonSegmentationRequest()
-request.qualityLevel = quality
-request.outputPixelFormat = kCVPixelFormatType_OneComponent8
-do {
-    try VNImageRequestHandler(ciImage: image, options: [:]).perform([request])
-} catch {
-    fail("Vision : \(error.localizedDescription)")
+// 1. Masque des personnes (resolution de Vision, en general plus petite que l'image),
+//    sauf si --use-mask fournit un masque deja calcule (affine par MobileSAM : voir
+//    effects_worker/refine.py) ; --persons ajoute a la reponse le cadre de chaque
+//    personne (corps entier), en proportions, origine en haut a gauche.
+let usedMask = option("--use-mask")
+var buffer: CVPixelBuffer? = nil
+if usedMask == nil || CommandLine.arguments.contains("--persons") {
+    let request = VNGeneratePersonSegmentationRequest()
+    request.qualityLevel = quality
+    request.outputPixelFormat = kCVPixelFormatType_OneComponent8
+    let humans = VNDetectHumanRectanglesRequest()
+    humans.upperBodyOnly = false
+    var requests: [VNRequest] = []
+    if usedMask == nil { requests.append(request) }
+    if CommandLine.arguments.contains("--persons") { requests.append(humans) }
+    do {
+        // Toujours sur la photo d'origine : sur la photo amelioree (ombres debouchees,
+        // relief), Vision voyait moins bien les maries de nuit (photo 5 du studio :
+        // couverture 0,053 au lieu de 0,062, la mariee perdue a l'affinage). La photo
+        // amelioree a la meme geometrie : le masque lui sert tel quel.
+        try VNImageRequestHandler(ciImage: rawImage, options: [:]).perform(requests)
+    } catch {
+        fail("Vision : \(error.localizedDescription)")
+    }
+    if usedMask == nil {
+        guard let b = request.results?.first?.pixelBuffer else { fail("aucun masque produit") }
+        buffer = b
+    }
+    if CommandLine.arguments.contains("--persons") {
+        report["persons"] = (humans.results ?? []).map { o -> [NSDecimalNumber] in
+            let b = o.boundingBox
+            return [b.minX, 1 - b.maxY, b.width, b.height].map {
+                NSDecimalNumber(string: String(format: "%.4f", Double($0))) }
+        }
+    }
 }
-guard let buffer = request.results?.first?.pixelBuffer else { fail("aucun masque produit") }
 
 // Mise a la taille de l'image (Lanczos : bords plus doux qu'un simple agrandissement)
 func fitted(_ small: CIImage) -> CIImage {
@@ -287,7 +317,20 @@ func tightened(_ m: CIImage) -> CIImage {
         .applyingFilter("CIColorClamp").cropped(to: extent)
 }
 
-var mask = tightened(fitted(CIImage(cvPixelBuffer: buffer)))
+var mask: CIImage
+if let path = usedMask {
+    // Masque en niveaux de gris (blanc = personne), aux proportions de l'image
+    guard let given = CIImage(contentsOf: URL(fileURLWithPath: path)) else {
+        fail("masque illisible : \(path)")
+    }
+    mask = fitted(given).applyingFilter("CIColorMatrix", parameters: [
+        "inputGVector": CIVector(x: 1, y: 0, z: 0, w: 0),
+        "inputBVector": CIVector(x: 1, y: 0, z: 0, w: 0),
+        "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 0),
+        "inputBiasVector": CIVector(x: 0, y: 0, z: 0, w: 1)]).cropped(to: extent)
+} else {
+    mask = tightened(fitted(CIImage(cvPixelBuffer: buffer!)))
+}
 
 // 2. Masque complementaire (transparence d'un PNG detoure), ajoute au masque
 if let extraPath = option("--add-mask") {

@@ -204,6 +204,45 @@ def _erase(src: str, out: str, box, folder: str, key: str, mask: str = "",
             os.remove(tmp)
 
 
+# Affinage du masque des personnes par MobileSAM (REXO_REFINE=0 pour Vision seul)
+REFINE = os.environ.get("REXO_REFINE", "1") != "0"
+
+
+def refined_mask(src: str, folder: str, key: str, enhance: bool = False, log=None) -> str:
+    """Masque des personnes de Vision affine par MobileSAM (effects_worker/refine.py) :
+    les trainees de fond disparaissent, les mains restent. Retourne le chemin d'un PNG
+    gris a donner a rexo-segment --use-mask (a effacer par l'appelant), ou "" si
+    l'affinage n'est pas possible : l'effet se fait alors avec Vision seul."""
+    if not REFINE or not env_installed() or not os.path.isfile(
+            os.path.join(config.EFFECTS_WORKER_DIR, "refine.py")):
+        return ""
+    vision = os.path.join(folder, key + "_tmp_vision.png")
+    out = os.path.join(folder, key + "_tmp_affine.png")
+    readable, tmp = src, ""
+    try:
+        # Masque de Vision sur la photo d'origine (rexo-segment l'y calcule toujours)
+        info = _segment(["mask", src, vision, "--persons"])
+        if os.path.splitext(src)[1].lower() not in OPENCV_EXT:
+            tmp = readable = os.path.join(folder, key + "_tmp_lisible.jpg")
+            _segment(["orient", src, tmp])
+        boxes = ";".join(",".join(str(v) for v in b) for b in info.get("persons") or [])
+        result = _run_json([config.EFFECTS_PYTHON, os.path.join(config.EFFECTS_WORKER_DIR, "refine.py"),
+                            readable, vision, out, "--boxes", boxes],
+                           "échec de l'affinage", env=config.effects_env())
+        if log:
+            log("MobileSAM : %d personne(s), %.0f %% de traînées retirées" % (
+                result.get("persons", 0) + result.get("extra", 0), 100 * result.get("removed", 0)))
+        return out if os.path.isfile(out) else ""
+    except EffectError as exc:
+        if log:
+            log("Affinage impossible, Vision seul : %s" % exc)
+        return ""
+    finally:
+        for path in (vision, tmp):
+            if path and os.path.exists(path):
+                os.remove(path)
+
+
 def couple_mask(src: str, box, out_png: str):
     """Masque complementaire du cadre autour des maries : PhotoCraft fait une
     Selection d'objet dans le cadre (proportions de l'image redressee), sur une
@@ -271,23 +310,31 @@ def preview(event_dir: str, src: str, effect: str, box=None, log=None,
         args = [spec["tool"], src, out, "--save-alpha", alpha]
         if enhance:
             args.append("--enhance")
+        refined = refined_mask(src, folder, _key(rel), enhance, log)
+        if refined:
+            args += ["--use-mask", refined]
+            common["refined"] = True
         if effect == "detourage":
             args += ["--save-fg", os.path.join(folder, fg_name(rel, framed, enhance))]
         bounds = None
-        if box is not None:
-            mask = os.path.join(folder, _key(rel) + "_tmp_objet.png")
-            try:
-                if log:
-                    log("PhotoCraft : sélection d'objet dans le cadre")
-                bounds = couple_mask(src, box, mask)
-                if log:
-                    log("Vision : détourage des personnes")
-                result = _segment(args + ["--add-mask", mask])
-            finally:
-                if os.path.exists(mask):
-                    os.remove(mask)
-        else:
-            result = _segment(args)
+        try:
+            if box is not None:
+                mask = os.path.join(folder, _key(rel) + "_tmp_objet.png")
+                try:
+                    if log:
+                        log("PhotoCraft : sélection d'objet dans le cadre")
+                    bounds = couple_mask(src, box, mask)
+                    if log:
+                        log("Vision : détourage des personnes")
+                    result = _segment(args + ["--add-mask", mask])
+                finally:
+                    if os.path.exists(mask):
+                        os.remove(mask)
+            else:
+                result = _segment(args)
+        finally:
+            if refined and os.path.exists(refined):
+                os.remove(refined)
         return dict(common, width=result.get("width"), height=result.get("height"),
                     coverage=result.get("coverage", 0), ms=result.get("ms", 0),
                     object_bounds=bounds, white_balance=result.get("white_balance"))

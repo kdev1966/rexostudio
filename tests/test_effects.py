@@ -42,6 +42,10 @@ class PhotoEventCase(unittest.TestCase):
         with open(self.photo, "wb") as fh:
             fh.write(b"\xff\xd8photo")
         self.log = os.path.join(self.tmp, "segment.log")
+        # Sans environnement d'effets par defaut (independant de la machine de test)
+        patcher = mock.patch.object(config, "EFFECTS_PYTHON", os.path.join(self.tmp, "sans-environnement"))
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self._binary(FAKE_SEGMENT % {"log": self.log})
 
     def _binary(self, script):
@@ -377,6 +381,97 @@ class EraseTest(PhotoEventCase):
         effects.preview(self.event, self.photo, "effacer", box=[0.1, 0.1, 0.2, 0.2])
         rel = effects.save(self.event, self.photo, "effacer", True)
         self.assertEqual(rel, os.path.join("06_Rendus", "Photos_effets", "IMG_0001_effacer.jpg"))
+
+
+# Affinage MobileSAM : faux rexo-segment qui donne les cadres des personnes, faux
+# python de l'environnement d'effets qui « affine » (copie le masque de Vision).
+FAKE_SEGMENT_PERSONS = """#!/bin/bash
+echo "$@" >> "%(log)s"
+cp "$2" "$3"
+if [ "$1" = "mask" ]; then
+  echo '{"ok":true,"width":4000,"height":3000,"coverage":0.3,"persons":[[0.1,0.2,0.3,0.6],[0.5,0.1,0.3,0.8]]}'
+else
+  echo '{"ok":true,"width":4000,"height":3000,"coverage":0.3,"ms":10}'
+fi
+"""
+
+FAKE_REFINE_PYTHON = """#!/bin/bash
+echo "$@" >> "%(log)s"
+echo "PYTHONPATH=$PYTHONPATH" >> "%(log)s"
+%(body)s
+"""
+
+
+class RefineTest(PhotoEventCase):
+    def setUp(self):
+        super().setUp()
+        self._binary(FAKE_SEGMENT_PERSONS % {"log": self.log})
+        self.refine_log = os.path.join(self.tmp, "refine.log")
+        workers = os.path.join(self.tmp, "effects_worker")
+        os.makedirs(workers)
+        for name in ("erase.py", "refine.py"):
+            open(os.path.join(workers, name), "w").close()
+        patcher = mock.patch.object(config, "EFFECTS_WORKER_DIR", workers)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self._python('cp "$3" "$4"\necho \'{"ok":true,"persons":2,"extra":0,"removed":0.12,"filled":40}\'')
+
+    def _python(self, body):
+        path = os.path.join(self.tmp, "python")
+        with open(path, "w") as fh:
+            fh.write(FAKE_REFINE_PYTHON % {"log": self.refine_log, "body": body})
+        os.chmod(path, 0o755)
+        patcher = mock.patch.object(config, "EFFECTS_PYTHON", path)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_person_effect_uses_refined_mask(self):
+        r = effects.preview(self.event, self.photo, "fond-flou")
+        self.assertTrue(r["refined"])
+        mask_call, effect_call = self._calls()
+        self.assertEqual(mask_call[0], "mask")
+        self.assertIn("--persons", mask_call)
+        with open(self.refine_log) as fh:
+            args, env = fh.read().splitlines()[:2]
+        args = args.split()
+        self.assertTrue(args[0].endswith("refine.py"))
+        self.assertEqual(args[1:3], [self.photo, mask_call[2]])
+        self.assertEqual(args[4:], ["--boxes", "0.1,0.2,0.3,0.6;0.5,0.1,0.3,0.8"])
+        self.assertIn("PYTHONPATH=" + config.EMBEDKIT_DIR, env)
+        self.assertEqual(effect_call[0], "blur")
+        refined = effect_call[effect_call.index("--use-mask") + 1]
+        self.assertEqual(refined, args[3])
+        # Fichiers intermediaires effaces : masque de Vision et masque affine
+        self.assertFalse(os.path.exists(mask_call[2]))
+        self.assertFalse(os.path.exists(refined))
+
+    def test_refinement_mask_from_original_photo(self):
+        effects.preview(self.event, self.photo, "noir-et-blanc", enhance=True)
+        mask_call, effect_call = self._calls()
+        self.assertNotIn("--enhance", mask_call)          # Vision sur la photo d'origine
+        self.assertIn("--enhance", effect_call)           # l'amelioration sur la photo finale
+
+    def test_refinement_failure_falls_back_to_vision(self):
+        self._python('echo \'{"ok":false,"error":"modèle absent"}\'\nexit 1')
+        logs = []
+        r = effects.preview(self.event, self.photo, "detourage", log=logs.append)
+        self.assertNotIn("refined", r)
+        self.assertNotIn("--use-mask", self._calls()[-1])
+        self.assertTrue(any("Vision seul" in line and "modèle absent" in line for line in logs))
+
+    def test_refinement_can_be_disabled(self):
+        with mock.patch.object(effects, "REFINE", False):
+            r = effects.preview(self.event, self.photo, "fond-flou")
+        self.assertNotIn("refined", r)
+        self.assertEqual([c[0] for c in self._calls()], ["blur"])
+
+    def test_erase_is_not_refined(self):
+        def fake_erase_python():
+            self._python('cp "$2" "$3"\necho \'{"ok":true,"width":4000,"height":3000}\'')
+
+        fake_erase_python()
+        effects.preview(self.event, self.photo, "effacer", box=[0.1, 0.1, 0.2, 0.2])
+        self.assertFalse(os.path.exists(self.log) and any(c[0] == "mask" for c in self._calls()))
 
 
 class PhotoCraftTest(unittest.TestCase):

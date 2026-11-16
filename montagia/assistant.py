@@ -271,7 +271,7 @@ def run_steps(src: str, steps: list, work: str, out_base: str, log=None) -> str:
     log = log or (lambda _m: None)
     os.makedirs(work, exist_ok=True)
     key = os.path.basename(out_base)
-    current, extra_mask = src, None
+    current, extra_mask, refined = src, None, None
     made = []
     try:
         for i, step in enumerate(steps):
@@ -295,6 +295,15 @@ def run_steps(src: str, steps: list, work: str, out_base: str, log=None) -> str:
                     args += ["--name", step.get("style", "chaud")]
                 if tool == "recadrer":
                     args += ["--ratio", step.get("format", "4:5")]
+                if tool in PERSON_TOOLS:
+                    # Masque affine par MobileSAM, calcule une fois (meme geometrie
+                    # jusqu'au recadrage, toujours en dernier)
+                    if refined is None:
+                        refined = effects.refined_mask(current, work, key, log=log)
+                        if refined:
+                            made.append(refined)
+                    if refined:
+                        args += ["--use-mask", refined]
                 if extra_mask and tool in PERSON_TOOLS:
                     args += ["--add-mask", extra_mask]
                 log("Étape %d : %s" % (i + 1, TOOLS[tool].split(" (")[0]))
