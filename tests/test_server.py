@@ -18,7 +18,6 @@ from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from montagia import project  # noqa: E402
 from montagia.jobs import MANAGER  # noqa: E402
 from server import app  # noqa: E402
 
@@ -54,16 +53,6 @@ class ServerTest(unittest.TestCase):
             conn.close()
 
     # -- B2 : flux SSE ---------------------------------------------------
-    def test_chat_stream_ends(self):
-        proj = project.STORE.create("/tmp/inexistant.mp4", "x.mp4")
-        with mock.patch.object(app.pipeline, "ai_chat",
-                               lambda *_a: iter(["Bon", "jour"])):
-            status, body = self.request("POST", "/api/chat",
-                                        {"project_id": proj.id, "question": "q"})
-        self.assertEqual(status, 200)
-        self.assertIn('"token": "Bon"', body)
-        self.assertTrue(body.rstrip().endswith('{"done": true}'))
-
     def test_events_of_finished_job_end_with_final_state(self):
         job = MANAGER.create("test")
         MANAGER.run_async(job, lambda _j: {"ok": 1})
@@ -98,14 +87,14 @@ class ServerTest(unittest.TestCase):
     # -- B3 : requetes d'un autre site ----------------------------------
     def test_same_origin_is_accepted(self):
         status, _ = self.request(
-            "POST", "/api/analyze", {"project_id": "absent"},
+            "POST", "/api/events/keep", {"id": "absent", "rel": "x"},
             headers={"Origin": "http://127.0.0.1:%d" % self.port})
-        self.assertEqual(status, 500)       # projet introuvable, mais pas refuse
+        self.assertEqual(status, 404)       # evenement introuvable, mais pas refuse
 
     def test_foreign_origin_is_rejected(self):
         with mock.patch.object(app.subprocess, "Popen") as popen:
             status, _ = self.request(
-                "POST", "/api/open", {"path": "/Applications/Calculator.app"},
+                "POST", "/api/events/open", {"id": "x", "sub": ""},
                 headers={"Origin": "https://evil.example"})
         self.assertEqual(status, 403)
         popen.assert_not_called()
@@ -113,7 +102,7 @@ class ServerTest(unittest.TestCase):
     def test_text_plain_post_is_rejected(self):
         with mock.patch.object(app.subprocess, "Popen") as popen:
             status, _ = self.request(
-                "POST", "/api/open", {"path": "/Applications/Calculator.app"},
+                "POST", "/api/events/open", {"id": "x", "sub": ""},
                 headers={"Content-Type": "text/plain"})
         self.assertEqual(status, 403)
         popen.assert_not_called()
@@ -123,93 +112,6 @@ class ServerTest(unittest.TestCase):
         status, _ = self.request("GET", "/api/status",
                                  headers={"Host": "evil.example:%d" % self.port})
         self.assertEqual(status, 403)
-
-    def test_open_rejects_path_outside_allowed_dirs(self):
-        with mock.patch.object(app.subprocess, "Popen") as popen:
-            status, _ = self.request("POST", "/api/open",
-                                     {"path": "/ApplicationsEvil/x.app"})
-        self.assertEqual(status, 403)
-        popen.assert_not_called()
-
-    def test_filmcraft_route_runs_pipeline_job(self):
-        proj = project.STORE.create("/tmp/inexistant.mp4", "clip.mp4")
-        proj.plan = [{"start": 0, "end": 2}]
-        calls = []
-
-        def fake_job(job, source, segments, out_path, **kwargs):
-            calls.append((source, segments, out_path, kwargs.get("profile")))
-            return {"path": out_path, "valid": True}
-
-        with mock.patch.object(app.pipeline, "build_filmcraft_job", side_effect=fake_job):
-            status, body = self.request("POST", "/api/filmcraft",
-                                        {"project_id": proj.id, "profile": "9:16"})
-            job_id = json.loads(body)["job_id"]
-            for _ in range(50):
-                if MANAGER.get(job_id).status == "done":
-                    break
-                time.sleep(0.02)
-        self.assertEqual(status, 200)
-        self.assertEqual(MANAGER.get(job_id).status, "done")
-        source, segments, out_path, profile = calls[0]
-        self.assertEqual((source, segments, profile), ("/tmp/inexistant.mp4", proj.plan, "9:16"))
-        self.assertTrue(out_path.endswith("clip.fcproj"))
-        self.assertIn(out_path, proj.exports)
-
-    def test_plan_keep_toggle_recomputes_plan(self):
-        proj = project.STORE.create("/tmp/inexistant.mp4", "bascule.mp4")
-        proj.info = {"duration": 10.0}
-        proj.candidates = [{"id": "S1", "start": 0.0, "end": 3.0, "text": "a", "kind": "parole"},
-                           {"id": "S2", "start": 4.0, "end": 6.0, "text": "b", "kind": "parole"}]
-        proj.results["plan_decisions"] = [
-            {"id": "S1", "keep": True, "type": "contenu", "by": "ia"},
-            {"id": "S2", "keep": True, "type": "digression", "by": "ia", "suggested": True}]
-        status, body = self.request("POST", "/api/plan/keep",
-                                    {"project_id": proj.id, "id": "S2", "keep": False})
-        self.assertEqual(status, 200)
-        data = json.loads(body)
-        self.assertEqual([(s["start"], s["end"]) for s in data["plan"]], [(0.0, 3.0)])
-        self.assertEqual(proj.plan, data["plan"])
-        # Tout couper est refuse (plan vide) et la decision est retablie.
-        status, _ = self.request("POST", "/api/plan/keep",
-                                 {"project_id": proj.id, "id": "S1", "keep": False})
-        self.assertEqual(status, 400)
-        self.assertTrue(proj.results["plan_decisions"][0]["keep"])
-        status, _ = self.request("POST", "/api/plan/keep",
-                                 {"project_id": proj.id, "id": "S9", "keep": False})
-        self.assertEqual(status, 404)
-
-    def test_filmcraft_route_requires_a_plan(self):
-        proj = project.STORE.create("/tmp/inexistant.mp4", "vide.mp4")
-        status, _ = self.request("POST", "/api/filmcraft", {"project_id": proj.id})
-        self.assertEqual(status, 400)
-
-    def test_open_filmcraft_only_fcproj_in_workspace(self):
-        with mock.patch.object(app.filmcraft, "open_project") as opener:
-            status, _ = self.request("POST", "/api/open",
-                                     {"target": "filmcraft", "path": "/etc/hosts"})
-        self.assertEqual(status, 403)
-        opener.assert_not_called()
-
-    def test_same_name_uploads_do_not_overwrite(self):
-        media_dir = tempfile.mkdtemp()
-        info = {"duration": 1.0, "width": 16, "height": 16}
-        paths = []
-        with mock.patch.object(app.config, "MEDIA_DIR", media_dir), \
-                mock.patch.object(app.media, "probe", return_value=info):
-            for payload in (b"premier", b"second"):
-                conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=TIMEOUT)
-                conn.request("POST", "/api/upload?name=rush.mp4", body=payload,
-                             headers={"Content-Type": "video/mp4"})
-                resp = conn.getresponse()
-                paths.append(json.loads(resp.read())["project"]["path"])
-                conn.close()
-        self.assertNotEqual(paths[0], paths[1])
-        with open(paths[0], "rb") as fh:
-            self.assertEqual(fh.read(), b"premier")
-        with open(paths[1], "rb") as fh:
-            self.assertEqual(fh.read(), b"second")
-        self.assertFalse([f for f in os.listdir(os.path.dirname(paths[0]))
-                          if f.endswith(".part")])
 
     def _range(self, path, header):
         conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=TIMEOUT)
@@ -245,75 +147,13 @@ class ServerTest(unittest.TestCase):
             self.assertEqual(status, 416)
             self.assertEqual(headers["Content-Range"], "bytes */100")
 
-    def test_foreign_upload_is_rejected(self):
-        status, _ = self.request(
-            "POST", "/api/upload?name=a.mp4", headers={
-                "Origin": "https://evil.example", "Content-Type": "video/mp4"})
-        self.assertEqual(status, 403)
-
-    # -- preparer en un clic, supprimer, quitter ------------------------
+    # -- evenements, quitter --------------------------------------------
     def wait_job(self, job_id):
         for _ in range(100):
             if MANAGER.get(job_id).status in ("done", "error"):
                 break
             time.sleep(0.02)
         return MANAGER.get(job_id)
-
-    def test_prepare_chains_analyze_transcribe_plan(self):
-        proj = project.STORE.create("/tmp/inexistant.mp4", "prep.mp4")
-        proj.language = "ar"
-        calls, progress = [], []
-
-        def analyze(j, path, *_a):
-            calls.append("analyse")
-            j.set_progress(1.0, "a")
-            return {"info": {"duration": 6.0}, "silences": [], "speech_segments": [],
-                    "scenes": []}
-
-        def transcribe_media(j, path, model, language):
-            calls.append(("transcription", language))
-            return {"segments": [{"start": 0, "end": 6, "text": "salut"}],
-                    "words": [], "language": "ar", "model": "small"}
-
-        def cut_plan(j, cands, duration, transcript, instruction, style, suggest_only):
-            calls.append(("plan", duration, suggest_only))
-            j.set_progress(1.0, "fin")
-            return {"segments": [{"start": 0, "end": 6}], "rationale": "r", "decisions": []}
-
-        with mock.patch.object(app.pipeline, "analyze_media", side_effect=analyze), \
-                mock.patch.object(app.pipeline, "transcribe_media", side_effect=transcribe_media), \
-                mock.patch.object(app.pipeline, "ai_cut_plan", side_effect=cut_plan), \
-                mock.patch.object(app.transcribe, "write_srt"):
-            status, body = self.request("POST", "/api/prepare",
-                                        {"project_id": proj.id, "language": "auto"})
-            job = self.wait_job(json.loads(body)["job_id"])
-            progress = job.progress
-        self.assertEqual(status, 200)
-        self.assertEqual(job.status, "done", job.error)
-        self.assertEqual(calls, ["analyse", ("transcription", "auto"), ("plan", 6.0, True)])
-        self.assertEqual(progress, 1.0)
-        self.assertEqual(proj.plan, [{"start": 0, "end": 6}])
-
-    def test_delete_project_removes_uploaded_media_only(self):
-        media_dir = tempfile.mkdtemp()
-        inside = os.path.join(media_dir, "rush.mp4")
-        outside = os.path.join(tempfile.mkdtemp(), "autre.mp4")
-        for path in (inside, outside):
-            with open(path, "wb") as fh:
-                fh.write(b"x")
-        a = project.STORE.create(inside, "rush.mp4")
-        b = project.STORE.create(outside, "autre.mp4")
-        with mock.patch.object(app.config, "MEDIA_DIR", media_dir):
-            self.assertEqual(self.request("POST", "/api/project/delete",
-                                          {"project_id": a.id})[0], 200)
-            self.assertEqual(self.request("POST", "/api/project/delete",
-                                          {"project_id": b.id})[0], 200)
-            self.assertEqual(self.request("POST", "/api/project/delete",
-                                          {"project_id": b.id})[0], 404)
-        self.assertFalse(os.path.exists(inside))
-        self.assertTrue(os.path.exists(outside))       # hors du dossier des videos
-        self.assertIsNone(project.STORE.get(a.id))
-        os.remove(outside)
 
     def test_events_create_list_open(self):
         root = tempfile.mkdtemp(prefix="rexo-events-")

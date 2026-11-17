@@ -64,7 +64,7 @@ mémoire et arrête le serveur. Journal : `~/Library/Logs/RexoStudio.log`.
 
 Sans l'icône : `./start.sh` (ouvre `http://127.0.0.1:8080`, Ctrl+C pour arrêter).
 
-**L'accueil, ce sont les événements** (onglet « Événements ») : un dossier par mariage,
+**L'accueil, ce sont les événements** : un dossier par mariage,
 henné, fiançailles, anniversaire, circoncision, remise de diplôme ou fête, rangé dans `~/RexoStudio/Evenements/`
 (`REXO_EVENTS_DIR` pour une autre racine). La barre de recherche filtre en direct sur les
 noms, le lieu, les notes, le type et la date (« novembre », « 2026-07 », « henne » sans
@@ -73,7 +73,19 @@ accent) ; les puces filtrent par type. « Nouvel événement » crée le dossier
 `docs/adr/0001-evenement-dossier.md`) ; chaque carte ouvre l'événement ou un sous-dossier dans
 le Finder. Les dossiers des clients ne sont jamais versionnés (`.gitignore`).
 
-**Dérushage** (bouton « 🎬 Dérushage » d'un événement, `montagia/rushes.py`) :
+Le bouton « 🎬 Ouvrir » d'un événement le présente en **trois parties**, dans l'ordre du travail :
+
+- **🎥 Vidéo** : import des cartes, dérushage, moments forts pour le générique ; sur chaque
+  rush, ✂ détourage d'une personne et 💬 sous-titres d'un discours (`06_Rendus/Sous-titres`).
+- **📷 Photo** : import, choix ★ des photos des mariés pour les clips 3D (le cadre tracé
+  autour des mariés est gardé pour le clip), outils photo sur une image ou toute la série.
+- **🎬 Montage** : titres du projet (noms et date de l'événement par défaut), générique des
+  moments forts et clips 3D de la bibliothèque (EffectCraft), liste des rendus, puis
+  **Ouvrir le montage dans FilmCraft** : un seul projet `05_Montage/Selection_<date>.fcproj`
+  avec les rushes gardés en séquence et les rendus dans leurs chutiers (« Génériques »,
+  « Détourages ») ; le film se termine dans FilmCraft (effets, post-production, étalonnage).
+
+**Dérushage** (partie Vidéo, `montagia/rushes.py`) :
 
 1. **Importer une carte mémoire** : les cartes branchées sont détectées dans `/Volumes` (ou
    indiquer un dossier). Vidéos vers `01_Rushes/Carte_n/`, photos vers `02_Photos/Carte_n/`,
@@ -88,24 +100,16 @@ le Finder. Les dossiers des clients ne sont jamais versionnés (`.gitignore`).
    n'est supprimé).
 3. **Créer les proxies** : copies 960 px dans `04_Proxies/` (lecture fluide, formats que le
    navigateur ne lit pas).
-4. **Sélection → FilmCraft** : les rushes gardés, dans l'ordre de tournage, bout à bout avec un
-   marqueur chacun, enregistrés dans `05_Montage/Selection_<date>.fcproj` puis ouverts.
+4. **Moments forts** : le meilleur passage de chaque rush gardé (`montagia/moments.py`),
+   enregistré dans `.rexo/moments.json` et repris par le générique.
 
 Seuils de qualité étalonnés sur des rushes simulés et sur 4 films de mariage réels (aucun faux
 défaut sur 81 extraits, nuit et danse caméra à l'épaule comprises) ; à réajuster sur les
 rushes bruts du studio. Pour tester sans images de clients : `./scripts/make_demo_event.sh`.
 
-L'onglet **Montage vidéo** garde le parcours d'une vidéo parlée :
-
-1. **Vidéo** — déposez votre rush (une vidéo déjà importée rouvre son projet).
-2. **Préparer le montage** — un seul bouton : analyse, transcription (Whisper), puis plan de
-   coupe (règles + IA). Les étapes séparées sont dans « Réglages avancés ».
-3. **Montage** (onglet) — la liste des passages : cocher pour garder, décocher pour couper ;
-   ▶ pour écouter un passage, « Aperçu du montage » pour enchaîner les passages gardés sans
-   rendu. Le filtre « À vérifier » isole les suggestions de l'IA et les transcriptions douteuses.
-4. **Exporter** — vidéo 16:9 et/ou 9:16, sous-titres incrustés, volume égalisé ; ou
-   **Ouvrir dans FilmCraft** : clips calés à l'image, piste de sous-titres, un marqueur par
-   coupe (`.fcproj`).
+L'ancien parcours d'une vidéo parlée (coupe des hésitations, plan de coupe par l'IA) n'est
+plus dans l'interface : inutile pour un film de mariage. Il reste disponible en mode terminal
+ci-dessous.
 
 Le moteur IA (`llama-server`) démarre à la première demande, reste en mémoire 5 min après sa
 dernière utilisation, puis s'arrête (`MONTAGIA_LLM_IDLE=<secondes>` pour changer ce délai).

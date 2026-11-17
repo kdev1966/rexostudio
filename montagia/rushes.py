@@ -81,6 +81,7 @@ def load_state(event_dir: str) -> dict:
     data.setdefault("clips", {})       # chemin relatif -> analyse + choix
     data.setdefault("imports", [])     # historique des cartes importees
     data.setdefault("hashes", {})      # sha256 -> chemin relatif (doublons)
+    data.setdefault("photos", {})      # chemin relatif -> choix pour le montage, cadre des maries
     for clip in data["clips"].values():
         # NaN / Infinity ne sont pas du JSON valide pour le navigateur.
         metrics = clip.get("metrics") or {}
@@ -669,6 +670,7 @@ def photo_thumbnails(event_dir: str, job=None) -> int:
 def photo_list(event_dir: str) -> list:
     """Photos de 02_Photos, dans l'ordre de prise de vue (date du fichier,
     conservee a l'import)."""
+    chosen = load_state(event_dir)["photos"]
     items = []
     for path in _walk(os.path.join(event_dir, PHOTOS_DIR), PHOTO_EXT):
         rel = os.path.relpath(path, event_dir)
@@ -681,9 +683,49 @@ def photo_list(event_dir: str) -> list:
             "thumb": thumb if os.path.isfile(thumb) else "",
             "viewable": os.path.splitext(path)[1].lower() in BROWSER_IMAGES,
             "size": st.st_size, "mtime": st.st_mtime,
+            "montage": bool(chosen.get(rel, {}).get("montage")),
+            "box": chosen.get(rel, {}).get("box"),
         })
     items.sort(key=lambda p: (p["mtime"], p["rel"]))
     return items
+
+
+def _check_box(box):
+    """Cadre [x, y, largeur, hauteur] en proportions de la photo, ou None."""
+    if box is None:
+        return None
+    try:
+        values = [float(v) for v in box]
+    except (TypeError, ValueError):
+        raise RushError("Cadre invalide") from None
+    if len(values) != 4 or not all(0.0 <= v <= 1.0 for v in values) or values[2] <= 0 or values[3] <= 0:
+        raise RushError("Cadre invalide")
+    return [round(v, 4) for v in values]
+
+
+_UNSET = object()
+
+
+def set_photo(event_dir: str, rel: str, montage=None, box=_UNSET) -> dict:
+    """Choix d'une photo pour le montage (clips 3D) et cadre autour des maries (robe,
+    traine), garde pour le clip. montage=None ou box absent : inchange."""
+    rel = os.path.normpath(rel)
+    if not rel.startswith(PHOTOS_DIR + os.sep) or not os.path.isfile(os.path.join(event_dir, rel)):
+        raise RushError("Photo inconnue : %s" % rel)
+    state = load_state(event_dir)
+    entry = state["photos"].setdefault(rel, {})
+    if montage is not None:
+        entry["montage"] = bool(montage)
+    if box is not _UNSET:
+        entry["box"] = _check_box(box)
+    state["photos"] = {k: v for k, v in state["photos"].items() if v.get("montage") or v.get("box")}
+    save_state(event_dir, state)
+    return {"montage": bool(entry.get("montage")), "box": entry.get("box")}
+
+
+def photo_box(event_dir: str, rel: str):
+    """Cadre des maries enregistre pour cette photo, ou None."""
+    return load_state(event_dir)["photos"].get(os.path.normpath(rel), {}).get("box")
 
 
 # --------------------------------------------------------------------------
@@ -733,6 +775,8 @@ def forget_missing(event_dir: str) -> None:
     les vignettes orphelines (cache de Rexo Studio, recreable)."""
     state = load_state(event_dir)
     sync_clips(event_dir, state)
+    state["photos"] = {rel: v for rel, v in state["photos"].items()
+                       if os.path.isfile(os.path.join(event_dir, rel))}
     save_state(event_dir, state)
     keep = {c.get("thumb") for c in state["clips"].values() if c.get("thumb")}
     keep |= {_thumb_rel(os.path.relpath(p, event_dir), "p_")

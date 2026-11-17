@@ -19,11 +19,19 @@ import datetime
 import os
 import time
 
-from . import animations, effectcraft, effects, filmcraft, moments, tools
+from . import animations, effectcraft, effects, filmcraft, moments, rushes, tools, transcribe
 
 CLIPS_DIR = os.path.join("06_Rendus", "Clips_3D")
 GENERIQUES_DIR = os.path.join("06_Rendus", "Generiques")
 DETOURES_DIR = os.path.join("06_Rendus", "Videos_detourees")
+SUBTITLES_DIR = os.path.join("06_Rendus", "Sous-titres")
+# Rendus de la chaine, dans l'ordre de l'onglet Montage, et leur chutier FilmCraft
+RENDER_KINDS = (
+    (GENERIQUES_DIR, "Génériques", "Générique"),
+    (CLIPS_DIR, "Génériques", "Clip 3D"),
+    (DETOURES_DIR, "Détourages", "Détourage"),
+    (SUBTITLES_DIR, "", "Sous-titres"),
+)
 WORK_DIR = os.path.join(".rexo", "studio")
 COUPLE_MAX = 2600            # px : largement assez pour des maries en 1080p
 FRAME_PHOTO_MAX = 2000       # px : photo d'un cadre (quelques centaines de px a l'ecran)
@@ -49,6 +57,11 @@ RECIPES = {
         "label": "Détourage vidéo",
         "steps": ["EffectCraft : suivi de la personne (SAM 2.1) et rendu avec transparence",
                   "FilmCraft : ajout au projet de l'événement"],
+    },
+    "sous-titres": {
+        "label": "Sous-titres d'un discours",
+        "steps": ["Rexo : transcription de la parole (whisper.cpp)",
+                  "Rexo : fichier de sous-titres dans 06_Rendus/Sous-titres"],
     },
 }
 
@@ -215,10 +228,14 @@ def generique(job, event_dir: str, count: int = 6, window: float = moments.WINDO
         raise StudioError("EffectCraft n'est pas installé : il enchaîne les moments forts")
     steps = RECIPES["generique"]["steps"]
     job.set_progress(0.01, steps[0])
-    try:
-        found = moments.find(event_dir, job, count=count, window=window)
-    except moments.MomentError as exc:
-        raise StudioError(str(exc)) from exc
+    found = moments.load(event_dir)
+    if found:
+        log("Moments forts déjà choisis (onglet Vidéo) : %d" % len(found["moments"]))
+    else:
+        try:
+            found = moments.find(event_dir, job, count=count, window=window)
+        except moments.MomentError as exc:
+            raise StudioError(str(exc)) from exc
     chosen = found["moments"]
     for m in chosen:
         log("  %s  %.1f-%.1f s  qualité %.2f, personnes %d %%" % (
@@ -310,4 +327,83 @@ def detour_video(job, event_dir: str, rel: str, point=None, start: float = 0.0, 
               "filmcraft": _send_to_filmcraft(event_dir, out, "Détourages", log, to_filmcraft),
               "path": os.path.relpath(out, event_dir)}
     log("Vidéo détourée : %s (%d images, %.0f s en tout)" % (result["path"], done["frames"], time.time() - started))
+    return result
+
+
+def subtitles(job, event_dir: str, rel: str, language: str = "auto") -> dict:
+    """Discours d'un rush -> sous-titres .srt dans 06_Rendus/Sous-titres (a poser au
+    montage dans FilmCraft)."""
+    src = os.path.join(event_dir, rel)
+    if not os.path.isfile(src):
+        raise StudioError("Rush introuvable : %s" % rel)
+    steps = RECIPES["sous-titres"]["steps"]
+    job.set_progress(0.02, steps[0])
+    try:
+        result = transcribe.transcribe(src, language=language,
+                                       workdir=os.path.join(event_dir, WORK_DIR, "transcription"),
+                                       on_log=job.add_log)
+    except RuntimeError as exc:
+        raise StudioError("Transcription impossible : %s" % exc) from exc
+    if not result["segments"]:
+        raise StudioError("Aucune parole reconnue dans ce rush")
+    job.set_progress(0.95, steps[1])
+    key = tools.safe_component(os.path.splitext(os.path.basename(rel))[0], "rush")
+    out = tools.unique_path(tools.ensure_parent(os.path.join(event_dir, SUBTITLES_DIR, key + ".srt")))
+    transcribe.write_srt(result["segments"], out)
+    job.add_log("Sous-titres : %d lignes (%s) -> %s" % (len(result["segments"]), result["language"],
+                                                        os.path.relpath(out, event_dir)))
+    return {"path": os.path.relpath(out, event_dir), "lines": len(result["segments"]),
+            "language": result["language"]}
+
+
+def renders(event_dir: str) -> list:
+    """Rendus de la chaine de production (onglet Montage), du plus recent au plus ancien
+    dans chaque famille."""
+    items = []
+    for folder, bin_name, label in RENDER_KINDS:
+        base = os.path.join(event_dir, folder)
+        names = sorted(os.listdir(base)) if os.path.isdir(base) else []
+        found = []
+        for name in names:
+            path = os.path.join(base, name)
+            if name.startswith(".") or not os.path.isfile(path) or os.path.getsize(path) == 0:
+                continue
+            st = os.stat(path)
+            found.append({"rel": os.path.join(folder, name), "name": name, "path": path, "kind": label,
+                          "bin": bin_name, "size": st.st_size, "mtime": st.st_mtime})
+        items.extend(sorted(found, key=lambda r: -r["mtime"]))
+    return items
+
+
+class _Scaled(object):
+    """Progression d'une sous-etape ramenee a la tranche [start, end] du travail."""
+
+    def __init__(self, job, start: float, end: float):
+        self.job, self.start, self.end = job, start, end
+        self.add_log = job.add_log
+
+    def set_progress(self, value, step=""):
+        self.job.set_progress(self.start + (self.end - self.start) * value, step)
+
+
+def finish_in_filmcraft(job, event_dir: str) -> dict:
+    """Fin du travail dans Rexo : les rushes gardes en sequence (dans l'ordre du tournage)
+    et les rendus de la chaine dans leurs chutiers, un seul projet FilmCraft ouvert pour
+    finir le film (effets, post-production, etalonnage)."""
+    result = rushes.send_to_filmcraft(event_dir, _Scaled(job, 0.0, 0.8))
+    by_bin = {}
+    for item in renders(event_dir):
+        if item["bin"]:
+            by_bin.setdefault(item["bin"], []).append(item["path"])
+    added = 0
+    for bin_name, paths in by_bin.items():
+        job.set_progress(0.85, "FilmCraft : chutier « %s » (%d)" % (bin_name, len(paths)))
+        try:
+            sent = filmcraft.add_to_event_project(event_dir, paths, bin_name=bin_name, log=job.add_log)
+            added += len(sent["items"])
+        except filmcraft.FilmCraftError as exc:
+            job.add_log("FilmCraft : chutier « %s » impossible (%s)" % (bin_name, exc))
+    filmcraft.open_in_app()
+    job.set_progress(1.0, "Projet ouvert dans FilmCraft")
+    result["renders"] = added
     return result

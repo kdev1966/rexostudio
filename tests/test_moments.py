@@ -104,6 +104,26 @@ class FindCase(unittest.TestCase):
                 self.assertRaises(moments.MomentError):
             moments.find(self.tmp)
 
+    def test_load_keeps_only_moments_of_rushes_still_kept(self):
+        os.makedirs(os.path.join(self.tmp, "01_Rushes"))
+        for name in ("a.mp4", "c.mp4"):
+            with open(os.path.join(self.tmp, "01_Rushes", name), "w") as fh:
+                fh.write("x")
+        saved = {"moments": [{"rel": "01_Rushes/a.mp4", "start": 1}, {"rel": "01_Rushes/b.mp4", "start": 2},
+                             {"rel": "01_Rushes/c.mp4", "start": 3}]}
+        os.makedirs(os.path.join(self.tmp, ".rexo"), exist_ok=True)
+        with open(os.path.join(self.tmp, moments.STATE_FILE), "w") as fh:
+            json.dump(saved, fh)
+        with mock.patch.object(moments.rushes, "clip_list", return_value=self.clips):
+            loaded = moments.load(self.tmp)
+        # b a disparu du disque, c n'est plus garde
+        self.assertEqual([m["rel"] for m in loaded["moments"]], ["01_Rushes/a.mp4"])
+        with mock.patch.object(moments.rushes, "clip_list", return_value=[]):
+            self.assertIsNone(moments.load(self.tmp))
+
+    def test_load_without_saved_moments(self):
+        self.assertIsNone(moments.load(self.tmp))
+
 
 if __name__ == "__main__":
     unittest.main()

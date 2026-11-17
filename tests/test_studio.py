@@ -352,6 +352,50 @@ class ClipDroneCase(unittest.TestCase):
         self.assertAlmostEqual(y, 0.5)
         self.assertEqual(detour.call_args[1]["box"], (0.1, 0.2, 0.4, 0.6))
 
+    def test_generique_reuses_moments_chosen_in_the_video_tab(self):
+        saved = {"moments": [{"rel": "01_Rushes/a.mp4", "name": "a.mp4", "start": 1, "end": 4, "score": 0.9,
+                              "people": 0.2, "width": 1920, "height": 1080}]}
+        assemble = mock.Mock(side_effect=lambda _c, _parts, out, **_k: {"duration": 3, "path": _write(out)})
+        with mock.patch.object(moments, "load", return_value=saved), \
+                mock.patch.object(moments, "find") as find, \
+                mock.patch.object(effectcraft, "assemble", assemble):
+            studio.generique(Job("studio"), self.event, title="")
+        find.assert_not_called()
+        self.assertEqual(assemble.call_args[0][1], [(os.path.join(self.event, "01_Rushes/a.mp4"), 1, 4)])
+
+    def test_subtitles_of_a_speech_go_to_renders(self):
+        rush = os.path.join(self.event, "01_Rushes", "Carte_1", "discours.mp4")
+        os.makedirs(os.path.dirname(rush))
+        _write(rush, b"mp4")
+        heard = {"segments": [{"start": 0.0, "end": 2.0, "text": "Mabrouk"}], "language": "ar"}
+        with mock.patch.object(studio.transcribe, "transcribe", return_value=heard):
+            result = studio.subtitles(Job("studio"), self.event, os.path.relpath(rush, self.event))
+        self.assertEqual(result["path"], os.path.join(studio.SUBTITLES_DIR, "discours.srt"))
+        with open(os.path.join(self.event, result["path"]), encoding="utf-8") as fh:
+            self.assertIn("Mabrouk", fh.read())
+        with mock.patch.object(studio.transcribe, "transcribe", return_value={"segments": [], "language": "fr"}), \
+                self.assertRaises(studio.StudioError):
+            studio.subtitles(Job("studio"), self.event, os.path.relpath(rush, self.event))
+
+    def test_renders_and_finish_in_filmcraft(self):
+        for folder, name in ((studio.GENERIQUES_DIR, "g.mp4"), (studio.CLIPS_DIR, "c.mp4"),
+                             (studio.DETOURES_DIR, "d.mov"), (studio.SUBTITLES_DIR, "s.srt")):
+            os.makedirs(os.path.join(self.event, folder), exist_ok=True)
+            _write(os.path.join(self.event, folder, name))
+        _write(os.path.join(self.event, studio.CLIPS_DIR, "vide.mp4"), b"")          # rendu rate
+        listed = studio.renders(self.event)
+        self.assertEqual([r["kind"] for r in listed], ["Générique", "Clip 3D", "Détourage", "Sous-titres"])
+        selection = mock.Mock(return_value={"path": "/x.fcproj", "clips": 3, "duration": 60, "valid": True})
+        self.to_fc.return_value = {"project": "/x.fcproj", "items": [1, 2]}
+        with mock.patch.object(studio.rushes, "send_to_filmcraft", selection), \
+                mock.patch.object(filmcraft, "open_in_app") as opened:
+            result = studio.finish_in_filmcraft(Job("filmcraft"), self.event)
+        bins = {c[1]["bin_name"]: c[0][1] for c in self.to_fc.call_args_list}
+        self.assertEqual(sorted(bins), ["Détourages", "Génériques"])           # pas les sous-titres
+        self.assertEqual(len(bins["Génériques"]), 2)
+        self.assertEqual(result["renders"], 4)
+        opened.assert_called_once()
+
     def test_french_date(self):
         self.assertEqual(studio.french_date("2026-11-16"), "16 novembre 2026")
         self.assertEqual(studio.french_date("2026-08-01"), "1 août 2026")

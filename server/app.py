@@ -21,82 +21,23 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from montagia import (ai, animations, assistant, config, effectcraft, effects, events,  # noqa: E402
-                      filmcraft, media, photocraft, pipeline, project, rushes, studio, tools, transcribe,
-                      trash)
+                      filmcraft, moments, photocraft, rushes, studio, tools, trash)
 from montagia.jobs import MANAGER  # noqa: E402
-
-MAX_BODY = config.MAX_UPLOAD_BYTES
 
 _FINAL_STATUSES = ("done", "error", "cancelled")
 
 
-def _candidates(proj) -> list:
-    """Candidats au plan de coupe : parole, plus plans visuels si peu parle."""
-    return pipeline.build_candidates(
-        proj.transcript_segments, duration=(proj.info or {}).get("duration") or 0.0,
-        scenes=proj.scenes, words=proj.transcript_words)
-
-
 class _Stage(object):
-    """Etape d'un traitement enchaine : sa progression 0..1 occupe la
-    tranche [low, high] de la barre du traitement complet."""
+    """Progression d'une etape ramenee a sa part [low, high] du travail entier."""
 
     def __init__(self, job, low: float, high: float):
         self.job, self.low, self.high = job, low, high
 
     def set_progress(self, value: float, step: str = "") -> None:
-        self.job.set_progress(self.low + (self.high - self.low) * (value or 0.0), step)
+        self.job.set_progress(self.low + (self.high - self.low) * value, step)
 
     def add_log(self, message: str) -> None:
         self.job.add_log(message)
-
-
-def _do_analyze(j, proj, data: dict) -> dict:
-    result = pipeline.analyze_media(j, proj.path, data.get("noise_db"), data.get("min_dur"))
-    proj.info = result["info"]
-    proj.silences = result["silences"]
-    proj.speech_segments = result["speech_segments"]
-    proj.scenes = result["scenes"]
-    if proj.transcript_segments:
-        # Analyse faite apres la transcription : les plans detectes
-        # completent les candidats (videos peu parlees).
-        proj.candidates = _candidates(proj)
-    return result
-
-
-def _do_transcribe(j, proj, data: dict) -> dict:
-    result = pipeline.transcribe_media(
-        j, proj.path, data.get("model") or None, data.get("language") or "auto")
-    proj.transcript_segments = result["segments"]
-    proj.transcript_words = result.get("words") or []
-    proj.transcript = transcribe.transcript_text(result["segments"])
-    proj.language = result.get("language", "")
-    proj.model = result.get("model", "")
-    proj.candidates = _candidates(proj)
-    srt_path = os.path.join(
-        config.EXPORTS_DIR,
-        "%s.srt" % tools.safe_component(proj.name.rsplit(".", 1)[0], "sous-titres"))
-    transcribe.write_srt(result["segments"], srt_path)
-    proj.srt_path = srt_path
-    j.add_log("Sous-titres : %s" % srt_path)
-    return result
-
-
-def _do_plan(j, proj, data: dict) -> dict:
-    if proj.transcript_words:
-        # Reconstruits a chaque plan depuis les mots (deterministe, quasi
-        # instantane) : un projet ancien profite du decoupage a jour.
-        proj.candidates = _candidates(proj)
-    candidates = proj.candidates or _candidates(proj)
-    result = pipeline.ai_cut_plan(
-        j, candidates, (proj.info or {}).get("duration") or 0.0, proj.transcript,
-        data.get("instruction", ""), data.get("style", ""),
-        suggest_only=proj.language in config.SUGGEST_ONLY_LANGUAGES)
-    proj.plan = result["segments"]
-    proj.results["plan_rationale"] = result.get("rationale", "")
-    proj.results["plan_decisions"] = result.get("decisions", [])
-    proj.results["plan_style"] = result.get("style", "")
-    return result
 
 
 def _do_import(job, event_dir: str, data: dict) -> dict:
@@ -104,6 +45,14 @@ def _do_import(job, event_dir: str, data: dict) -> dict:
     result = rushes.import_card(event_dir, str(data.get("source") or ""), _Stage(job, 0.0, 0.8))
     result["analysis"] = rushes.analyze(event_dir, _Stage(job, 0.8, 1.0))
     return result
+
+
+def _do_moments(job, event_dir: str, data: dict) -> dict:
+    count = min(12, max(2, int(data.get("count") or 6)))
+    try:
+        return moments.find(event_dir, job, count=count)
+    except moments.MomentError as exc:
+        raise RuntimeError(str(exc)) from exc
 
 
 def _parse_range(header, size: int):
@@ -186,12 +135,13 @@ class StudioHandler(BaseHTTPRequestHandler):
     def _error(self, message, code=400):
         self._json({"error": str(message)}, code)
 
-    def _request_allowed(self, route: str = "", post: bool = False) -> bool:
+    def _request_allowed(self, post: bool = False) -> bool:
         """Refuse les requetes envoyees par un autre site (CSRF) ou via DNS rebinding.
 
         Le serveur ecoute sur 127.0.0.1, mais n'importe quelle page ouverte dans
         le navigateur peut y envoyer des requetes : sans ce controle, un site
-        externe pouvait lancer /api/open ou remplir le disque via /api/upload.
+        externe pourrait ouvrir des dossiers, lancer des traitements ou mettre des
+        fichiers a la Corbeille.
         """
         port = self.server.server_address[1]
         hosts = {"127.0.0.1:%d" % port, "localhost:%d" % port}
@@ -200,7 +150,7 @@ class StudioHandler(BaseHTTPRequestHandler):
         origin = self.headers.get("Origin")
         if origin is not None and origin not in {"http://" + h for h in hosts}:
             return False
-        if post and route != "/api/upload":
+        if post:
             # application/json impose une requete de pre-verification (CORS) au
             # navigateur : un formulaire d'un autre site ne peut pas l'envoyer.
             ctype = (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
@@ -243,7 +193,7 @@ class StudioHandler(BaseHTTPRequestHandler):
         parsed = urllib.parse.urlparse(self.path)
         route = parsed.path
         query = urllib.parse.parse_qs(parsed.query)
-        if not self._request_allowed(route):
+        if not self._request_allowed():
             return self._reject()
         try:
             if route == "/":
@@ -258,14 +208,6 @@ class StudioHandler(BaseHTTPRequestHandler):
                 return self._api_event_detail(query)
             if route == "/api/sources":
                 return self._json({"sources": rushes.list_sources()})
-            if route == "/api/projects":
-                return self._json({"projects": project.STORE.list()})
-            if route == "/api/project":
-                pid = (query.get("id") or [""])[0]
-                proj = project.STORE.get(pid)
-                if not proj:
-                    return self._error("Projet introuvable", 404)
-                return self._json({"project": proj.to_dict()})
             if route.startswith("/api/jobs/"):
                 rest = route[len("/api/jobs/"):]
                 if rest.endswith("/events"):
@@ -284,20 +226,9 @@ class StudioHandler(BaseHTTPRequestHandler):
     def do_POST(self):  # noqa: N802
         parsed = urllib.parse.urlparse(self.path)
         route = parsed.path
-        query = urllib.parse.parse_qs(parsed.query)
-        if not self._request_allowed(route, post=True):
+        if not self._request_allowed(post=True):
             return self._reject()
         try:
-            if route == "/api/upload":
-                return self._api_upload(query)
-            if route == "/api/analyze":
-                return self._api_analyze()
-            if route == "/api/transcribe":
-                return self._api_transcribe()
-            if route == "/api/plan":
-                return self._api_plan()
-            if route == "/api/prepare":
-                return self._api_prepare()
             if route == "/api/events/create":
                 return self._api_event_create()
             if route == "/api/events/open":
@@ -310,9 +241,13 @@ class StudioHandler(BaseHTTPRequestHandler):
             if route == "/api/events/proxies":
                 return self._event_job("proxies", "Proxies",
                                        lambda j, d, _data: rushes.make_proxies(d, j))
+            if route == "/api/events/moments":
+                return self._event_job("moments", "Moments forts", _do_moments)
             if route == "/api/events/filmcraft":
-                return self._event_job("filmcraft", "Sélection vers FilmCraft",
-                                       lambda j, d, _data: rushes.send_to_filmcraft(d, j))
+                return self._event_job("filmcraft", "Fin du montage dans FilmCraft",
+                                       lambda j, d, _data: studio.finish_in_filmcraft(j, d))
+            if route == "/api/events/photo":
+                return self._api_event_photo()
             if route == "/api/events/keep":
                 return self._api_event_keep()
             if route == "/api/events/delete":
@@ -333,30 +268,8 @@ class StudioHandler(BaseHTTPRequestHandler):
                 return self._api_assistant_save()
             if route == "/api/events/studio":
                 return self._api_studio_run()
-            if route == "/api/project/delete":
-                return self._api_project_delete()
             if route == "/api/quit":
                 return self._api_quit()
-            if route == "/api/plan/keep":
-                return self._api_plan_keep()
-            if route == "/api/pack":
-                return self._api_pack()
-            if route == "/api/summary":
-                return self._api_summary()
-            if route == "/api/trailer":
-                return self._api_trailer()
-            if route == "/api/fixsubs":
-                return self._api_fixsubs()
-            if route == "/api/chat":
-                return self._api_chat()
-            if route == "/api/render":
-                return self._api_render()
-            if route == "/api/filmcraft":
-                return self._api_filmcraft()
-            if route == "/api/subs":
-                return self._api_subs()
-            if route == "/api/open":
-                return self._api_open()
             return self._error("Route inconnue : %s" % route, 404)
         except BrokenPipeError:
             return None
@@ -383,7 +296,8 @@ class StudioHandler(BaseHTTPRequestHandler):
             return self._error("Chemin manquant")
         target = os.path.abspath(target)
         if not (tools.is_within(config.WORKSPACE, target)
-                or tools.is_within(config.EVENTS_DIR, target)):
+                or tools.is_within(config.EVENTS_DIR, target)
+                or tools.is_within(config.ANIMATIONS_DIR, target)):     # vignettes de la bibliotheque
             return self._error("Accès refusé (hors espace de travail)", 403)
         if not os.path.isfile(target):
             return self._error("Fichier introuvable", 404)
@@ -450,116 +364,6 @@ class StudioHandler(BaseHTTPRequestHandler):
         }
         return self._json(info)
 
-    def _api_upload(self, query):
-        name = (query.get("name") or ["video.mp4"])[0]
-        name = os.path.basename(name)
-        stem, ext = os.path.splitext(name)
-        if ext.lower() not in config.VIDEO_EXTENSIONS:
-            return self._error("Format non supporté : %s" % ext)
-        length = int(self.headers.get("Content-Length") or 0)
-        if length <= 0:
-            return self._error("Aucun fichier reçu")
-        if length > MAX_BODY:
-            self.close_connection = True        # corps non lu
-            return self._error("Fichier trop volumineux (max %s)" % tools.human_size(MAX_BODY))
-
-        safe = tools.safe_component(stem, "media") + ext.lower()
-        target_dir = os.path.join(config.MEDIA_DIR, time.strftime("%Y%m%d"))
-        os.makedirs(target_dir, exist_ok=True)
-        # Nom reserve de facon unique : un 2e upload du meme nom le meme jour
-        # ecrasait le fichier, parfois en cours d'utilisation par un projet.
-        target = tools.unique_path(os.path.join(target_dir, safe))
-        partial = target + ".part"
-
-        written = 0
-        try:
-            with open(partial, "wb") as fh:
-                while written < length:
-                    chunk = self.rfile.read(min(1024 * 1024, length - written))
-                    if not chunk:
-                        break
-                    fh.write(chunk)
-                    written += len(chunk)
-            if written < length:
-                raise OSError("transfert interrompu")
-            os.replace(partial, target)         # fichier complet ou rien
-        except OSError:
-            for leftover in (partial, target):
-                try:
-                    os.remove(leftover)
-                except OSError:
-                    pass
-            self.close_connection = True
-            return self._error("Transfert interrompu")
-
-        try:
-            info = media.probe(target)
-        except Exception as exc:           # noqa: BLE001
-            os.remove(target)
-            return self._error("Fichier illisible : %s" % exc)
-
-        proj = project.STORE.create(target, name)
-        proj.info = info
-        project.STORE.save(proj)
-        return self._json({"project": proj.to_dict(),
-                           "size": written,
-                           "size_human": tools.human_size(written)})
-
-    def _run_job(self, job, proj, func, heavy=True):
-        """Lance un job de projet ; le projet est enregistre a la fin, que le
-        job reussisse ou non (persistance apres redemarrage). Les jobs lourds
-        passent un par un (voir JobManager)."""
-        def wrapper(j):
-            try:
-                return func(j)
-            finally:
-                try:
-                    project.STORE.save(proj)
-                except OSError as exc:
-                    j.add_log("Enregistrement du projet impossible : %s" % exc)
-        MANAGER.run_async(job, wrapper, heavy=heavy)
-
-    def _get_project(self, data):
-        pid = data.get("project_id") or ""
-        proj = project.STORE.get(pid)
-        if not proj:
-            raise ValueError("Projet introuvable : rouvrez la vidéo")
-        return proj
-
-    def _api_analyze(self):
-        return self._project_job("analyze", "Analyse", lambda j, p, d: _do_analyze(j, p, d))
-
-    def _api_transcribe(self):
-        return self._project_job("transcribe", "Transcription",
-                                 lambda j, p, d: _do_transcribe(j, p, d))
-
-    def _api_plan(self):
-        return self._project_job("plan", "Plan de coupe IA", lambda j, p, d: _do_plan(j, p, d))
-
-    def _api_prepare(self):
-        """Analyse + transcription + plan de coupe en un seul traitement."""
-        def run(j, proj, data):
-            _do_analyze(_Stage(j, 0.0, 0.05), proj, data)
-            _do_transcribe(_Stage(j, 0.05, 0.6), proj, data)
-            return _do_plan(_Stage(j, 0.6, 1.0), proj, data)
-        return self._project_job("prepare", "Préparation du montage", run)
-
-    def _project_job(self, kind: str, title: str, func):
-        data = self._body_json()
-        proj = self._get_project(data)
-        job = MANAGER.create(kind, "%s de %s" % (title, proj.name))
-        self._run_job(job, proj, lambda j: func(j, proj, data))
-        return self._json({"job_id": job.id})
-
-    def _api_project_delete(self):
-        data = self._body_json()
-        pid = str(data.get("project_id") or "")
-        if MANAGER.busy():
-            return self._error("Un traitement est en cours : attendez la fin", 409)
-        if not project.STORE.delete(pid, media_dir=config.MEDIA_DIR):
-            return self._error("Projet introuvable", 404)
-        return self._json({"ok": True})
-
     def _api_quit(self):
         """Decharge le modele IA puis arrete le serveur (bouton Quitter)."""
         if MANAGER.busy():
@@ -573,212 +377,6 @@ class StudioHandler(BaseHTTPRequestHandler):
         threading.Thread(target=stop, daemon=True).start()
         return None
 
-    def _api_plan_keep(self):
-        """Bascule un passage entre garder et couper ; le plan est recalcule."""
-        data = self._body_json()
-        proj = self._get_project(data)
-        rows = proj.results.get("plan_decisions") or []
-        target = str(data.get("id") or "")
-        row = next((r for r in rows if r.get("id") == target), None)
-        if not row:
-            return self._error("Passage inconnu : %s" % target, 404)
-        row["keep"] = bool(data.get("keep"))
-        row["by_user"] = True
-        result = pipeline.plan_from_decisions(
-            proj.candidates, rows, (proj.info or {}).get("duration") or 0.0)
-        if not result["segments"]:
-            row["keep"] = True
-            return self._error("Au moins un passage doit être gardé")
-        proj.plan = result["segments"]
-        proj.results["plan_rationale"] = result["rationale"]
-        project.STORE.save(proj)
-        return self._json({"plan": proj.plan, "rationale": result["rationale"],
-                           "decisions": rows, "kept_duration": result["kept_duration"]})
-
-    def _api_pack(self):
-        data = self._body_json()
-        proj = self._get_project(data)
-        job = MANAGER.create("pack", "Pack de publication")
-
-        def run(j):
-            result = pipeline.ai_pack(
-                j, proj.transcript, proj.candidates,
-                (proj.info or {}).get("duration", 0),
-                data.get("tone", ""), data.get("extra", ""))
-            proj.results["pack"] = result
-            return result
-
-        self._run_job(job, proj, run)
-        return self._json({"job_id": job.id})
-
-    def _api_summary(self):
-        data = self._body_json()
-        proj = self._get_project(data)
-        job = MANAGER.create("summary", "Résumé de la vidéo")
-
-        def run(j):
-            result = pipeline.ai_summary(
-                j, proj.transcript, (proj.info or {}).get("duration", 0))
-            proj.results["summary"] = result
-            return result
-
-        self._run_job(job, proj, run)
-        return self._json({"job_id": job.id})
-
-    def _api_trailer(self):
-        data = self._body_json()
-        proj = self._get_project(data)
-        candidates = data.get("candidates") or proj.candidates
-        if not candidates:
-            candidates = _candidates(proj)
-        job = MANAGER.create("trailer", "Recherche des meilleurs moments")
-
-        def run(j):
-            result = pipeline.ai_trailer(
-                j, candidates, (proj.info or {}).get("duration", 0),
-                proj.transcript, float(data.get("target_seconds", 30)),
-                data.get("instruction", ""))
-            proj.results["trailer"] = result
-            return result
-
-        self._run_job(job, proj, run)
-        return self._json({"job_id": job.id})
-
-    def _api_fixsubs(self):
-        data = self._body_json()
-        proj = self._get_project(data)
-        job = MANAGER.create("fixsubs", "Correction des sous-titres")
-
-        def run(j):
-            result = pipeline.ai_fix_subtitles(j, proj.transcript_segments)
-            proj.results["corrected_segments"] = result["segments"]
-            srt_path = os.path.join(
-                config.EXPORTS_DIR,
-                "%s.srt" % tools.safe_component(proj.name.rsplit(".", 1)[0], "sous-titres"))
-            transcribe.write_srt(result["segments"], srt_path)
-            proj.srt_path = srt_path
-            j.add_log("Sous-titres corriges : %s" % srt_path)
-            return result
-
-        self._run_job(job, proj, run)
-        return self._json({"job_id": job.id})
-
-    def _api_chat(self):
-        """Chat en flux (SSE)."""
-        data = self._body_json()
-        proj = self._get_project(data)
-        question = (data.get("question") or "").strip()
-        if not question:
-            return self._error("Question vide")
-        self._start_sse()
-        try:
-            for piece in pipeline.ai_chat(None, question, proj.transcript,
-                                         (proj.info or {}).get("duration", 0)):
-                self._sse({"token": piece})
-            self._sse({"done": True})
-        except (BrokenPipeError, ConnectionResetError):
-            return None
-        except Exception as exc:           # noqa: BLE001
-            self._sse({"error": str(exc)})
-        return None
-
-    def _api_render(self):
-        data = self._body_json()
-        proj = self._get_project(data)
-        segments = data.get("segments") or proj.plan
-        if not segments:
-            return self._error("Aucun passage à rendre")
-        fmt = data.get("format", "16:9")
-        base = tools.safe_component(proj.name.rsplit(".", 1)[0], "montage")
-        suffix = {"16:9": "16x9", "9:16": "9x16"}.get(fmt, fmt)
-        out_name = "%s_%s.mp4" % (base, suffix)
-        out_path = os.path.join(config.EXPORTS_DIR,
-                                time.strftime("%Y%m%d-%H%M%S") + "_" + out_name)
-        job = MANAGER.create("render", "Rendu %s" % fmt)
-        subs = proj.results.get("corrected_segments") or proj.transcript_segments
-        # Sous-titres corriges par l'IA : par ligne ; sinon mot par mot (exact).
-        sub_words = None if proj.results.get("corrected_segments") else proj.transcript_words
-
-        def run(j):
-            result = pipeline.render_video(
-                j, proj.path, segments, out_path, fmt=fmt,
-                encoder=data.get("encoder"), quality=data.get("quality", "standard"),
-                subtitles=data.get("srt") or proj.srt_path,
-                burn_subtitles=bool(data.get("burn_subtitles")),
-                focus_x=float(data.get("focus_x", 0.5)),
-                normalize_audio=bool(data.get("normalize_audio")),
-                subtitle_segments=subs, subtitle_words=sub_words)
-            proj.add_export(out_path)
-            return result
-
-        self._run_job(job, proj, run)
-        return self._json({"job_id": job.id, "output": out_path})
-
-    def _api_filmcraft(self):
-        data = self._body_json()
-        proj = self._get_project(data)
-        segments = data.get("segments") or proj.plan
-        if not segments:
-            return self._error("Aucun passage : rien à mettre dans le projet")
-        base = tools.safe_component(proj.name.rsplit(".", 1)[0], "projet")
-        out_path = os.path.join(config.EXPORTS_DIR, base + ".fcproj")
-        job = MANAGER.create("filmcraft", "Projet FilmCraft")
-        subs = proj.results.get("corrected_segments") or proj.transcript_segments
-        # Sous-titres corriges par l'IA : par ligne ; sinon mot par mot (exact).
-        sub_words = None if proj.results.get("corrected_segments") else proj.transcript_words
-        notes = proj.results.get("plan_rationale", "")
-
-        def run(j):
-            result = pipeline.build_filmcraft_job(
-                j, proj.path, segments, out_path,
-                profile=data.get("profile", "16:9"),
-                title=data.get("title") or ("%s - Rexo Studio" % proj.name),
-                notes=notes, subtitle_segments=subs, subtitle_words=sub_words)
-            proj.add_export(out_path)
-            return result
-
-        self._run_job(job, proj, run, heavy=False)   # pilotage : pas de calcul lourd
-        return self._json({"job_id": job.id, "output": out_path})
-
-    def _api_subs(self):
-        """Enregistre le plan de coupe courant et regenere le SRT."""
-        data = self._body_json()
-        proj = self._get_project(data)
-        if data.get("segments") is not None:
-            proj.plan = data["segments"]
-        if data.get("candidates") is not None:
-            proj.candidates = data["candidates"]
-        srt_source = proj.results.get("corrected_segments") or proj.transcript_segments
-        if not srt_source:
-            return self._error("Aucune transcription disponible")
-        srt_path = os.path.join(config.EXPORTS_DIR,
-                                "%s.srt" % tools.safe_component(proj.name.rsplit(".", 1)[0], "sous-titres"))
-        transcribe.write_srt(srt_source, srt_path)
-        proj.srt_path = srt_path
-        project.STORE.save(proj)
-        return self._json({"srt_path": srt_path})
-
-    def _api_open(self):
-        data = self._body_json()
-        target = data.get("target") or "finder"
-        path = os.path.abspath(data.get("path") or "")
-        if not path:
-            return self._error("Chemin manquant")
-        # Uniquement l'espace de travail (is_within resout les liens et les "..").
-        if not tools.is_within(config.WORKSPACE, path):
-            return self._error("Accès refusé", 403)
-        if target == "filmcraft":
-            if not path.endswith(".fcproj") or not os.path.isfile(path):
-                return self._error("Projet FilmCraft introuvable", 404)
-            filmcraft.open_project(path)
-            return self._json({"ok": True})
-        if target == "reveal":
-            subprocess.Popen(["open", "-R", path])
-            return self._json({"ok": True})
-        subprocess.Popen(["open", path])
-        return self._json({"ok": True})
-
-    # -- evenements --------------------------------------------------------
     def _api_events(self):
         return self._json({
             "root": config.EVENTS_DIR,
@@ -826,7 +424,26 @@ class StudioHandler(BaseHTTPRequestHandler):
             "imports": state.get("imports", []),
             "effects": effects.catalog(),
             "studio": studio.status(),
+            "moments": moments.load(event_dir),
+            "renders": studio.renders(event_dir),
         })
+
+    def _api_event_photo(self):
+        """Photo choisie (ou non) pour le montage ; cadre autour des maries garde pour le clip."""
+        data = self._body_json()
+        try:
+            event_dir = self._event_dir(data.get("id"))
+            options = {}
+            if "montage" in data:
+                options["montage"] = bool(data["montage"])
+            if "box" in data:
+                options["box"] = data["box"] or None
+            result = rushes.set_photo(event_dir, str(data.get("rel") or ""), **options)
+        except events.EventError as exc:
+            return self._error(exc, 404)
+        except rushes.RushError as exc:
+            return self._error(exc, 400)
+        return self._json(result)
 
     def _event_photo(self, data):
         """(dossier de l'evenement, chemin verifie de la photo designee par rel)."""
@@ -936,7 +553,8 @@ class StudioHandler(BaseHTTPRequestHandler):
     # -- chaine de production (Rexo + bibliotheque d'animations + EffectCraft) ----
     def _api_studio_run(self):
         """Recette de la chaine de production, en tache de fond (minutes) :
-        clip-drone (une photo), generique (moments forts des rushes), detour-video (un rush)."""
+        clip-drone (une photo), generique (moments forts des rushes), detour-video et
+        sous-titres (un rush)."""
         data = self._body_json()
         recipe = str(data.get("recipe") or "")
         if recipe not in studio.RECIPES:
@@ -961,7 +579,7 @@ class StudioHandler(BaseHTTPRequestHandler):
                 options = {
                     "animation": str(data.get("animation") or ""),
                     "title": title, "subtitle": subtitle, "to_filmcraft": to_fc, "title_model": title_model,
-                    "box": data.get("box") or None,
+                    "box": data.get("box") or rushes.photo_box(event_dir, os.path.relpath(src, event_dir)),
                 }
                 name = os.path.basename(src)
                 func = lambda j: studio.clip_drone(j, event_dir, src, **options)  # noqa: E731
@@ -971,6 +589,14 @@ class StudioHandler(BaseHTTPRequestHandler):
                 func = lambda j: studio.generique(j, event_dir, count=count, title=title,  # noqa: E731
                                                   subtitle=subtitle, to_filmcraft=to_fc,
                                                   title_model=title_model)
+            elif recipe == "sous-titres":
+                rel = str(data.get("rel") or "")
+                events.item_path(config.EVENTS_DIR, os.path.basename(event_dir), rel)   # chemin verifie
+                language = str(data.get("language") or "auto")
+                if language not in ("auto", "fr", "ar", "en"):
+                    return self._error("Langue inconnue : %s" % language, 400)
+                name = os.path.basename(rel)
+                func = lambda j: studio.subtitles(j, event_dir, rel, language)  # noqa: E731
             else:
                 rel = str(data.get("rel") or "")
                 events.item_path(config.EVENTS_DIR, os.path.basename(event_dir), rel)   # chemin verifie
@@ -1097,7 +723,6 @@ class StudioHandler(BaseHTTPRequestHandler):
 
 def main():
     config.ensure_dirs()
-    restored = project.STORE.enable_persistence(config.PROJECTS_DIR)
     status = ai.stats()
     print("")
     print("  \033[1m\033[38;5;208mRexo Studio\033[0m  -  derushage et post-production assistes par IA (100% local)")
@@ -1112,7 +737,6 @@ def main():
     print("  Espace      : %s" % config.WORKSPACE)
     print("  Evenements  : %s (%d)" % (config.EVENTS_DIR,
                                      len(events.list_events(config.EVENTS_DIR))))
-    print("  Projets     : %d repris du disque" % restored)
     print("  " + "-" * 62)
     print("  Ctrl+C pour arreter.")
     print("")

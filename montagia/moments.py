@@ -165,6 +165,20 @@ def find(event_dir: str, job=None, count: int = 6, window: float = WINDOW) -> di
     return result
 
 
+def load(event_dir: str):
+    """Moments forts deja trouves (onglet Video), sans ceux dont le rush a disparu ou
+    n'est plus garde ; None s'il n'y en a pas."""
+    try:
+        with open(os.path.join(event_dir, STATE_FILE), "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, ValueError):
+        return None
+    kept = {c["rel"] for c in rushes.clip_list(event_dir) if c["kept"]}
+    data["moments"] = [m for m in data.get("moments") or [] if m.get("rel") in kept
+                       and os.path.isfile(os.path.join(event_dir, m["rel"]))]
+    return data if data["moments"] else None
+
+
 def orientation(moments: list) -> tuple:
     """Taille du generique : celle de la majorite des rushes (vertical ou horizontal)."""
     vertical = sum(1 for m in moments if (m.get("height") or 0) > (m.get("width") or 0))

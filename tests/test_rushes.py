@@ -224,5 +224,41 @@ class SourcesTest(unittest.TestCase):
         self.assertEqual(names, ["CARTE"])
 
 
+class PhotoChoiceTest(Base):
+    def setUp(self):
+        super().setUp()
+        self.rel = os.path.join("02_Photos", "Carte_1", "IMG_1.jpg")
+        os.makedirs(os.path.dirname(os.path.join(self.event, self.rel)))
+        with open(os.path.join(self.event, self.rel), "wb") as fh:
+            fh.write(b"jpg")
+
+    def photo(self):
+        return next(p for p in rushes.photo_list(self.event) if p["rel"] == self.rel)
+
+    def test_choice_for_montage_and_couple_frame_are_kept(self):
+        self.assertEqual((self.photo()["montage"], self.photo()["box"]), (False, None))
+        rushes.set_photo(self.event, self.rel, montage=True)
+        rushes.set_photo(self.event, self.rel, box=[0.1, 0.2, 0.5, 0.7])
+        self.assertEqual((self.photo()["montage"], self.photo()["box"]), (True, [0.1, 0.2, 0.5, 0.7]))
+        self.assertEqual(rushes.photo_box(self.event, self.rel), [0.1, 0.2, 0.5, 0.7])
+        rushes.set_photo(self.event, self.rel, montage=False, box=None)
+        self.assertEqual(rushes.load_state(self.event)["photos"], {})          # rien de garde pour rien
+
+    def test_refuses_unknown_photo_and_bad_frame(self):
+        with self.assertRaises(rushes.RushError):
+            rushes.set_photo(self.event, "02_Photos/absente.jpg", montage=True)
+        with self.assertRaises(rushes.RushError):
+            rushes.set_photo(self.event, "../../etc/passwd", montage=True)
+        for bad in ([0.1, 0.2, 0.5], [0.1, 0.2, 0, 0.5], [0.1, 0.2, 1.5, 0.5], "abcd"):
+            with self.assertRaises(rushes.RushError):
+                rushes.set_photo(self.event, self.rel, box=bad)
+
+    def test_trashed_photo_is_forgotten(self):
+        rushes.set_photo(self.event, self.rel, montage=True)
+        os.remove(os.path.join(self.event, self.rel))
+        rushes.forget_missing(self.event)
+        self.assertEqual(rushes.load_state(self.event)["photos"], {})
+
+
 if __name__ == "__main__":
     unittest.main()

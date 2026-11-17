@@ -16,10 +16,6 @@
       <p>Dérushage et post-production assistés par IA — tout reste sur cet ordinateur</p>
     </div>
   </div>
-  <nav class="views">
-    <button class="view-btn active" data-view="events">📁 Événements</button>
-    <button class="view-btn" data-view="montage">🎞 Montage vidéo</button>
-  </nav>
   <div class="header-right">
     <div id="status-bar" class="status-bar"></div>
     <button class="btn btn-quit" id="btn-quit" title="Arrêter Rexo Studio et libérer la mémoire">⏻ Quitter</button>
@@ -64,7 +60,7 @@
   <p id="ev-root" class="tiny muted ev-root"></p>
 </section>
 
-<!-- ============ DERUSHAGE D'UN EVENEMENT ============ -->
+<!-- ============ UN EVENEMENT : Video, Photo, Montage ============ -->
 <section id="view-event" class="events-view hidden">
   <div class="evd-head">
     <button class="btn btn-sec btn-small" id="evd-back">← Tous les événements</button>
@@ -76,288 +72,155 @@
     <button class="btn btn-sec btn-small" id="evd-open">📂 Ouvrir le dossier</button>
   </div>
 
-  <div class="evd-cols">
-    <div class="card">
-      <h2>1 · Importer une carte mémoire</h2>
-      <div class="row evd-source-row">
-        <select id="evd-source"></select>
-        <button class="btn btn-sec btn-small" id="evd-refresh" title="Chercher les cartes branchées">↻</button>
+  <nav class="evd-tabs" id="evd-tabs">
+    <button class="evd-tab active" data-part="video">🎥 Vidéo <span class="muted" id="evd-tab-video"></span></button>
+    <button class="evd-tab" data-part="photo">📷 Photo <span class="muted" id="evd-tab-photo"></span></button>
+    <button class="evd-tab" data-part="montage">🎬 Montage <span class="muted" id="evd-tab-montage"></span></button>
+  </nav>
+
+  <!-- Suivi du traitement en cours, visible depuis les trois parties -->
+  <div id="evd-job" class="card evd-job hidden">
+    <div class="bar"><div id="evd-job-fill"></div></div>
+    <p id="evd-job-label" class="tiny"></p>
+    <details class="tech"><summary>Détails techniques</summary><pre id="evd-job-log" class="log"></pre></details>
+  </div>
+
+  <!-- Importer une carte : la meme carte, placee dans la partie Video ou Photo -->
+  <div class="card" id="evd-import-card">
+    <h2><span class="evd-step"></span>Importer une carte mémoire</h2>
+    <div class="row evd-source-row">
+      <select id="evd-source"></select>
+      <button class="btn btn-sec btn-small" id="evd-refresh" title="Chercher les cartes branchées">↻</button>
+    </div>
+    <label class="field"><span>ou le chemin d'un dossier</span>
+      <input type="text" id="evd-path" placeholder="/Volumes/NOM_DE_LA_CARTE"></label>
+    <button class="btn btn-primary btn-big" id="evd-import">Copier et vérifier</button>
+    <p class="tiny muted hint">Vidéos et photos de la carte sont copiées ensemble (vidéos dans 01_Rushes,
+      photos dans 02_Photos), relues et comparées à l'original (SHA-256). La carte n'est jamais modifiée ;
+      un fichier déjà importé n'est pas recopié.</p>
+    <div id="evd-cards" class="evd-cards"></div>
+  </div>
+
+  <!-- ---------------- VIDEO ---------------- -->
+  <div class="evd-part" id="part-video">
+    <div class="evd-cols">
+      <div class="evd-slot" data-slot="video"></div>
+      <div class="card">
+        <h2>2 · Dérushage</h2>
+        <p class="tiny muted">Rexo repère les rushes flous, tremblés, trop sombres ou trop courts et propose de les écarter ; vous gardez le dernier mot (case « Garder »).</p>
+        <div class="btn-row">
+          <button class="btn btn-primary" id="evd-analyze">Analyser les rushes</button>
+          <button class="btn btn-sec" id="evd-proxies" title="Copies légères pour lire les rushes 4K dans le navigateur et monter plus vite">Créer les proxies</button>
+        </div>
+        <p id="evd-summary" class="plan-summary"></p>
       </div>
-      <label class="field"><span>ou le chemin d'un dossier</span>
-        <input type="text" id="evd-path" placeholder="/Volumes/NOM_DE_LA_CARTE"></label>
-      <button class="btn btn-primary btn-big" id="evd-import">Copier et vérifier</button>
-      <p class="tiny muted hint">Chaque fichier est copié puis relu et comparé à l'original (empreinte
-        SHA-256). La carte n'est jamais modifiée. Un fichier déjà importé n'est pas recopié.</p>
-      <div id="evd-cards" class="evd-cards"></div>
     </div>
 
+    <div id="evd-player-box" class="card hidden">
+      <video id="evd-player" controls preload="metadata"></video>
+      <p id="evd-player-label" class="tiny muted"></p>
+    </div>
+
+    <div class="ev-filters" id="evd-filters">
+      <button class="filter active" data-f="all">Tous <span></span></button>
+      <button class="filter" data-f="kept">Gardés <span></span></button>
+      <button class="filter" data-f="out">Écartés <span></span></button>
+      <button class="filter" data-f="new">Non analysés <span></span></button>
+    </div>
+    <div id="evd-clips" class="rush-grid"></div>
+    <p class="tiny muted evd-legend">Sur chaque rush : ✂ détourer une personne (EffectCraft) · 💬 sous-titrer un discours · 🗑 Corbeille.</p>
+
     <div class="card">
-      <h2>2 · Trier les rushes</h2>
+      <h2>3 · Moments forts pour le générique</h2>
+      <p class="tiny muted">Rexo cherche le meilleur passage de chaque rush gardé : net, stable, bien exposé, avec des personnes. Le générique de l'onglet Montage les enchaîne.</p>
       <div class="btn-row">
-        <button class="btn btn-sec" id="evd-analyze">Analyser les rushes</button>
-        <button class="btn btn-sec" id="evd-proxies">Créer les proxies</button>
-        <button class="btn btn-primary" id="evd-filmcraft">Sélection → FilmCraft</button>
+        <label class="tiny">Moments <select id="mo-count"><option>4</option><option selected>6</option><option>8</option><option>10</option></select></label>
+        <button class="btn btn-primary" id="mo-run">Trouver les moments forts</button>
       </div>
-      <div id="evd-job" class="hidden">
-        <div class="bar"><div id="evd-job-fill"></div></div>
-        <p id="evd-job-label" class="tiny"></p>
-        <details class="tech"><summary>Détails techniques</summary><pre id="evd-job-log" class="log"></pre></details>
+      <div id="mo-list" class="mo-list"></div>
+    </div>
+  </div>
+
+  <!-- ---------------- PHOTO ---------------- -->
+  <div class="evd-part hidden" id="part-photo">
+    <div class="evd-cols">
+      <div class="evd-slot" data-slot="photo"></div>
+      <div class="card">
+        <h2>2 · Outils pour toute la série</h2>
+        <div id="evd-assist" class="evd-assist">
+          <input type="text" id="evd-ask" maxlength="500" placeholder="ex. « rendu chaud et vintage sur toutes les photos »">
+          <button class="btn btn-sec" id="evd-ask-go">Comprendre</button>
+          <label class="fx-enhance tiny"><input type="checkbox" id="evd-enhance" checked> Améliorer d'abord chaque photo</label>
+          <label class="fx-enhance tiny"><input type="checkbox" id="evd-couple"> Seulement les mariés</label>
+          <div id="evd-plan" class="fx-plan hidden"></div>
+        </div>
+        <p class="tiny muted">Une seule photo : ✨ ouvre ses effets (détourage, fond, cadre autour des mariés, PhotoCraft).</p>
       </div>
-      <p id="evd-summary" class="plan-summary"></p>
-      <details class="fx-studio" id="gen-box">
-        <summary>Générique des moments forts (EffectCraft → FilmCraft)</summary>
-        <p class="tiny muted">Rexo cherche le meilleur passage de chaque rush gardé (net, stable, bien exposé, avec des personnes) ; EffectCraft les enchaîne en fondu avec le titre ; le générique rejoint le projet FilmCraft (chutier « Génériques »), la musique se pose au montage.</p>
-        <label class="tiny">Moments <select id="gen-count"><option>4</option><option selected>6</option><option>8</option><option>10</option></select></label>
-        <label class="tiny">Modèle de titre <select id="gen-title-model"></select></label>
-        <label class="tiny">Titre <input type="text" id="gen-title" maxlength="80"></label>
-        <label class="tiny">Sous-titre <input type="text" id="gen-subtitle" maxlength="80"></label>
-        <label class="fx-enhance tiny"><input type="checkbox" id="gen-filmcraft" checked> Ajouter au projet FilmCraft</label>
+    </div>
+
+    <h2 class="evd-section">3 · Photos pour le montage <span id="evd-photo-count" class="muted"></span></h2>
+    <p class="tiny muted">Cochez ★ les photos des mariés à intégrer dans les animations 3D (en pied, de face de préférence). Robe à traîne : ouvrez la photo (✨) et tracez le cadre autour des mariés, il est gardé pour le clip.</p>
+    <div class="ev-filters" id="evp-filters">
+      <button class="filter active" data-f="all">Toutes <span></span></button>
+      <button class="filter" data-f="montage">★ Pour le montage <span></span></button>
+    </div>
+    <div id="evd-photos" class="photo-grid"></div>
+  </div>
+
+  <!-- ---------------- MONTAGE ---------------- -->
+  <div class="evd-part hidden" id="part-montage">
+    <div class="card">
+      <h2>1 · Titres du projet</h2>
+      <p class="tiny muted">Repris par le générique et par les clips 3D. Préremplis avec les noms et la date de l'événement.</p>
+      <div class="mt-titles">
+        <label class="field"><span>Titre</span><input type="text" id="mt-title" maxlength="80" dir="auto"></label>
+        <label class="field"><span>Sous-titre</span><input type="text" id="mt-subtitle" maxlength="80" dir="auto"></label>
+        <label class="field"><span>Modèle de titre (EffectCraft)</span><select id="mt-title-model"></select></label>
+      </div>
+      <label class="fx-enhance tiny"><input type="checkbox" id="mt-filmcraft" checked> Ajouter chaque rendu au projet FilmCraft de l'événement</label>
+      <p id="mt-info" class="tiny"></p>
+    </div>
+
+    <div class="evd-cols">
+      <div class="card">
+        <h2>2 · Générique des moments forts</h2>
+        <p class="tiny muted">EffectCraft enchaîne les moments forts en fondu et pose le titre. La musique se pose ensuite dans FilmCraft.</p>
+        <p id="gen-moments" class="tiny"></p>
         <button class="btn btn-primary" id="gen-run">Créer le générique</button>
-      </details>
+      </div>
+
+      <div class="card">
+        <h2>3 · Clip 3D avec les mariés</h2>
+        <p class="tiny muted">Une animation de la bibliothèque : EffectCraft y place les mariés détourés, la photo dans les cadres, et le titre.</p>
+        <label class="field"><span>Animation</span><select id="st-animation"></select></label>
+        <img id="st-vignette" class="st-vignette hidden" alt="Aperçu de l'animation">
+        <p class="tiny muted">Photo des mariés (★ dans l'onglet Photo)</p>
+        <div id="st-photos" class="st-photos"></div>
+        <button class="btn btn-primary" id="st-run">Lancer le clip 3D</button>
+        <p id="st-info" class="tiny"></p>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>4 · Rendus</h2>
+      <div id="mt-renders" class="mt-renders"></div>
+      <div id="mt-player-box" class="hidden">
+        <video id="mt-player" controls preload="metadata"></video>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>5 · Finir le film dans FilmCraft</h2>
+      <p class="tiny muted">Un seul projet FilmCraft dans 05_Montage : les rushes gardés en séquence, dans l'ordre du tournage, et les rendus dans leurs chutiers (« Génériques », « Détourages »). Le montage complet, les effets, la post-production et l'étalonnage se font ensuite dans FilmCraft.</p>
+      <button class="btn btn-primary btn-big" id="evd-filmcraft">Ouvrir le montage dans FilmCraft</button>
     </div>
   </div>
 
-  <div class="card evd-folders-card">
-    <h2>Dossiers de l'événement</h2>
+  <details class="card evd-folders-card">
+    <summary>Dossiers de l'événement</summary>
     <div id="evd-folders" class="evd-folders"></div>
-  </div>
-
-  <div id="evd-player-box" class="card hidden">
-    <video id="evd-player" controls preload="metadata"></video>
-    <p id="evd-player-label" class="tiny muted"></p>
-  </div>
-
-  <div class="ev-filters" id="evd-filters">
-    <button class="filter active" data-f="all">Tous <span></span></button>
-    <button class="filter" data-f="kept">Gardés <span></span></button>
-    <button class="filter" data-f="out">Écartés <span></span></button>
-    <button class="filter" data-f="new">Non analysés <span></span></button>
-  </div>
-  <div id="evd-clips" class="rush-grid"></div>
-
-  <h2 class="evd-section">Photos <span id="evd-photo-count" class="muted"></span></h2>
-  <div id="evd-assist" class="evd-assist">
-    <input type="text" id="evd-ask" maxlength="500" placeholder="Assistant pour toute la série : ex. « rendu chaud et vintage sur toutes les photos »">
-    <button class="btn btn-sec" id="evd-ask-go">Comprendre</button>
-    <label class="fx-enhance tiny"><input type="checkbox" id="evd-enhance" checked> Améliorer d'abord chaque photo</label>
-    <label class="fx-enhance tiny"><input type="checkbox" id="evd-couple"> Seulement les mariés</label>
-    <div id="evd-plan" class="fx-plan hidden"></div>
-  </div>
-  <div id="evd-photos" class="photo-grid"></div>
+  </details>
 </section>
-
-<main id="view-montage" class="hidden">
-  <!-- ============ COLONNE GAUCHE ============ -->
-  <section class="col">
-
-    <div class="card">
-      <h2>1 · Vidéo</h2>
-      <div id="dropzone" class="dropzone">
-        <input type="file" id="fileInput" accept="video/*,.mp4,.mov,.mkv,.m4v,.webm" hidden>
-        <div class="dz-inner">
-          <div class="dz-icon">📼</div>
-          <p><strong>Glissez votre vidéo ici</strong></p>
-          <p class="muted">ou <button class="link" id="browseBtn">choisissez un fichier</button></p>
-          <p class="tiny muted">MP4, MOV, MKV, M4V, WebM</p>
-        </div>
-      </div>
-      <div id="upload-progress" class="hidden">
-        <div class="bar"><div id="upload-bar-fill"></div></div>
-        <p id="upload-label" class="tiny muted"></p>
-      </div>
-      <div id="media-info" class="hidden"></div>
-      <div id="recent-box" class="recent hidden">
-        <h3 class="tiny muted">Vos projets</h3>
-        <div id="recent-list" class="recent-list"></div>
-      </div>
-    </div>
-
-    <div class="card">
-      <h2>2 · Montage automatique</h2>
-      <button class="btn btn-primary btn-big" id="btn-prepare" disabled>Préparer le montage</button>
-      <p class="tiny muted hint">Transcrit la parole puis propose les coupes : hésitations, reprises,
-        passages hors sujet. Quelques minutes pour une longue vidéo.</p>
-
-      <div class="row">
-        <label class="field">
-          <span>Langue parlée</span>
-          <select id="whisper-lang">
-            <option value="auto">Détection automatique</option>
-            <option value="fr">Français</option>
-            <option value="ar">Arabe</option>
-            <option value="en">Anglais</option>
-            <option value="es">Espagnol</option>
-            <option value="de">Allemand</option>
-          </select>
-        </label>
-        <label class="field">
-          <span>Type de vidéo</span>
-          <select id="plan-style">
-            <option value="standard">Standard</option>
-            <option value="storytelling">Récit</option>
-            <option value="tuto">Tutoriel</option>
-            <option value="viral">Dynamique / réseaux sociaux</option>
-            <option value="podcast">Podcast / interview</option>
-          </select>
-        </label>
-      </div>
-      <label class="field">
-        <span>Consigne pour l'IA (facultatif)</span>
-        <input type="text" id="plan-instruction" placeholder="ex : « garde les anecdotes, coupe la partie technique »">
-      </label>
-
-      <div id="job-box" class="hidden">
-        <div class="bar"><div id="job-bar-fill"></div></div>
-        <p id="job-label" class="tiny"></p>
-        <details class="tech">
-          <summary>Détails techniques</summary>
-          <pre id="job-log" class="log"></pre>
-        </details>
-      </div>
-
-      <details class="advanced">
-        <summary>Réglages avancés</summary>
-        <label class="field">
-          <span>Précision de la transcription</span>
-          <select id="whisper-model"></select>
-        </label>
-        <p class="tiny muted">Refaire une seule étape :</p>
-        <div class="btn-row">
-          <button class="btn btn-sec btn-small" id="btn-analyze" disabled>Analyse</button>
-          <button class="btn btn-sec btn-small" id="btn-transcribe" disabled>Transcription</button>
-          <button class="btn btn-sec btn-small" id="btn-plan" disabled>Plan de coupe</button>
-        </div>
-      </details>
-    </div>
-
-    <div class="card">
-      <h2>3 · Exporter</h2>
-      <div class="btn-row">
-        <button class="btn btn-primary" id="btn-render169" disabled>Vidéo horizontale 16:9</button>
-        <button class="btn btn-primary" id="btn-render916" disabled>Vidéo verticale 9:16</button>
-      </div>
-      <div class="btn-row">
-        <button class="btn btn-sec" id="btn-filmcraft" disabled>Ouvrir dans FilmCraft</button>
-        <button class="btn btn-sec" id="btn-subs" disabled>Fichier de sous-titres</button>
-      </div>
-      <label class="check">
-        <input type="checkbox" id="burn"> Sous-titres incrustés dans la vidéo
-      </label>
-      <label class="check">
-        <input type="checkbox" id="normalize"> Égaliser le volume sonore
-      </label>
-      <label class="field">
-        <span>Cadrage de la vidéo verticale : <b id="focus-val">centre</b></span>
-        <input type="range" id="focus" min="0" max="1" step="0.05" value="0.5">
-      </label>
-      <details class="advanced">
-        <summary>Réglages avancés</summary>
-        <div class="row">
-          <label class="field">
-            <span>Encodage</span>
-            <select id="enc">
-              <option value="videotoolbox">Rapide (accéléré par le Mac)</option>
-              <option value="libx264">Meilleure qualité (plus lent)</option>
-            </select>
-          </label>
-          <label class="field">
-            <span>Qualité</span>
-            <select id="qual">
-              <option value="rapide">Fichier léger</option>
-              <option value="standard" selected>Standard</option>
-              <option value="haute">Haute</option>
-            </select>
-          </label>
-        </div>
-      </details>
-    </div>
-  </section>
-
-  <!-- ============ COLONNE DROITE ============ -->
-  <section class="col">
-    <div class="card card-grow">
-      <div class="tabs">
-        <button class="tab active" data-tab="plan">Montage</button>
-        <button class="tab" data-tab="ia">Textes IA</button>
-        <button class="tab" data-tab="exports">Exports</button>
-        <button class="tab" data-tab="chat">Questions</button>
-      </div>
-
-      <!-- ---- Montage ---- -->
-      <div class="tabpane active" id="tab-plan">
-        <div id="player-box" class="player-box hidden">
-          <video id="player" controls preload="metadata"></video>
-          <div class="player-bar">
-            <button class="btn btn-sec btn-small" id="btn-preview-cut" disabled>▶ Aperçu du montage</button>
-            <span id="player-label" class="tiny muted">Cliquez sur ▶ dans la liste pour écouter un passage.</span>
-          </div>
-        </div>
-
-        <p id="plan-summary" class="plan-summary"></p>
-        <div id="plan-reason" class="reason hidden"></div>
-
-        <div id="passages-box" class="hidden">
-          <div class="filters">
-            <span class="tiny muted">Afficher :</span>
-            <button class="filter active" data-filter="all">Tout</button>
-            <button class="filter" data-filter="check">À vérifier <span id="count-check"></span></button>
-            <button class="filter" data-filter="cut">Coupés <span id="count-cut"></span></button>
-          </div>
-          <p class="tiny muted">Cochez pour garder un passage, décochez pour le couper :
-            le montage est mis à jour aussitôt.</p>
-          <div class="table-wrap">
-            <table id="cand-table">
-              <thead><tr><th title="Garder ce passage">Garder</th><th></th><th>Début</th><th>Durée</th>
-                <th>Décision</th><th>Texte</th></tr></thead>
-              <tbody></tbody>
-            </table>
-          </div>
-        </div>
-        <p id="plan-empty" class="empty">Déposez une vidéo puis cliquez sur « Préparer le montage ».</p>
-      </div>
-
-      <!-- ---- Textes IA ---- -->
-      <div class="tabpane" id="tab-ia">
-        <div class="btn-row">
-          <button class="btn btn-sec" id="btn-pack">Titres, description, hashtags</button>
-          <button class="btn btn-sec" id="btn-summary">Résumé</button>
-          <button class="btn btn-sec" id="btn-trailer">Meilleurs moments</button>
-          <button class="btn btn-sec" id="btn-fixsubs">Corriger les sous-titres</button>
-        </div>
-        <div class="inline-form">
-          <label class="tiny muted inline-label">Meilleurs moments :
-            <input type="text" id="trailer-target" value="30" style="max-width:60px"> s</label>
-          <input type="text" id="trailer-instruction" placeholder="Consigne (ex : « les moments les plus drôles »)">
-        </div>
-        <div id="ia-out" class="ia-out">
-          <p class="empty">Les textes rédigés par l'IA s'afficheront ici.</p>
-        </div>
-      </div>
-
-      <!-- ---- Exports ---- -->
-      <div class="tabpane" id="tab-exports">
-        <div id="exports-list" class="exports">
-          <p class="empty">Aucun export pour l'instant.</p>
-        </div>
-        <div id="preview-box" class="hidden">
-          <h3>Lecture</h3>
-          <video id="preview" controls></video>
-        </div>
-      </div>
-
-      <!-- ---- Questions ---- -->
-      <div class="tabpane" id="tab-chat">
-        <div id="chat-log" class="chat-log">
-          <p class="empty">Posez une question sur la vidéo : résumé, traduction, idées de publication…</p>
-        </div>
-        <div class="inline-form">
-          <input type="text" id="chat-input" placeholder="Votre question…">
-          <button class="btn btn-primary" id="btn-chat">Envoyer</button>
-        </div>
-      </div>
-    </div>
-  </section>
-</main>
 
 <!-- ============ EFFETS IA SUR UNE PHOTO (M5) ============ -->
 <div id="fx" class="fx-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="fx-title">
@@ -409,19 +272,9 @@
           <button class="btn btn-sec" id="fx-save" disabled>Enregistrer dans Rendus</button>
           <button class="btn btn-sec" id="fx-photocraft" title="Retoucher à la main dans PhotoCraft">Ouvrir dans PhotoCraft</button>
         </div>
-        <details class="fx-studio" id="fx-studio">
-          <summary>Clip drone 3D (animation de la bibliothèque)</summary>
-          <p class="tiny muted">Choisissez une animation 3D de la bibliothèque : EffectCraft y place les mariés détourés et le titre, puis le clip rejoint le projet FilmCraft de l'événement.</p>
-          <label class="tiny">Animation <select id="st-animation"></select></label>
-          <img id="st-vignette" class="st-vignette hidden" alt="Aperçu de l'animation">
-          <label class="tiny">Modèle de titre <select id="st-title-model"></select></label>
-          <label class="tiny">Titre <input type="text" id="st-title" maxlength="80"></label>
-          <label class="tiny">Sous-titre <input type="text" id="st-subtitle" maxlength="80"></label>
-          <p class="tiny muted">Robe à grande traîne : tracez d'abord le cadre autour des mariés (bouton ▭ ci-dessus), il sert aussi au clip.</p>
-          <label class="fx-enhance tiny"><input type="checkbox" id="st-filmcraft" checked> Ajouter au projet FilmCraft (chutier « Génériques »)</label>
-          <button class="btn btn-primary" id="st-run">Lancer le clip drone</button>
-          <p id="st-info" class="tiny"></p>
-        </details>
+        <label class="fx-enhance" title="La photo sera proposée pour les clips 3D de l'onglet Montage ; le cadre tracé autour des mariés est gardé pour le clip">
+          <input type="checkbox" id="fx-montage"> ★ Utiliser cette photo dans le montage (clips 3D)
+        </label>
       </div>
     </div>
   </div>
