@@ -1,0 +1,10 @@
+# Fabrications de l'atelier (gros fichiers binaires, refaits ou sauvegardes a part)
+scenes/
+textures/
+livraison/
+.cache/
+__pycache__/
+*.pyc
+.DS_Store
+.venv/
+.ruff_cache/

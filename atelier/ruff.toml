@@ -1,0 +1,45 @@
+# Configuration de ruff pour Rexo Studio.
+# Outil de DEVELOPPEMENT uniquement (venv isole) : le code livre reste
+# 100 % stdlib, aucune dependance d'execution.
+#
+# Usage :  .venv/bin/ruff check .        (analyse)
+#          .venv/bin/ruff check --fix .  (corrections auto)
+#          .venv/bin/ruff format .       (formatage type black)
+
+target-version = "py39"
+line-length = 90
+exclude = [
+    ".venv",
+    "workspace",
+    "models",
+    "bin",
+    "__pycache__",
+]
+
+[lint]
+select = [
+    "E",    # pycodestyle (erreurs)
+    "F",    # pyflakes (noms indefinis, imports inutilises)
+    "W",    # warnings pycodestyle
+    "B",    # bugbear (piges classiques : shadowing, mutable defaults...)
+    "C4",   # comprehensions
+    "SIM",  # simplifications
+    "RET",  # returns
+    "ARG",  # arguments inutilises
+]
+ignore = [
+    "E501",    # longueur : laisse a la discretion (les lignes longues ici sont des prompts)
+    "E741",    # noms ambigus (l, I, O) : utils dans le code ffmpeg
+    "B008",    # appel dans un defaut d'argument : pattern OK ici
+    "SIM105",  # contextlib.suppress : moins lisible ici
+    "UP031",   # style : le projet utilise volontairement le format % partout
+    "UP015",   # open(path, "r") : explicite, on garde
+    "RET504",  # return apres assignation : style du projet
+    "RET505",  # return apres else : style du projet
+]
+
+[lint.per-file-ignores]
+# Les prompts contiennent des chaines longues et intentionnellement brutes.
+"montagia/prompts.py" = ["E501"]
+# Les scripts shell manipulent des chemins.
+"*.py" = ["ARG001"]
