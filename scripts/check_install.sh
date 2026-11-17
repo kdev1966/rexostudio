@@ -152,7 +152,7 @@ else
 fi
 
 echo "== Chaine de production (bibliotheque d'animations + EffectCraft)"
-# Les animations 3D sont fabriquees par l'atelier (projet RexoAtelier) et livrees a part
+# Les animations 3D sont fabriquees par l'atelier (dossier atelier/) et livrees a part
 N="$(python3 scripts/installer_animations.py --liste 2>/dev/null | grep -c '^  [^(]')"
 if [ "$N" -gt 0 ]; then
   ok "Bibliotheque d'animations : $N animation(s)"

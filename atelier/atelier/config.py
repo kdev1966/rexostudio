@@ -23,6 +23,5 @@ MATERIALCRAFT_APP = os.environ.get("ATELIER_MATERIALCRAFT_APP", "/Applications/M
 MATERIALCRAFT_BIN = os.path.join(MATERIALCRAFT_APP, "Contents", "MacOS", "MaterialCraft")
 MATERIALCRAFT_PORT = int(os.environ.get("ATELIER_MATERIALCRAFT_PORT", "9883"))
 
-# Carte graphique : toujours la carte econome (integree). Sur le MacBook Pro a deux cartes,
-# la Radeon dediee cause des erreurs de rendu.
-CRAFT_GPU_ENV = {"WGPU_POWER_PREF": "low"}
+# Carte graphique : toujours la carte econome (integree), meme reglage que Rexo Studio
+from commun.carte_graphique import CRAFT_GPU_ENV  # noqa: E402,F401

@@ -45,14 +45,14 @@ cd ~/RexoStudio && git merge --ff-only deploy-incoming
 ./scripts/install_models.sh       # ffmpeg/ffprobe, whisper.cpp, llama.cpp + Gemma 4 E2B, modèles Whisper
 ./scripts/build_native.sh         # bin/rexo-segment (détourage Apple Vision), compilé sur la machine
 ./scripts/install_effects_env.sh  # .effets/ : Python 3.11 autonome + ONNX + MobileSAM, MI-GAN, Depth Anything
-python3 scripts/installer_animations.py livraison.zip   # animations 3D livrées par l'atelier (RexoAtelier)
+python3 scripts/installer_animations.py livraison.zip   # animations 3D livrées par l'atelier (dossier atelier/)
 ./scripts/install_launcher.sh     # icône « Rexo Studio » sur le Bureau
 ```
 
 Chaque script est relançable : ce qui est déjà en place et vérifié est gardé.
 
 Rexo Studio ne fabrique pas d'animation 3D. Les décors, textures et animations sont
-faits par les techniciens dans le projet à part **RexoAtelier** (Blender 3.6,
+faits par les techniciens dans l'**atelier** (dossier `atelier/` du dépôt, Blender 3.6,
 TextureCraft, MaterialCraft), qui livre des paquets d'animation (zip). On les installe
 avec `python3 scripts/installer_animations.py <livraison.zip>`, dans `bibliotheque/animations`
 (hors dépôt git). Les modèles de titres EffectCraft vont dans `bibliotheque/titres`.

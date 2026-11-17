@@ -1,13 +1,10 @@
-"""Bibliotheque d'animations 3D livrees par l'atelier (projet RexoAtelier, a part).
+"""Bibliotheque d'animations 3D livrees par l'atelier (dossier atelier/ du depot, a part).
 
 Rexo Studio ne fabrique jamais d'animation 3D : les techniciens les fabriquent dans
-l'atelier (decors Blender, textures) et les livrent en paquets « rexo-animation ».
-Rexo Studio les installe dans config.ANIMATIONS_DIR et les utilise telles quelles :
-EffectCraft ouvre la composition, y place les photos et le titre.
-
-Un paquet est un dossier <id>/ : animation.json, decor.mp4, composition.jsx,
-vignette.jpg et, s'il y a un premier plan, premier_plan.mov. Dans composition.jsx,
-{{DOSSIER}} designe le dossier du paquet (remplace au moment de l'utiliser).
+l'atelier (decors Blender, textures) et les livrent en paquets « rexo-animation »
+(format : commun/paquet_animation.py). Rexo Studio les installe dans
+config.ANIMATIONS_DIR et les utilise telles quelles : EffectCraft ouvre la
+composition, y place les photos et le titre.
 """
 from __future__ import annotations
 
@@ -17,12 +14,11 @@ import shutil
 import tempfile
 import zipfile
 
+from commun import paquet_animation
+from commun.paquet_animation import FILES, FORMAT, TOKEN, VERSIONS  # noqa: F401  (contrat public)
+
 from . import config
 
-FORMAT = "rexo-animation"
-VERSIONS = (1,)
-TOKEN = "{{DOSSIER}}"
-FILES = ("animation.json", "decor.mp4", "composition.jsx", "vignette.jpg")
 MAX_INSTALL_BYTES = 8 * 1024 ** 3
 
 
@@ -32,20 +28,7 @@ class AnimationError(RuntimeError):
 
 def read(folder: str):
     """animation.json d'un paquet complet et dans un format connu, sinon None."""
-    try:
-        with open(os.path.join(folder, "animation.json"), "r", encoding="utf-8") as fh:
-            info = json.load(fh)
-    except (OSError, ValueError):
-        return None
-    if not isinstance(info, dict) or info.get("format") != FORMAT or info.get("version") not in VERSIONS:
-        return None
-    needed = list(FILES) + (["premier_plan.mov"] if info.get("premier_plan") else [])
-    if not all(os.path.isfile(os.path.join(folder, n)) and os.path.getsize(os.path.join(folder, n)) > 0
-               for n in needed):
-        return None
-    if not info.get("emplacements"):
-        return None
-    return info
+    return paquet_animation.read(folder)
 
 
 def catalog() -> list:

@@ -171,7 +171,7 @@ FILMCRAFT_PORT = int(os.environ.get("MONTAGIA_FILMCRAFT_PORT", "9877"))
 # carte econome (integree). Sur un MacBook Pro a deux cartes, la Radeon dediee causait
 # des erreurs de rendu (lecture GPU expiree) ; sur l'iMac (une seule carte) rien ne change.
 # --------------------------------------------------------------------------
-CRAFT_GPU_ENV = {"WGPU_POWER_PREF": "low"}
+from commun.carte_graphique import CRAFT_GPU_ENV  # noqa: E402  (meme reglage que l'atelier)
 
 
 def craft_env() -> dict:
@@ -214,7 +214,7 @@ EMBEDKIT_CACHE = os.environ.get("EMBEDKIT_CACHE") or os.path.join(
 # --------------------------------------------------------------------------
 # Chaine de production (montagia/studio.py) : chaque outil ne fait que sa tache
 # --------------------------------------------------------------------------
-# Bibliotheque livree par l'atelier (projet RexoAtelier, a part : decors Blender,
+# Bibliotheque livree par l'atelier (dossier atelier/, a part : decors Blender,
 # textures) : animations 3D toutes pretes, et modeles de titres EffectCraft. Rexo
 # Studio ne fabrique jamais d'animation 3D, il ne fait que les utiliser.
 LIBRARY_DIR = os.environ.get("REXO_LIBRARY_DIR") or os.path.join(PROJECT_DIR, "bibliotheque")

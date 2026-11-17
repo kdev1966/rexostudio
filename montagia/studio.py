@@ -2,7 +2,7 @@
 
     Rexo (Vision, MobileSAM)  amelioration, detourage des maries, recadrage
     Bibliotheque              animations 3D toutes pretes, livrees par l'atelier (projet
-                              RexoAtelier, a part : decors Blender, textures) ; Rexo
+                              atelier/ du depot, a part : decors Blender, textures) ; Rexo
                               Studio ne fait jamais de 3D lui-meme (montagia/animations.py)
     EffectCraft               ouvre la composition, place les vraies photos dans les
                               emplacements, ajoute les titres, rend la video

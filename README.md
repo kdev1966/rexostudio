@@ -14,6 +14,13 @@ Aucune donnée ne sort de la machine, aucune dépendance Python à installer.
 > les découpes, les recadrages et les exports. Le LLM ne calcule **jamais**
 > un timecode : il sélectionne des segments pré-calculés, identifiés `S1`, `S2`…
 
+**Un dépôt, deux outils.** Rexo Studio (`montagia/`, `server/`) est l'outil du photographe.
+L'**atelier** (`atelier/`, voir `atelier/README.md`) est l'outil des techniciens : décors
+Blender, textures, rendu des animations 3D, livrées à Rexo Studio en paquets zip. Rien de la
+3D n'entre dans Rexo Studio. Les deux partagent seulement `commun/` : le format des paquets
+d'animation et le réglage de la carte graphique des outils Craft. Le test
+`tests/test_contrat_atelier.py` vérifie qu'un paquet livré par l'atelier est bien accepté.
+
 ---
 
 ## 1. Installation

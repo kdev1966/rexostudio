@@ -2,15 +2,8 @@
 
     decor .blend (scenes/)  --Blender-->  paquet d'animation (livraison/<id>/)  --zip-->  Rexo Studio
 
-Un paquet d'animation (format « rexo-animation », version 1) est un dossier :
-    animation.json     description : titre, scene, mouvement, duree, dimensions,
-                       emplacements de photos (nom, type, taille en metres)
-    decor.mp4          le decor filme par la camera drone, sans aucune photo
-    premier_plan.mov   ce qui passe devant les photos, avec transparence (facultatif)
-    composition.jsx    la composition After Effects pour EffectCraft ; les videos y sont
-                       designees par {{DOSSIER}}/..., que Rexo Studio remplace par le
-                       dossier ou il a installe le paquet
-    vignette.jpg       une image du decor, pour le catalogue de Rexo Studio
+Un paquet d'animation suit le format « rexo-animation » defini dans
+commun/paquet_animation.py, le contrat partage avec Rexo Studio.
 Blender tourne sans interface (blender -b), en processus separe.
 """
 from __future__ import annotations
@@ -24,9 +17,11 @@ import subprocess
 import time
 import zipfile
 
+from commun import paquet_animation
+from commun.paquet_animation import FILES, FORMAT, VERSION
+
 from . import config
 
-FORMAT, VERSION = "rexo-animation", 1
 EXPORT_SCRIPT = os.path.join(config.BLENDER_SCRIPTS_DIR, "export_generic.py")
 MOTIONS = {
     "sequence": "Séquence drone (approche, tour, envol)",
@@ -37,7 +32,6 @@ MOTIONS = {
 }
 QUALITIES = ("brouillon", "normal", "fin")
 FPS = 30
-FILES = ("animation.json", "decor.mp4", "composition.jsx", "vignette.jpg")
 
 _FRAME = re.compile(r"^IMAGE (\d+)")
 _MEASURE = re.compile(r"MESURE .*: (\d+) image\(s\) en ([\d.]+) s")
@@ -98,19 +92,8 @@ def package_id(scene: str, motion: str, seconds: float) -> str:
 
 
 def read_package(folder: str):
-    """animation.json d'un paquet complet et valide, sinon None."""
-    try:
-        with open(os.path.join(folder, "animation.json"), "r", encoding="utf-8") as fh:
-            info = json.load(fh)
-    except (OSError, ValueError):
-        return None
-    if info.get("format") != FORMAT:
-        return None
-    needed = list(FILES) + (["premier_plan.mov"] if info.get("premier_plan") else [])
-    if all(os.path.isfile(os.path.join(folder, n)) and os.path.getsize(os.path.join(folder, n)) > 0
-           for n in needed):
-        return info
-    return None
+    """animation.json d'un paquet complet et valide (tel que Rexo Studio l'accepte), sinon None."""
+    return paquet_animation.read(folder)
 
 
 def packages() -> list:
@@ -121,6 +104,21 @@ def packages() -> list:
         if info:
             found.append(info)
     return found
+
+
+def package_info(scene: str, motion: str, seconds: float, quality: str, title: str,
+                 scene_info: dict, render_seconds: float) -> dict:
+    """animation.json d'un paquet, d'apres scene.json ecrit par blender/export_generic.py."""
+    return {
+        "format": FORMAT, "version": VERSION, "id": package_id(scene, motion, seconds),
+        "titre": title or "%s — %s (%g s)" % (scene.replace("_", " ").capitalize(), MOTIONS[motion], seconds),
+        "scene": scene, "mouvement": motion, "duree": scene_info["duration"], "qualite": quality,
+        "largeur": scene_info["width"], "hauteur": scene_info["height"], "fps": scene_info["fps"],
+        "images": scene_info["frames"], "pixels_par_metre": scene_info["pixels_per_meter"],
+        "premier_plan": scene_info["premier_plan"], "emplacements": scene_info["placeholders"],
+        "fabrique_le": datetime.datetime.now().isoformat(timespec="seconds"),
+        "secondes_de_rendu": render_seconds,
+    }
 
 
 def render(scene: str, motion: str = "sequence", seconds: float = 9.0, quality: str = "normal",
@@ -174,16 +172,8 @@ def render(scene: str, motion: str = "sequence", seconds: float = 9.0, quality: 
     if proc.returncode != 0 or not scene_info:
         shutil.rmtree(work, ignore_errors=True)
         raise AnimationError("Rendu impossible : %s" % _tail("".join(tail)))
-    info = {
-        "format": FORMAT, "version": VERSION, "id": pid,
-        "titre": title or "%s — %s (%g s)" % (scene.replace("_", " ").capitalize(), MOTIONS[motion], seconds),
-        "scene": scene, "mouvement": motion, "duree": scene_info["duration"], "qualite": quality,
-        "largeur": scene_info["width"], "hauteur": scene_info["height"], "fps": scene_info["fps"],
-        "images": scene_info["frames"], "pixels_par_metre": scene_info["pixels_per_meter"],
-        "premier_plan": scene_info["premier_plan"], "emplacements": scene_info["placeholders"],
-        "fabrique_le": datetime.datetime.now().isoformat(timespec="seconds"),
-        "secondes_de_rendu": round(measure[1], 1) if measure else round(time.time() - started, 1),
-    }
+    info = package_info(scene, motion, seconds, quality, title, scene_info,
+                        round(measure[1], 1) if measure else round(time.time() - started, 1))
     os.remove(os.path.join(work, "scene.json"))
     with open(os.path.join(work, "animation.json"), "w", encoding="utf-8") as fh:
         json.dump(info, fh, ensure_ascii=False, indent=2)
