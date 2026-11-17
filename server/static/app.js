@@ -414,6 +414,7 @@ async function loadDerush() {
     EVD.studio = data.studio || null;
     EVD.moments = data.moments || null;
     EVD.renders = data.renders || [];
+    EVD.musics = data.musics || [];
     const e = data.event;
     $('#evd-type').textContent = e.type_label;
     $('#evd-type').className = 'ev-type t-' + e.type;
@@ -912,6 +913,13 @@ function renderMontage() {
     EVD.titled = true;
   }
   titleOptions($('#mt-title-model'));
+  // Musique : le choix fait est garde tant que le morceau existe
+  const sel = $('#mt-music');
+  const was = sel.value;
+  sel.innerHTML = '<option value="">Sans musique (à poser dans FilmCraft)</option>' + (EVD.musics || []).map((m) =>
+    '<option value="' + escapeHtml(m.id) + '">' + escapeHtml(m.name) + ' — ' + escapeHtml(m.source) + '</option>').join('');
+  if ((EVD.musics || []).some((m) => m.id === was)) sel.value = was;
+  $('#mt-keep-sound').disabled = !sel.value;
   $('#mt-filmcraft').disabled = !st.filmcraft;
   if (!st.filmcraft) $('#mt-filmcraft').checked = false;
   $('#mt-info').className = 'tiny err';
@@ -971,17 +979,28 @@ function renderMontage() {
 
 function montageTitles() {
   return { title: $('#mt-title').value.trim(), subtitle: $('#mt-subtitle').value.trim(),
-    title_model: $('#mt-title-model').value, filmcraft: $('#mt-filmcraft').checked };
+    title_model: $('#mt-title-model').value, filmcraft: $('#mt-filmcraft').checked,
+    music: $('#mt-music').value, keep_sound: !!$('#mt-music').value && $('#mt-keep-sound').checked };
 }
+
+$('#mt-music').addEventListener('change', () => { $('#mt-keep-sound').disabled = !$('#mt-music').value; });
+
+$('#mt-music-open').addEventListener('click', async () => {
+  try {
+    await post('/api/music/open');
+    toast('Déposez les morceaux dans ce dossier, puis rouvrez l’événement pour les voir dans la liste');
+  } catch (err) { toast(err.message, true); }
+});
 
 $('#gen-run').addEventListener('click', () => {
   derushJob('/api/events/studio', Object.assign({ recipe: 'generique' }, montageTitles()),
-    (r) => toast('Générique prêt : ' + r.path));
+    (r) => toast('Générique prêt : ' + r.path + (r.music ? ' (avec musique)' : '')));
 });
 
 $('#tz-run').addEventListener('click', () => {
   derushJob('/api/events/studio', Object.assign({ recipe: 'teaser' }, montageTitles()),
-    (r) => toast('Teaser vertical prêt : ' + r.path + (r.reframed ? ' (' + r.reframed + ' passage(s) recadré(s))' : '')));
+    (r) => toast('Teaser vertical prêt : ' + r.path + (r.reframed ? ' (' + r.reframed + ' passage(s) recadré(s))' : '') +
+      (r.music ? ', avec musique' : '')));
 });
 
 $('#st-photos').addEventListener('click', (ev) => {

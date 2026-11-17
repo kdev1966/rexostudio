@@ -55,7 +55,8 @@ Rexo Studio ne fabrique pas d'animation 3D. Les décors, textures et animations 
 faits par les techniciens dans l'**atelier** (dossier `atelier/` du dépôt, Blender 3.6,
 TextureCraft, MaterialCraft), qui livre des paquets d'animation (zip). On les installe
 avec `python3 scripts/installer_animations.py <livraison.zip>`, dans `bibliotheque/animations`
-(hors dépôt git). Les modèles de titres EffectCraft vont dans `bibliotheque/titres`.
+(hors dépôt git). Les modèles de titres EffectCraft vont dans `bibliotheque/titres`, les
+musiques du studio (morceaux dont il a les droits) dans `bibliotheque/musiques`.
 
 | Script | Installe | Où | Figé par |
 |---|---|---|---|

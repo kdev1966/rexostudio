@@ -221,6 +221,8 @@ LIBRARY_DIR = os.environ.get("REXO_LIBRARY_DIR") or os.path.join(PROJECT_DIR, "b
 ANIMATIONS_DIR = os.path.join(LIBRARY_DIR, "animations")
 # Modeles de titres EffectCraft (.ectemplate, champs « Title » et « Subtitle »)
 TITLES_DIR = os.path.join(LIBRARY_DIR, "titres")
+# Musiques du studio (morceaux dont il a les droits) pour le generique et le teaser
+MUSIC_DIR = os.path.join(LIBRARY_DIR, "musiques")
 
 # EffectCraft (motion design, meme editeur que PhotoCraft et FilmCraft) : serveur de
 # controle local, une requete JSON par ligne (voir montagia/effectcraft.py)

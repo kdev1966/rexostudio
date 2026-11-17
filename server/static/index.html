@@ -173,13 +173,19 @@
   <!-- ---------------- MONTAGE ---------------- -->
   <div class="evd-part hidden" id="part-montage">
     <div class="card">
-      <h2>1 · Titres du projet</h2>
-      <p class="tiny muted">Repris par le générique et par les clips 3D. Préremplis avec les noms et la date de l'événement.</p>
+      <h2>1 · Titres et musique du projet</h2>
+      <p class="tiny muted">Repris par le générique, le teaser et les clips 3D. Titres préremplis avec les noms et la date de l'événement.</p>
       <div class="mt-titles">
         <label class="field"><span>Titre</span><input type="text" id="mt-title" maxlength="80" dir="auto"></label>
         <label class="field"><span>Sous-titre</span><input type="text" id="mt-subtitle" maxlength="80" dir="auto"></label>
         <label class="field"><span>Modèle de titre (EffectCraft)</span><select id="mt-title-model"></select></label>
       </div>
+      <div class="mt-music">
+        <label class="field"><span>Musique du générique et du teaser</span><select id="mt-music"></select></label>
+        <button class="btn btn-sec btn-small" id="mt-music-open" title="Ouvrir le dossier des musiques du studio : déposez-y les morceaux (MP3, M4A, WAV…) dont vous avez les droits">📂 Musiques du studio</button>
+      </div>
+      <label class="fx-enhance tiny"><input type="checkbox" id="mt-keep-sound"> Garder le son des rushes (voix, youyous) : la musique baisse d'elle-même quand on parle</label>
+      <p class="tiny muted">Rexo fait démarrer le morceau là où il prend de l'énergie (pas d'intro calme), avec fondus d'entrée et de sortie, à la longueur exacte de la vidéo.</p>
       <label class="fx-enhance tiny"><input type="checkbox" id="mt-filmcraft" checked> Ajouter chaque rendu au projet FilmCraft de l'événement</label>
       <p id="mt-info" class="tiny"></p>
     </div>
@@ -187,14 +193,14 @@
     <div class="evd-cols">
       <div class="card">
         <h2>2 · Générique des moments forts</h2>
-        <p class="tiny muted">EffectCraft enchaîne les moments forts en fondu et pose le titre. La musique se pose ensuite dans FilmCraft.</p>
+        <p class="tiny muted">EffectCraft enchaîne les moments forts en fondu et pose le titre ; Rexo pose la musique choisie en 1 (sinon, elle se pose dans FilmCraft).</p>
         <p id="gen-moments" class="tiny"></p>
         <button class="btn btn-primary" id="gen-run">Créer le générique</button>
       </div>
 
       <div class="card">
         <h2>3 · Teaser vertical pour les réseaux</h2>
-        <p class="tiny muted">Les mêmes moments forts en 9:16 (Instagram, TikTok, Reels). Un rush horizontal est recadré sur les mariés et les invités (Apple Vision), avec un panoramique lent s'ils se déplacent. La musique se pose dans FilmCraft (chutier « Teasers »).</p>
+        <p class="tiny muted">Les mêmes moments forts en 9:16 (Instagram, TikTok, Reels). Un rush horizontal est recadré sur les mariés et les invités (Apple Vision), avec un panoramique lent s'ils se déplacent. Musique choisie en 1, posée par Rexo ; le teaser rejoint le chutier « Teasers » de FilmCraft.</p>
         <p id="tz-moments" class="tiny"></p>
         <button class="btn btn-primary" id="tz-run">Créer le teaser vertical</button>
       </div>

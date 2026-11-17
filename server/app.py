@@ -21,7 +21,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from montagia import (ai, animations, assistant, config, effectcraft, effects, events,  # noqa: E402
-                      filmcraft, moments, photocraft, rushes, studio, tools, trash)
+                      filmcraft, moments, music, photocraft, rushes, studio, tools, trash)
 from montagia.jobs import MANAGER  # noqa: E402
 
 _FINAL_STATUSES = ("done", "error", "cancelled")
@@ -268,6 +268,10 @@ class StudioHandler(BaseHTTPRequestHandler):
                 return self._api_event_open()
             if route == "/api/pick-folder":
                 return self._api_pick_folder()
+            if route == "/api/music/open":
+                os.makedirs(config.MUSIC_DIR, exist_ok=True)
+                subprocess.Popen(["open", config.MUSIC_DIR])
+                return self._json({"ok": True, "path": config.MUSIC_DIR})
             if route == "/api/events/import":
                 return self._event_job("import", "Import de carte", _do_import)
             if route == "/api/events/analyze":
@@ -475,6 +479,7 @@ class StudioHandler(BaseHTTPRequestHandler):
             "effects": effects.catalog(),
             "studio": studio.status(),
             "moments": moments.load(event_dir),
+            "musics": [{k: m[k] for k in ("id", "name", "source")} for m in music.library(event_dir)],
             "renders": studio.renders(event_dir),
         })
 
@@ -633,18 +638,18 @@ class StudioHandler(BaseHTTPRequestHandler):
                 }
                 name = os.path.basename(src)
                 func = lambda j: studio.clip_drone(j, event_dir, src, **options)  # noqa: E731
-            elif recipe == "generique":
-                count = min(12, max(2, int(data.get("count") or 6)))
+            elif recipe in ("generique", "teaser"):
+                count = min(12, max(2, int(data.get("count") or (6 if recipe == "generique" else 8))))
                 name = os.path.basename(event_dir)
-                func = lambda j: studio.generique(j, event_dir, count=count, title=title,  # noqa: E731
-                                                  subtitle=subtitle, to_filmcraft=to_fc,
-                                                  title_model=title_model)
-            elif recipe == "teaser":
-                count = min(12, max(2, int(data.get("count") or 8)))
-                name = os.path.basename(event_dir)
-                func = lambda j: studio.teaser(j, event_dir, count=count, title=title,  # noqa: E731
-                                               subtitle=subtitle, to_filmcraft=to_fc,
-                                               title_model=title_model)
+                try:
+                    music_path = music.resolve(event_dir, str(data["music"])) if data.get("music") else ""
+                except music.MusicError as exc:
+                    return self._error(exc, 400)
+                options = {"count": count, "title": title, "subtitle": subtitle, "to_filmcraft": to_fc,
+                           "title_model": title_model, "music_path": music_path,
+                           "keep_sound": bool(data.get("keep_sound"))}
+                recipe_func = studio.generique if recipe == "generique" else studio.teaser
+                func = lambda j: recipe_func(j, event_dir, **options)  # noqa: E731
             elif recipe == "sous-titres":
                 rel = str(data.get("rel") or "")
                 events.item_path(config.EVENTS_DIR, os.path.basename(event_dir), rel)   # chemin verifie

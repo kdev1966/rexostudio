@@ -386,3 +386,6 @@ mark { background: #5a3a10; color: inherit; border-radius: 2px; }
 .mt-render { display: flex; align-items: center; gap: 10px; padding: 5px 0; border-top: 1px solid var(--line); font-size: 12.5px; }
 .mt-render > span[dir] { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #mt-player-box video { width: 100%; max-height: 52vh; background: #000; border-radius: 8px; margin-top: 10px; }
+.mt-music { display: flex; gap: 10px; align-items: flex-end; margin-bottom: 8px; }
+.mt-music .field { flex: 1; }
+.mt-music .btn { flex: none; margin-bottom: 1px; }

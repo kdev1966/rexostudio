@@ -20,7 +20,7 @@ import os
 import shutil
 import time
 
-from . import animations, effectcraft, effects, filmcraft, moments, rushes, tools, transcribe
+from . import animations, effectcraft, effects, filmcraft, moments, music, rushes, tools, transcribe
 
 CLIPS_DIR = os.path.join("06_Rendus", "Clips_3D")
 GENERIQUES_DIR = os.path.join("06_Rendus", "Generiques")
@@ -55,6 +55,7 @@ RECIPES = {
         "label": "Générique des moments forts",
         "steps": ["Rexo : recherche des moments forts dans les rushes gardés",
                   "EffectCraft : enchaînement en fondu, titre, rendu",
+                  "Rexo : musique (départ, fondus, son des rushes)",
                   "FilmCraft : ajout au projet de l'événement"],
     },
     "teaser": {
@@ -62,6 +63,7 @@ RECIPES = {
         "steps": ["Rexo : moments forts des rushes gardés",
                   "Rexo : cadrage vertical sur les personnes (Apple Vision)",
                   "EffectCraft : enchaînement 9:16, titre, rendu",
+                  "Rexo : musique (départ, fondus, son des rushes)",
                   "FilmCraft : ajout au projet de l'événement"],
     },
     "detour-video": {
@@ -230,7 +232,8 @@ def _title_template(client, title: str, title_model: str, log) -> str:
 
 
 def generique(job, event_dir: str, count: int = 6, window: float = moments.WINDOW, title: str = "",
-              subtitle: str = "", title_model: str = effectcraft.DEFAULT_TITLE, to_filmcraft: bool = True) -> dict:
+              subtitle: str = "", title_model: str = effectcraft.DEFAULT_TITLE, to_filmcraft: bool = True,
+              music_path: str = "", keep_sound: bool = False) -> dict:
     """Moments forts des rushes gardes -> generique enchaine en fondu et titre, dans
     06_Rendus/Generiques, puis dans le chutier « Génériques » de FilmCraft."""
     log = job.add_log
@@ -255,9 +258,9 @@ def generique(job, event_dir: str, count: int = 6, window: float = moments.WINDO
         client = effectcraft.connect(log)
         try:
             template = _title_template(client, title, title_model, log)
+            parts = [(os.path.join(event_dir, m["rel"]), m["start"], m["end"]) for m in chosen]
             done = effectcraft.assemble(
-                client, [(os.path.join(event_dir, m["rel"]), m["start"], m["end"]) for m in chosen], out,
-                size=size, title=title, subtitle=subtitle, title_template=template, log=log,
+                client, parts, out, size=size, title=title, subtitle=subtitle, title_template=template, log=log,
                 progress=lambda f: job.set_progress(0.6 + 0.32 * f))
             result.update(titled=bool(template), duration=done["duration"])
         finally:
@@ -268,11 +271,26 @@ def generique(job, event_dir: str, count: int = 6, window: float = moments.WINDO
         if isinstance(exc, effectcraft.EffectCraftError):
             raise StudioError(str(exc)) from exc
         raise
-    job.set_progress(0.94, steps[2])
+    _add_music(job, out, music_path, parts, keep_sound, steps[2], result)
+    job.set_progress(0.96, steps[3])
     result["filmcraft"] = _send_to_filmcraft(event_dir, out, "Génériques", log, to_filmcraft)
     result["path"] = os.path.relpath(out, event_dir)
     log("Générique enregistré : %s (%.0f s en tout)" % (result["path"], time.time() - started))
     return result
+
+
+def _add_music(job, out: str, music_path: str, parts: list, keep_sound: bool, step: str, result: dict) -> None:
+    """Musique posee par Rexo sur le rendu d'EffectCraft. Un echec n'efface pas la video :
+    elle reste sans son, la musique se posera dans FilmCraft."""
+    result["music"] = False
+    if not music_path:
+        return
+    job.set_progress(0.93, step)
+    try:
+        done = music.soundtrack(out, music_path, parts, keep_sound=keep_sound, log=job.add_log)
+        result.update(music=True, music_offset=done["offset"])
+    except (music.MusicError, tools.CommandError) as exc:
+        job.add_log("Musique impossible (%s) : la vidéo reste sans son" % exc)
 
 
 def _chosen_moments(job, event_dir: str, count: int, window: float) -> list:
@@ -289,10 +307,11 @@ def _chosen_moments(job, event_dir: str, count: int, window: float) -> list:
 
 
 def teaser(job, event_dir: str, count: int = 8, window: float = moments.WINDOW, title: str = "",
-           subtitle: str = "", title_model: str = effectcraft.DEFAULT_TITLE, to_filmcraft: bool = True) -> dict:
+           subtitle: str = "", title_model: str = effectcraft.DEFAULT_TITLE, to_filmcraft: bool = True,
+           music_path: str = "", keep_sound: bool = False) -> dict:
     """Teaser vertical 9:16 pour les reseaux : les moments forts, chacun cadre sur les
     personnes quand le rush est horizontal (panoramique lent si elles se deplacent),
-    enchaines en fondu, titre a la fin, sans le son (la musique se pose dans FilmCraft).
+    enchaines en fondu, titre a la fin ; musique posee par Rexo si elle est choisie.
     Dans 06_Rendus/Teasers, puis dans le chutier « Teasers » de FilmCraft."""
     log = job.add_log
     started = time.time()
@@ -341,7 +360,8 @@ def teaser(job, event_dir: str, count: int = 8, window: float = moments.WINDOW, 
         if isinstance(exc, effectcraft.EffectCraftError):
             raise StudioError(str(exc)) from exc
         raise
-    job.set_progress(0.94, steps[3])
+    _add_music(job, out, music_path, parts, keep_sound, steps[3], result)
+    job.set_progress(0.96, steps[4])
     result["filmcraft"] = _send_to_filmcraft(event_dir, out, "Teasers", log, to_filmcraft)
     result["path"] = os.path.relpath(out, event_dir)
     log("Teaser enregistré : %s (%.0f s en tout)" % (result["path"], time.time() - started))

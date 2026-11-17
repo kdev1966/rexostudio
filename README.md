@@ -89,7 +89,11 @@ Le bouton « 🎬 Ouvrir » d'un événement le présente en **trois parties**, 
 - **🎬 Montage** : titres du projet (noms et date de l'événement par défaut), générique des
   moments forts, **teaser vertical 9:16** pour les réseaux (un rush horizontal est recadré
   sur les personnes par Apple Vision, panoramique lent si elles se déplacent) et clips 3D de
-  la bibliothèque (EffectCraft), liste des rendus, puis
+  la bibliothèque (EffectCraft). **Musique** du générique et du teaser, posée par Rexo
+  (ffmpeg) : morceaux du studio (`bibliotheque/musiques`, dont il a les droits) ou du
+  dossier `03_Audio` ; départ là où le morceau prend de l'énergie (EBU R128), fondus,
+  -14 LUFS ; en option le son des rushes (voix, youyous) reste, la musique baisse dessous.
+  Puis la liste des rendus, et
   **Ouvrir le montage dans FilmCraft** : un seul projet `05_Montage/Selection_<date>.fcproj`
   avec les rushes gardés en séquence et les rendus dans leurs chutiers (« Génériques »,
   « Teasers », « Détourages ») ; le film se termine dans FilmCraft (effets,
