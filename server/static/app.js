@@ -596,6 +596,25 @@ async function loadSources() {
 }
 
 $('#evd-refresh').addEventListener('click', loadSources);
+
+// Le navigateur ne connait pas le chemin d'un dossier : Rexo Studio ouvre la fenetre
+// « Choisir un dossier » du Finder et renvoie le chemin choisi.
+$('#evd-pick').addEventListener('click', async () => {
+  const btn = $('#evd-pick');
+  btn.disabled = true;
+  btn.textContent = 'Finder ouvert…';
+  try {
+    const r = await post('/api/pick-folder');
+    if (r.path) {
+      $('#evd-path').value = r.path;
+      toast('Dossier choisi : ' + r.path.split('/').pop() + ' — cliquez sur « Copier et vérifier »');
+    }
+  } catch (err) {
+    toast(err.message, true);
+  }
+  btn.disabled = false;
+  btn.textContent = '📂 Choisir…';
+});
 $('#evd-back').addEventListener('click', () => { $('#evd-player').pause(); showView('events'); });
 $('#evd-open').addEventListener('click', () => openEvent(EVD.id, ''));
 

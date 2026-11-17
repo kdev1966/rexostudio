@@ -245,6 +245,27 @@ class ServerTest(unittest.TestCase):
             status, body = self.request("GET", "/api/events")
             self.assertEqual(json.loads(body)["events"], [])
 
+    def test_pick_folder_returns_the_finder_choice(self):
+        chosen = mock.Mock(returncode=0, stdout="/Volumes/CARTE/DCIM/\n", stderr="")
+        with mock.patch.object(app.rushes, "list_sources", return_value=[]), \
+                mock.patch.object(app.subprocess, "run", return_value=chosen) as run:
+            status, body = self.request("POST", "/api/pick-folder", {})
+        self.assertEqual(status, 200)
+        self.assertEqual(json.loads(body)["path"], "/Volumes/CARTE/DCIM")
+        args = run.call_args[0][0]
+        self.assertEqual(args[:2], ["osascript", "-"])          # prompt et depart en arguments
+        self.assertEqual(args[3], "/Volumes")
+
+    def test_pick_folder_cancelled_or_already_open(self):
+        cancelled = mock.Mock(returncode=0, stdout="\n", stderr="")
+        with mock.patch.object(app.rushes, "list_sources", return_value=[]), \
+                mock.patch.object(app.subprocess, "run", return_value=cancelled):
+            status, body = self.request("POST", "/api/pick-folder", {})
+        self.assertEqual((status, json.loads(body)["path"]), (200, ""))
+        with app._PICK_LOCK:
+            status, _ = self.request("POST", "/api/pick-folder", {})
+        self.assertEqual(status, 409)
+
     def test_quit_unloads_model_then_stops(self):
         stopped = threading.Event()
         with mock.patch.object(app.ai, "unload") as unload, \

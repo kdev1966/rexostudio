@@ -92,8 +92,11 @@
       <select id="evd-source"></select>
       <button class="btn btn-sec btn-small" id="evd-refresh" title="Chercher les cartes branchées">↻</button>
     </div>
-    <label class="field"><span>ou le chemin d'un dossier</span>
-      <input type="text" id="evd-path" placeholder="/Volumes/NOM_DE_LA_CARTE"></label>
+    <label class="field"><span>ou un dossier (carte, disque, Téléchargements…)</span></label>
+    <div class="row evd-source-row">
+      <input type="text" id="evd-path" placeholder="Cliquez sur « Choisir… » pour le désigner dans le Finder">
+      <button class="btn btn-sec btn-small" id="evd-pick" title="Ouvrir le Finder pour choisir le dossier des vidéos et photos">📂 Choisir…</button>
+    </div>
     <button class="btn btn-primary btn-big" id="evd-import">Copier et vérifier</button>
     <p class="tiny muted hint">Vidéos et photos de la carte sont copiées ensemble (vidéos dans 01_Rushes,
       photos dans 02_Photos), relues et comparées à l'original (SHA-256). La carte n'est jamais modifiée ;

@@ -102,6 +102,16 @@ class ImportTest(Base):
             rushes.import_card(self.event, self.event)
         with self.assertRaises(rushes.RushError):
             rushes.import_card(self.event, self.card)                   # vide
+        with self.assertRaises(rushes.RushError):
+            rushes.import_card(self.event, "   ")
+
+    def test_typed_path_is_cleaned_and_a_file_means_its_folder(self):
+        clip = self.write("MVI_0001.MP4", b"video")
+        quoted = '"%s"' % self.card.replace(" ", "\\ ")
+        self.assertEqual(rushes.clean_source(quoted), self.card)
+        self.assertEqual(rushes.clean_source("~"), os.path.expanduser("~"))
+        result = rushes.import_card(self.event, clip)                    # un fichier de la carte
+        self.assertEqual(result["copied"], 1)
 
     def test_refuses_when_disk_is_full(self):
         self.write("C0001.MP4", b"v" * 100)

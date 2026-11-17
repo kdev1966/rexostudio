@@ -47,6 +47,39 @@ def _do_import(job, event_dir: str, data: dict) -> dict:
     return result
 
 
+# Fenetre « Choisir un dossier » du Mac (le navigateur ne peut pas donner le chemin
+# d'un dossier) : le Finder passe devant, puis l'application d'avant (le navigateur)
+# revient au premier plan. Prompt et dossier de depart passent en arguments, jamais
+# dans le texte du script.
+_PICK_SCRIPT = """on run argv
+    set previous to path to frontmost application as text
+    tell application "Finder"
+        activate
+        try
+            set chosen to choose folder with prompt (item 1 of argv) default location (POSIX file (item 2 of argv) as alias)
+        on error number -128
+            tell application previous to activate
+            return ""
+        end try
+    end tell
+    tell application previous to activate
+    return POSIX path of chosen
+end run"""
+_PICK_LOCK = threading.Lock()
+
+
+def pick_folder(prompt: str, start: str) -> str:
+    """Dossier choisi dans la fenetre du Finder, ou "" si l'utilisateur annule."""
+    if not os.path.isdir(start):
+        start = os.path.expanduser("~")
+    proc = subprocess.run(["osascript", "-", prompt, start], input=_PICK_SCRIPT, text=True,
+                          capture_output=True, timeout=900)
+    if proc.returncode != 0:
+        raise RuntimeError("Fenêtre du Finder impossible : %s" % (proc.stderr.strip() or proc.returncode))
+    path = proc.stdout.strip()
+    return path.rstrip("/") or ("/" if path else "")
+
+
 def _do_moments(job, event_dir: str, data: dict) -> dict:
     count = min(12, max(2, int(data.get("count") or 6)))
     try:
@@ -233,6 +266,8 @@ class StudioHandler(BaseHTTPRequestHandler):
                 return self._api_event_create()
             if route == "/api/events/open":
                 return self._api_event_open()
+            if route == "/api/pick-folder":
+                return self._api_pick_folder()
             if route == "/api/events/import":
                 return self._event_job("import", "Import de carte", _do_import)
             if route == "/api/events/analyze":
@@ -403,6 +438,21 @@ class StudioHandler(BaseHTTPRequestHandler):
             return self._error(exc, 404)
         subprocess.Popen(["open", path])
         return self._json({"ok": True})
+
+    def _api_pick_folder(self):
+        """Fenetre du Finder pour designer le dossier a importer (carte, disque, telechargements).
+        Elle s'ouvre sur la premiere carte branchee, sinon sur /Volumes."""
+        if not _PICK_LOCK.acquire(blocking=False):
+            return self._error("Une fenêtre de choix de dossier est déjà ouverte", 409)
+        try:
+            cards = rushes.list_sources()
+            start = cards[0]["path"] if cards else "/Volumes"
+            path = pick_folder("Dossier des vidéos et photos à importer", start)
+        except (RuntimeError, subprocess.TimeoutExpired) as exc:
+            return self._error(exc, 500)
+        finally:
+            _PICK_LOCK.release()
+        return self._json({"path": path})
 
     @staticmethod
     def _event_dir(event_id) -> str:

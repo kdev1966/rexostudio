@@ -203,13 +203,27 @@ def next_card_name(event_dir: str) -> str:
     return "Carte_%d" % n
 
 
+def clean_source(text: str) -> str:
+    """Chemin tape ou colle : guillemets autour, ~, et \\ devant les espaces (chemin glisse
+    depuis le Finder dans le Terminal) sont acceptes."""
+    path = (text or "").strip()
+    if len(path) >= 2 and path[0] == path[-1] and path[0] in "'\"":
+        path = path[1:-1].strip()
+    path = re.sub(r"\\(.)", r"\1", path)
+    return os.path.abspath(os.path.expanduser(path)) if path else ""
+
+
 def import_card(event_dir: str, source: str, job=None) -> dict:
     """Copie verifiee des videos et photos de source dans l'evenement.
     Un fichier deja importe (meme nom, taille et date, ou meme empreinte)
     n'est pas recopie : on peut relancer l'import d'une carte sans risque."""
-    source = os.path.abspath(source)
+    source = clean_source(source)
+    if not source:
+        raise RushError("Choisissez une carte ou un dossier à importer")
+    if os.path.isfile(source):
+        source = os.path.dirname(source)          # un fichier designe : on importe son dossier
     if not os.path.isdir(source):
-        raise RushError("Source introuvable : %s" % source)
+        raise RushError("Dossier introuvable : %s (utilisez le bouton « Choisir… »)" % source)
     if tools.is_within(event_dir, source) or tools.is_within(source, event_dir):
         raise RushError("La source ne peut pas être le dossier de l'événement")
     files = [(f, RUSHES_DIR) for f in _walk(source, VIDEO_EXT)] + \
