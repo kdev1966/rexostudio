@@ -183,6 +183,17 @@ class EffectCraftCase(unittest.TestCase):
         self.assertIn("[1, 10, 13]", script.replace(".0", ""))
         self.assertTrue(any(c["command"] == "essential.importTemplate" for c in self.fake.calls))
 
+    def test_assemble_frames_horizontal_parts_on_people(self):
+        out = os.path.join(self.tmp, "Teasers", "teaser.mp4")
+        with mock.patch("time.sleep"):
+            effectcraft.assemble(self.client, [("/r/a.mp4", 10, 13, (0.3, 0.3)), ("/r/b.mp4", 1, 4, (0.2, 0.6)),
+                                               ("/r/c.mp4", 0, 3, None)], out, size=(1080, 1920))
+        script = next(c for c in self.fake.scripts if "parts" in c)
+        parts = json.loads(script.split("var parts = ")[1].split(";")[0])
+        self.assertEqual([len(p) for p in parts], [5, 5, 3])         # c : rush vertical, pas de cadrage
+        self.assertEqual(parts[1][3:], [0.2, 0.6])
+        self.assertIn('property("Position")', script)
+
     def test_detour_video_tracks_then_renders_prores_with_alpha(self):
         out = os.path.join(self.tmp, "Videos_detourees", "rush.mov")
         with mock.patch("time.sleep"):
@@ -395,6 +406,34 @@ class ClipDroneCase(unittest.TestCase):
         self.assertEqual(len(bins["Génériques"]), 2)
         self.assertEqual(result["renders"], 4)
         opened.assert_called_once()
+
+    def test_teaser_reframes_only_horizontal_rushes(self):
+        saved = {"moments": [
+            {"rel": "01_Rushes/h.mp4", "name": "h.mp4", "start": 1, "end": 4, "width": 1920, "height": 1080},
+            {"rel": "01_Rushes/v.mp4", "name": "v.mp4", "start": 0, "end": 3, "width": 720, "height": 1280}]}
+        assemble = mock.Mock(side_effect=lambda _c, _parts, out, **_k: {"duration": 5.6, "path": _write(out)})
+        centers = {1.3: 0.25, 3.7: 0.28}
+        with mock.patch.object(moments, "load", return_value=saved), \
+                mock.patch.object(moments, "people_center", side_effect=lambda _p, at, _w: centers[round(at, 1)]), \
+                mock.patch.object(effectcraft, "assemble", assemble):
+            result = studio.teaser(Job("studio"), self.event, title="Zied & Namsia")
+        parts = assemble.call_args[0][1]
+        self.assertEqual(parts[0][3], (0.265, 0.265))          # ecart faible : plan fixe
+        self.assertIsNone(parts[1][3])                          # rush vertical : deja plein cadre
+        self.assertEqual(assemble.call_args[1]["size"], (1080, 1920))
+        self.assertEqual(result["reframed"], 1)
+        self.assertTrue(result["path"].startswith(os.path.join("06_Rendus", "Teasers", "Teaser_")))
+        self.assertEqual(self.to_fc.call_args[1]["bin_name"], "Teasers")
+        self.assertFalse(os.path.exists(os.path.join(self.event, studio.WORK_DIR, "cadrage")))
+
+    def test_focus_pans_when_people_move_and_centres_when_nobody(self):
+        m = {"path": "/r/h.mp4", "start": 0, "end": 6, "width": 1920, "height": 1080}
+        with mock.patch.object(moments, "people_center", side_effect=[0.2, 0.7]):
+            self.assertEqual(moments.focus(m, self.tmp), (0.2, 0.7))
+        with mock.patch.object(moments, "people_center", side_effect=[None, 0.7]):
+            self.assertEqual(moments.focus(m, self.tmp), (0.7, 0.7))
+        with mock.patch.object(moments, "people_center", return_value=None):
+            self.assertEqual(moments.focus(m, self.tmp), (0.5, 0.5))
 
     def test_french_date(self):
         self.assertEqual(studio.french_date("2026-11-16"), "16 novembre 2026")

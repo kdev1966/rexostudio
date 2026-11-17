@@ -17,17 +17,21 @@ from __future__ import annotations
 
 import datetime
 import os
+import shutil
 import time
 
 from . import animations, effectcraft, effects, filmcraft, moments, rushes, tools, transcribe
 
 CLIPS_DIR = os.path.join("06_Rendus", "Clips_3D")
 GENERIQUES_DIR = os.path.join("06_Rendus", "Generiques")
+TEASERS_DIR = os.path.join("06_Rendus", "Teasers")
+TEASER_SIZE = (1080, 1920)          # 9:16, Instagram, TikTok, Reels, Shorts
 DETOURES_DIR = os.path.join("06_Rendus", "Videos_detourees")
 SUBTITLES_DIR = os.path.join("06_Rendus", "Sous-titres")
 # Rendus de la chaine, dans l'ordre de l'onglet Montage, et leur chutier FilmCraft
 RENDER_KINDS = (
     (GENERIQUES_DIR, "Génériques", "Générique"),
+    (TEASERS_DIR, "Teasers", "Teaser"),
     (CLIPS_DIR, "Génériques", "Clip 3D"),
     (DETOURES_DIR, "Détourages", "Détourage"),
     (SUBTITLES_DIR, "", "Sous-titres"),
@@ -51,6 +55,13 @@ RECIPES = {
         "label": "Générique des moments forts",
         "steps": ["Rexo : recherche des moments forts dans les rushes gardés",
                   "EffectCraft : enchaînement en fondu, titre, rendu",
+                  "FilmCraft : ajout au projet de l'événement"],
+    },
+    "teaser": {
+        "label": "Teaser vertical",
+        "steps": ["Rexo : moments forts des rushes gardés",
+                  "Rexo : cadrage vertical sur les personnes (Apple Vision)",
+                  "EffectCraft : enchaînement 9:16, titre, rendu",
                   "FilmCraft : ajout au projet de l'événement"],
     },
     "detour-video": {
@@ -228,15 +239,7 @@ def generique(job, event_dir: str, count: int = 6, window: float = moments.WINDO
         raise StudioError("EffectCraft n'est pas installé : il enchaîne les moments forts")
     steps = RECIPES["generique"]["steps"]
     job.set_progress(0.01, steps[0])
-    found = moments.load(event_dir)
-    if found:
-        log("Moments forts déjà choisis (onglet Vidéo) : %d" % len(found["moments"]))
-    else:
-        try:
-            found = moments.find(event_dir, job, count=count, window=window)
-        except moments.MomentError as exc:
-            raise StudioError(str(exc)) from exc
-    chosen = found["moments"]
+    chosen = _chosen_moments(job, event_dir, count, window)
     for m in chosen:
         log("  %s  %.1f-%.1f s  qualité %.2f, personnes %d %%" % (
             m["name"], m["start"], m["end"], m["score"], round(100 * m.get("people", 0))))
@@ -269,6 +272,79 @@ def generique(job, event_dir: str, count: int = 6, window: float = moments.WINDO
     result["filmcraft"] = _send_to_filmcraft(event_dir, out, "Génériques", log, to_filmcraft)
     result["path"] = os.path.relpath(out, event_dir)
     log("Générique enregistré : %s (%.0f s en tout)" % (result["path"], time.time() - started))
+    return result
+
+
+def _chosen_moments(job, event_dir: str, count: int, window: float) -> list:
+    """Moments forts choisis dans l'onglet Video, sinon cherches maintenant."""
+    found = moments.load(event_dir)
+    if found:
+        job.add_log("Moments forts déjà choisis (onglet Vidéo) : %d" % len(found["moments"]))
+    else:
+        try:
+            found = moments.find(event_dir, job, count=count, window=window)
+        except moments.MomentError as exc:
+            raise StudioError(str(exc)) from exc
+    return found["moments"]
+
+
+def teaser(job, event_dir: str, count: int = 8, window: float = moments.WINDOW, title: str = "",
+           subtitle: str = "", title_model: str = effectcraft.DEFAULT_TITLE, to_filmcraft: bool = True) -> dict:
+    """Teaser vertical 9:16 pour les reseaux : les moments forts, chacun cadre sur les
+    personnes quand le rush est horizontal (panoramique lent si elles se deplacent),
+    enchaines en fondu, titre a la fin, sans le son (la musique se pose dans FilmCraft).
+    Dans 06_Rendus/Teasers, puis dans le chutier « Teasers » de FilmCraft."""
+    log = job.add_log
+    started = time.time()
+    if not effectcraft.installed():
+        raise StudioError("EffectCraft n'est pas installé : il monte le teaser")
+    steps = RECIPES["teaser"]["steps"]
+    job.set_progress(0.01, steps[0])
+    chosen = _chosen_moments(job, event_dir, count, window)
+    job.set_progress(0.5, steps[1])
+    work = os.path.join(event_dir, WORK_DIR, "cadrage")
+    os.makedirs(work, exist_ok=True)
+    parts, reframed = [], 0
+    try:
+        for i, m in enumerate(chosen):
+            path = os.path.join(event_dir, m["rel"])
+            framing = moments.focus(dict(m, path=path), work)
+            if framing:
+                reframed += 1
+                log("  %s  %.1f-%.1f s  cadrage %s" % (
+                    m["name"], m["start"], m["end"], "fixe à %d %%" % round(100 * framing[0])
+                    if framing[0] == framing[1] else "de %d %% à %d %%" % (round(100 * framing[0]),
+                                                                          round(100 * framing[1]))))
+            parts.append((path, m["start"], m["end"], framing))
+            job.set_progress(0.5 + 0.1 * (i + 1) / len(chosen))
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+    log("Rexo : %d moment(s), %d recadré(s) sur les personnes" % (len(parts), reframed))
+    stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M")
+    out = tools.unique_path(tools.ensure_parent(os.path.join(event_dir, TEASERS_DIR, "Teaser_%s.mp4" % stamp)))
+    folder = os.path.join(event_dir, WORK_DIR)
+    result = {"moments": len(parts), "reframed": reframed, "titled": False}
+    try:
+        job.set_progress(0.62, steps[2])
+        client = effectcraft.connect(log)
+        try:
+            template = _title_template(client, title, title_model, log)
+            done = effectcraft.assemble(
+                client, parts, out, size=TEASER_SIZE, title=title, subtitle=subtitle, title_template=template,
+                name="Teaser", log=log, progress=lambda f: job.set_progress(0.62 + 0.3 * f))
+            result.update(titled=bool(template), duration=done["duration"])
+        finally:
+            effectcraft.close(client, folder)
+    except Exception as exc:
+        if os.path.exists(out) and os.path.getsize(out) == 0:
+            os.remove(out)
+        if isinstance(exc, effectcraft.EffectCraftError):
+            raise StudioError(str(exc)) from exc
+        raise
+    job.set_progress(0.94, steps[3])
+    result["filmcraft"] = _send_to_filmcraft(event_dir, out, "Teasers", log, to_filmcraft)
+    result["path"] = os.path.relpath(out, event_dir)
+    log("Teaser enregistré : %s (%.0f s en tout)" % (result["path"], time.time() - started))
     return result
 
 

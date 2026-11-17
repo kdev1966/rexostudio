@@ -603,8 +603,8 @@ class StudioHandler(BaseHTTPRequestHandler):
     # -- chaine de production (Rexo + bibliotheque d'animations + EffectCraft) ----
     def _api_studio_run(self):
         """Recette de la chaine de production, en tache de fond (minutes) :
-        clip-drone (une photo), generique (moments forts des rushes), detour-video et
-        sous-titres (un rush)."""
+        clip-drone (une photo), generique et teaser (moments forts des rushes),
+        detour-video et sous-titres (un rush)."""
         data = self._body_json()
         recipe = str(data.get("recipe") or "")
         if recipe not in studio.RECIPES:
@@ -639,6 +639,12 @@ class StudioHandler(BaseHTTPRequestHandler):
                 func = lambda j: studio.generique(j, event_dir, count=count, title=title,  # noqa: E731
                                                   subtitle=subtitle, to_filmcraft=to_fc,
                                                   title_model=title_model)
+            elif recipe == "teaser":
+                count = min(12, max(2, int(data.get("count") or 8)))
+                name = os.path.basename(event_dir)
+                func = lambda j: studio.teaser(j, event_dir, count=count, title=title,  # noqa: E731
+                                               subtitle=subtitle, to_filmcraft=to_fc,
+                                               title_model=title_model)
             elif recipe == "sous-titres":
                 rel = str(data.get("rel") or "")
                 events.item_path(config.EVENTS_DIR, os.path.basename(event_dir), rel)   # chemin verifie

@@ -87,10 +87,13 @@ Le bouton « 🎬 Ouvrir » d'un événement le présente en **trois parties**, 
 - **📷 Photo** : import, choix ★ des photos des mariés pour les clips 3D (le cadre tracé
   autour des mariés est gardé pour le clip), outils photo sur une image ou toute la série.
 - **🎬 Montage** : titres du projet (noms et date de l'événement par défaut), générique des
-  moments forts et clips 3D de la bibliothèque (EffectCraft), liste des rendus, puis
+  moments forts, **teaser vertical 9:16** pour les réseaux (un rush horizontal est recadré
+  sur les personnes par Apple Vision, panoramique lent si elles se déplacent) et clips 3D de
+  la bibliothèque (EffectCraft), liste des rendus, puis
   **Ouvrir le montage dans FilmCraft** : un seul projet `05_Montage/Selection_<date>.fcproj`
   avec les rushes gardés en séquence et les rendus dans leurs chutiers (« Génériques »,
-  « Détourages ») ; le film se termine dans FilmCraft (effets, post-production, étalonnage).
+  « Teasers », « Détourages ») ; le film se termine dans FilmCraft (effets,
+  post-production, étalonnage, musique).
 
 **Dérushage** (partie Vidéo, `montagia/rushes.py`) :
 

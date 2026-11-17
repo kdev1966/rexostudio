@@ -113,6 +113,49 @@ def people_share(path: str, at: float, work: str) -> float:
                 os.remove(p)
 
 
+def people_center(path: str, at: float, work: str):
+    """Abscisse (proportion de la largeur) du centre des personnes a l'instant at, ou None.
+    Chaque silhouette pese sa surface : les maries au premier plan comptent plus que des
+    invites au loin ; les silhouettes minuscules (moins de 15 % de la hauteur) sont ignorees."""
+    frame = os.path.join(work, "cadrage.jpg")
+    mask = os.path.join(work, "cadrage.png")
+    try:
+        tools.run([config.ffmpeg_bin(), "-hide_banner", "-v", "error", "-nostdin", "-y",
+                   "-ss", "%.2f" % max(0.0, at), "-i", path, "-frames:v", "1", "-vf", "scale=640:-2", frame],
+                  timeout=60)
+        boxes = [b for b in effects.segment(["mask", frame, mask, "--persons"]).get("persons") or []
+                 if len(b) == 4 and float(b[3]) >= 0.15]
+    except (tools.CommandError, effects.EffectError):
+        return None
+    finally:
+        for p in (frame, mask):
+            if os.path.exists(p):
+                os.remove(p)
+    weight = sum(float(b[2]) * float(b[3]) for b in boxes)
+    if weight <= 0:
+        return None
+    return sum((float(b[0]) + float(b[2]) / 2) * float(b[2]) * float(b[3]) for b in boxes) / weight
+
+
+def focus(moment: dict, work: str, aspect: float = 9 / 16):
+    """Cadrage vertical d'un moment fort tire d'un rush horizontal : (x_debut, x_fin), les
+    abscisses a garder au centre ; None si le rush remplit deja l'image (vertical, carre).
+    Un ecart faible entre debut et fin devient un plan fixe (pas de panoramique inutile)."""
+    width, height = moment.get("width") or 0, moment.get("height") or 0
+    if not width or not height or width / float(height) <= aspect * 1.25:
+        return None
+    path = moment["path"]
+    start, end = moment["start"] + 0.3, moment["end"] - 0.3
+    first, last = people_center(path, start, work), people_center(path, end, work)
+    if first is None and last is None:
+        return (0.5, 0.5)
+    first = last if first is None else first
+    last = first if last is None else last
+    if abs(first - last) < 0.06:
+        first = last = (first + last) / 2
+    return (round(first, 4), round(last, 4))
+
+
 def candidates(event_dir: str) -> list:
     """Rushes a explorer : ceux gardes (choix du monteur ou proposition)."""
     clips = [c for c in rushes.clip_list(event_dir) if c["analyzed"] and c["kept"]

@@ -927,6 +927,12 @@ function renderMontage() {
     : kept ? 'Moments forts pas encore cherchés : le générique les cherchera d’abord (6 moments).'
       : 'Aucun rush gardé : commencez par l’onglet Vidéo.';
   $('#gen-run').disabled = !st.effectcraft || !(moments.length || kept);
+  $('#tz-moments').className = $('#gen-moments').className;
+  $('#tz-moments').textContent = moments.length
+    ? $('#gen-moments').textContent
+    : kept ? 'Moments forts pas encore cherchés : le teaser les cherchera d’abord (8 moments).'
+      : 'Aucun rush gardé : commencez par l’onglet Vidéo.';
+  $('#tz-run').disabled = $('#gen-run').disabled;
 
   // Clip 3D : animation de la bibliotheque + photo cochee dans la partie Photo
   const list = st.animations || [];
@@ -971,6 +977,11 @@ function montageTitles() {
 $('#gen-run').addEventListener('click', () => {
   derushJob('/api/events/studio', Object.assign({ recipe: 'generique' }, montageTitles()),
     (r) => toast('Générique prêt : ' + r.path));
+});
+
+$('#tz-run').addEventListener('click', () => {
+  derushJob('/api/events/studio', Object.assign({ recipe: 'teaser' }, montageTitles()),
+    (r) => toast('Teaser vertical prêt : ' + r.path + (r.reframed ? ' (' + r.reframed + ' passage(s) recadré(s))' : '')));
 });
 
 $('#st-photos').addEventListener('click', (ev) => {

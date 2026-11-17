@@ -376,6 +376,15 @@ _ASSEMBLE = """
     // Remplit l'image sans bande noire (le rush deborde, centre)
     var k = Math.max(W / it.width, H / it.height) * 100;
     L.property("Transform").property("Scale").setValue([k, k]);
+    // Cadrage sur les personnes (teaser vertical d'un rush horizontal) : le point
+    // [debut, fin] de la largeur du rush passe au centre de l'image, sans bande noire
+    if (parts[i].length > 3) {
+      var sw = it.width * k / 100, lo = W - sw / 2, hi = sw / 2;
+      var px = function (f) { return Math.min(hi, Math.max(lo, W / 2 - (f - 0.5) * sw)); };
+      var P = L.property("Transform").property("Position");
+      if (Math.abs(parts[i][3] - parts[i][4]) < 0.001) P.setValue([px(parts[i][3]), H / 2]);
+      else { P.setValueAtTime(t, [px(parts[i][3]), H / 2]); P.setValueAtTime(t + d, [px(parts[i][4]), H / 2]); }
+    }
     L.audioEnabled = false;
     var o = L.property("Transform").property("Opacity");
     if (i > 0) { o.setValueAtTime(t, 0); o.setValueAtTime(t + F, 100); }
@@ -390,13 +399,16 @@ def assemble(client: Client, parts: list, out: str, size: tuple = (1920, 1080), 
              fade: float = 0.4, title: str = "", subtitle: str = "", title_template: str = "",
              name: str = "Moments forts", log=None, progress=None) -> dict:
     """Enchaine les extraits [(chemin, debut, fin)] en fondu, sans leur son (la musique
-    se pose au montage), titre a la fin (facultatif), rendu H.264."""
+    se pose au montage), titre a la fin (facultatif), rendu H.264. Un extrait peut porter
+    un cadrage (chemin, debut, fin, (x_debut, x_fin)) : abscisses, en proportion de la
+    largeur du rush, a garder au centre de l'image (panoramique lent si elles different)."""
     if not parts:
         raise EffectCraftError("Aucun extrait à enchaîner")
     out = os.path.abspath(out)
     client.execute("file.newProject")
     items = {}
-    for path, _a, _b in parts:
+    for part in parts:
+        path = part[0]
         if path not in items:
             imported = client.execute("file.import", {"paths": [os.path.abspath(path)]}) or {}
             if imported.get("errors") or not imported.get("items"):
@@ -404,7 +416,9 @@ def assemble(client: Client, parts: list, out: str, size: tuple = (1920, 1080), 
             items[path] = imported["items"][0]
     found = client.script(_ASSEMBLE % {
         "W": size[0], "H": size[1], "FPS": fps, "F": fade, "name": json.dumps(name),
-        "parts": json.dumps([[items[p], round(a, 3), round(b, 3)] for p, a, b in parts])})
+        "parts": json.dumps([[items[p[0]], round(p[1], 3), round(p[2], 3)]
+                             + ([round(p[3][0], 4), round(p[3][1], 4)] if len(p) > 3 and p[3] else [])
+                             for p in parts])})
     comp, total = found.split(",")
     comp = int(comp)
     if log:
